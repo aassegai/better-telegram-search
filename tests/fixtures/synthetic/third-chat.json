@@ -1,0 +1,8 @@
+{
+  "id": 300,
+  "name": "Синтетический диалог: заметки",
+  "type": "personal_chat",
+  "messages": [
+    {"id": 1, "type": "message", "date_unixtime": "1750000000", "from": "Глеб", "from_id": "gleb", "text": "Проверка импорта через интерфейс."}
+  ]
+}

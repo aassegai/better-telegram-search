@@ -1,0 +1,46 @@
+# Private requirements and Telegram exports
+telegram_search_requirements_and_plan*.md
+/test_chat_export/
+/exports/
+/data/
+/models/
+/cache/
+/logs/
+/backups/
+/local/
+/artifacts/
+
+# Local workspace, model caches, credentials, and databases
+/workspace/
+.env
+.env.*
+!.env.example
+!.env.*.example
+.cache/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.egg-info/
+build/
+dist/
+
+# Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+test-results/
+playwright-report/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

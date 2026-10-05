@@ -1,0 +1,8 @@
+{
+  "id": 200,
+  "name": "Синтетический диалог: мастерская",
+  "type": "personal_chat",
+  "messages": [
+    {"id": 1, "type": "message", "date_unixtime": "1750000000", "from": "Вера", "from_id": "vera", "text": "Готов зелёный велосипед."}
+  ]
+}

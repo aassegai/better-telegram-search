@@ -1,0 +1,11 @@
+{
+  "id": 100,
+  "name": "Синтетический диалог: поездки",
+  "type": "personal_chat",
+  "messages": [
+    {"id": 1, "type": "message", "date_unixtime": "1750000000", "from": "Алиса", "from_id": "alice", "text": "В субботу поедем на озеро."},
+    {"id": 2, "type": "message", "date_unixtime": "1750000010", "from": "Борис", "from_id": "bob", "text": "Я возьму красный велосипед.", "reply_to_message_id": 1},
+    {"id": 3, "type": "message", "date_unixtime": "1750000020", "from": "Алиса", "from_id": "alice", "text": ["Встретимся у ", {"type": "bold", "text": "вокзала"}]},
+    {"id": 4, "type": "message", "date_unixtime": "1750000030", "from": "Борис", "from_id": "bob", "text": "literal <script>window.syntheticInjected = true</script>"}
+  ]
+}

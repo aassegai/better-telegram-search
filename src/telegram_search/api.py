@@ -1,0 +1,253 @@
+import hashlib
+import io
+import secrets
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Annotated, Literal
+from urllib.parse import urlsplit
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from PIL import Image
+from pydantic import BaseModel, Field
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+from .database import Database
+from .diagnostics import doctor
+from .errors import UserError
+from .importer import ImportService
+from .paths import safe_media_path
+from .search import ContextService, Filters, SearchService, date_bound
+
+
+class ImportRequest(BaseModel):
+    json_path: str = Field(min_length=1, max_length=4096)
+    source_root: str | None = Field(default=None, max_length=4096)
+    scope: str = Field(default="default", min_length=1, max_length=256)
+    target_chat_id: str | None = None
+    policy: Literal["preserve", "prefer_imported"] = "preserve"
+    create_new: bool = False
+
+
+def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
+    db = Database(workspace)
+    db.initialize()
+    session_token = secrets.token_urlsafe(32)
+    search = SearchService(db)
+    context = ContextService(db)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        importer = ImportService(db)
+        app.state.importer = importer
+        yield
+        importer.shutdown()
+
+    app = FastAPI(title="Telegram Search", lifespan=lifespan)
+    app.state.db = db
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
+
+    @app.middleware("http")
+    async def local_security(request: Request, call_next):
+        origin = request.headers.get("origin")
+        if origin:
+            parsed = urlsplit(origin)
+            if origin != f"{request.url.scheme}://{request.headers.get('host', '')}" or (
+                parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+            ):
+                return JSONResponse({"detail": "Недопустимый origin."}, status_code=403)
+        if request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse(
+                {"detail": "Доступ разрешён только из локального приложения."}, status_code=403
+            )
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            supplied = request.headers.get("x-session-token", "")
+            if not secrets.compare_digest(supplied, session_token):
+                return JSONResponse(
+                    {"detail": "Необходим токен локальной сессии."}, status_code=403
+                )
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Security-Policy"] = (
+            "sandbox; default-src 'none'"
+            if request.url.path.startswith("/api/media/")
+            else "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+            "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+        )
+        return response
+
+    @app.exception_handler(UserError)
+    async def user_error(_request: Request, exc: UserError):
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.get("/api/session")
+    def session():
+        return {"token": session_token, "device": "cpu", "search_backend": "bm25_messages"}
+
+    @app.get("/api/chats")
+    def chats():
+        return search.chats()
+
+    @app.get("/api/authors")
+    def authors(chat_id: Annotated[list[str] | None, Query()] = None):
+        return search.authors(chat_id)
+
+    @app.get("/api/search")
+    def perform_search(
+        q: Annotated[str, Query(max_length=2000)],
+        chat_id: Annotated[list[str] | None, Query()] = None,
+        author_id: Annotated[list[str] | None, Query()] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        content_type: Literal["all", "text", "photo", "service"] = "all",
+        exact: bool = False,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ):
+        filters = Filters(
+            chat_id or [],
+            author_id or [],
+            date_bound(date_from),
+            date_bound(date_to, end=True),
+            content_type,
+        )
+        if (
+            filters.date_from is not None
+            and filters.date_to is not None
+            and filters.date_from >= filters.date_to
+        ):
+            raise UserError("Начало периода должно быть раньше конца.")
+        return search.search(q, filters, exact, limit)
+
+    @app.get("/api/chats/{chat_id}/context/{message_id}")
+    def get_context(
+        chat_id: str,
+        message_id: int,
+        before: Annotated[int, Query(ge=0, le=100)] = 10,
+        after: Annotated[int, Query(ge=0, le=100)] = 10,
+        author_id: Annotated[list[str] | None, Query()] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        content_type: Literal["all", "text", "photo", "service"] = "all",
+    ):
+        filters = Filters(
+            [chat_id],
+            author_id or [],
+            date_bound(date_from),
+            date_bound(date_to, end=True),
+            content_type,
+        )
+        return {"messages": context.get_context(chat_id, message_id, before, after, filters)}
+
+    @app.get("/api/media/{media_id}")
+    def media(media_id: int):
+        with db.connect() as conn:
+            ref = conn.execute(
+                "SELECT m.*,s.relative_path AS root FROM media_refs m "
+                "JOIN source_roots s ON s.id=m.source_root_id WHERE m.id=?",
+                (media_id,),
+            ).fetchone()
+        if not ref or ref["kind"] != "photo" or ref["status"] != "ready":
+            raise HTTPException(status_code=404, detail="Изображение недоступно.")
+        try:
+            path = safe_media_path(db.source_path(ref["root"]), ref["relative_path"])
+        except UserError as exc:
+            raise HTTPException(status_code=404, detail="Изображение недоступно.") from exc
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Файл источника отсутствует.")
+        # Detect the actual raster format; an export may name a polyglot image .html or .js.
+        mime_types = {
+            "JPEG": "image/jpeg",
+            "PNG": "image/png",
+            "GIF": "image/gif",
+            "WEBP": "image/webp",
+            "BMP": "image/bmp",
+            "TIFF": "image/tiff",
+            "ICO": "image/x-icon",
+            "AVIF": "image/avif",
+        }
+        try:
+            with path.open("rb") as stream:
+                data = stream.read(32 * 1024 * 1024 + 1)
+            if len(data) > 32 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="Изображение больше 32 МиБ.")
+            if hashlib.sha256(data).hexdigest() != ref["sha256"]:
+                raise HTTPException(status_code=404, detail="Файл изменился. Повторите импорт.")
+            with Image.open(io.BytesIO(data)) as image:
+                mime = mime_types.get(image.format)
+                image.verify()
+            if not mime:
+                raise ValueError("unsupported raster format")
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise HTTPException(status_code=404, detail="Изображение недоступно.") from exc
+        return Response(data, media_type=mime)
+
+    @app.post("/api/imports", status_code=202)
+    def import_export(body: ImportRequest):
+        with app.state.importer.lifecycle_lock:
+            job_id = app.state.importer.prepare(**body.model_dump())
+            app.state.importer.submit(job_id)
+        return app.state.importer.get(job_id)
+
+    @app.get("/api/imports")
+    def imports():
+        with db.connect() as conn:
+            return [
+                {**app.state.importer.get(row["id"]), "chat_name": row["chat_name"]}
+                for row in conn.execute(
+                    "SELECT i.*,c.name AS chat_name FROM imports i JOIN chats c ON c.id=i.chat_id "
+                    "ORDER BY i.started_at DESC,i.rowid DESC LIMIT 50"
+                )
+            ]
+
+    @app.post("/api/imports/{job_id}/{action}")
+    def control(job_id: str, action: Literal["pause", "resume", "cancel"]):
+        return app.state.importer.control(job_id, action)
+
+    @app.delete("/api/chats/{chat_id}")
+    def delete_chat(chat_id: str):
+        with app.state.importer.lifecycle_lock:
+            return delete_chat_locked(chat_id)
+
+    def delete_chat_locked(chat_id: str):
+        if app.state.importer.is_active(chat_id):
+            raise UserError("Дождитесь завершения или остановки фоновой задачи этого диалога.")
+        with db.connect() as conn:
+            active = conn.execute(
+                "SELECT 1 FROM imports WHERE chat_id=? AND state IN ('queued','running')",
+                (chat_id,),
+            ).fetchone()
+            if active:
+                raise UserError("Сначала приостановите или отмените импорт этого диалога.")
+            if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
+                raise HTTPException(status_code=404, detail="Диалог не найден.")
+            # Paused tasks have no further writes; cascade also removes their checkpoints.
+            conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
+        db.compact()
+        return {"deleted": True, "source_files_preserved": True}
+
+    @app.get("/api/doctor")
+    def diagnostics():
+        return doctor(db)
+
+    @app.post("/api/rebuild")
+    def rebuild():
+        db.rebuild()
+        return {"rebuilt": "fts5"}
+
+    frontend_dir = frontend_dir or Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if (frontend_dir / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=frontend_dir / "assets"), name="assets")
+
+    @app.get("/")
+    def index():
+        if not (frontend_dir / "index.html").is_file():
+            return JSONResponse(
+                {"detail": "Соберите интерфейс: cd frontend && npm ci && npm run build"},
+                status_code=503,
+            )
+        return FileResponse(frontend_dir / "index.html")
+
+    return app
