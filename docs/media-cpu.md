@@ -25,7 +25,12 @@ OCR uses [tesserocr](https://github.com/sirfz/tesserocr), dictionaries from
 CLIP is Apache2.0; original OpenAI CLIP is MIT. Pinned model cards/license files
 are retained with downloaded bundles. `config/ocr_model.json` pins traineddata
 and license checksums. Linux wheel tested here includes Tesseract5.5.1/Leptonica1.85.0;
-Windows OCR packaging and physical macOS checks remain separate work.
+Windows uv sources pin upstream standalone wheels with Tesseract5.5.3/Leptonica.
+Portable builds dispatch the isolated worker through their own executable;
+IPC uses ASCII JSON to preserve Russian text with Windows console encodings.
+Bundled dictionaries are checksum-verified before offline copying into workspace.
+The native packaging matrix and artifact smoke reports are described in
+[portable builds](portable-builds.md); physical macOS checks remain separate work.
 
 ## Кэш и восстановление
 

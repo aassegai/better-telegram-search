@@ -2,8 +2,8 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import shutil
 import subprocess
-import sys
 import tempfile
 import urllib.request
 from importlib.resources import files
@@ -11,6 +11,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from telegram_search.config.runtime import bundled_directory, ocr_command
 from telegram_search.inference.bundles import checksum
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -30,11 +31,7 @@ class OcrEngine:
             runtime = importlib.metadata.version("tesserocr")
             native = (
                 subprocess.run(
-                    [
-                        sys.executable,
-                        "-c",
-                        "import tesserocr; print(tesserocr.tesseract_version())",
-                    ],
+                    ocr_command("--runtime"),
                     capture_output=True,
                     timeout=10,
                     check=True,
@@ -81,27 +78,42 @@ class OcrEngine:
                 path = self.root / item["name"]
                 if path.is_file() and not path.is_symlink() and checksum(path) == item["sha256"]:
                     continue
-                if offline:
+                bundled = bundled_directory("tessdata")
+                source = bundled / item["name"] if bundled else None
+                if source and (
+                    not source.is_file()
+                    or source.stat().st_size != item["bytes"]
+                    or checksum(source) != item["sha256"]
+                ):
+                    raise UserError("Словари OCR в сборке повреждены.")
+                if offline and source is None:
                     raise UserError("Закреплённые словари OCR недоступны офлайн.")
                 with tempfile.TemporaryDirectory(dir=self.root) as staging:
                     target = Path(staging) / item["name"]
-                    with (
-                        urllib.request.urlopen(item["url"], timeout=60) as response,
-                        target.open("wb") as out,
-                    ):
-                        remaining = item["bytes"]
-                        while remaining > 0:
-                            block = response.read(min(1024 * 1024, remaining))
-                            if not block:
-                                break
-                            out.write(block)
-                            remaining -= len(block)
-                        if remaining or response.read(1):
-                            raise UserError("Размер словаря OCR не совпадает с manifest.")
+                    if source:
+                        shutil.copyfile(source, target)
+                    else:
+                        self._download(item, target)
                     if checksum(target) != item["sha256"]:
                         raise UserError("Контрольная сумма словаря OCR не совпадает.")
                     os.replace(target, path)
             self.verify()
+
+    @staticmethod
+    def _download(item, target):
+        with (
+            urllib.request.urlopen(item["url"], timeout=60) as response,
+            target.open("wb") as out,
+        ):
+            remaining = item["bytes"]
+            while remaining > 0:
+                block = response.read(min(1024 * 1024, remaining))
+                if not block:
+                    break
+                out.write(block)
+                remaining -= len(block)
+            if remaining or response.read(1):
+                raise UserError("Размер словаря OCR не совпадает с manifest.")
 
     def recognize(self, data: bytes) -> dict:
         environment = {
@@ -111,13 +123,7 @@ class OcrEngine:
         }
         try:
             result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "telegram_search.inference.ocr_worker",
-                    str(self.root),
-                    str(self.max_edge),
-                ],
+                ocr_command(str(self.root), str(self.max_edge)),
                 input=data,
                 capture_output=True,
                 timeout=self.timeout,

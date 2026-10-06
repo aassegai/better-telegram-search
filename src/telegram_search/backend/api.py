@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search.config.diagnostics import doctor
+from telegram_search.config.runtime import frontend_directory
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
@@ -406,7 +407,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             db.rebuild()
         return {"rebuilt": "fts5"}
 
-    frontend_dir = frontend_dir or Path(__file__).resolve().parents[3] / "frontend" / "dist"
+    frontend_dir = frontend_dir or frontend_directory()
     if (frontend_dir / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dir / "assets"), name="assets")
 

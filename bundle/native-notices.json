@@ -1,0 +1,99 @@
+[
+  {
+    "name": "Tesseract",
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tesseract/5.5.1/LICENSE",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "name": "Leptonica",
+    "url": "https://raw.githubusercontent.com/DanBloomberg/leptonica/1.85.0/leptonica-license.txt",
+    "bytes": 1521,
+    "sha256": "87829abb5bbb00b55a107365da89e9a33f86c4250169e5a1e5588505be7d5806"
+  },
+  {
+    "name": "libjpeg-turbo",
+    "url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/1.5.3/LICENSE.md",
+    "bytes": 5343,
+    "sha256": "5c08657eda60b7946a913ee22ac73603335a468a6aa95204506a1586a8d677ee"
+  },
+  {
+    "name": "libjpeg-IJG",
+    "url": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/1.5.3/README.ijg",
+    "bytes": 13668,
+    "sha256": "53a3e3c299e08856964f4c5986e242c3695837b73c64625092f70c774e8af5d2"
+  },
+  {
+    "name": "libpng",
+    "url": "https://raw.githubusercontent.com/pnggroup/libpng/v1.6.34/LICENSE",
+    "bytes": 4995,
+    "sha256": "a247c24f82bacf0403fe2f3d5550493a91cdb575fe7036b764bda8cacf3efd9c"
+  },
+  {
+    "name": "zlib",
+    "url": "https://raw.githubusercontent.com/madler/zlib/v1.2.11/README",
+    "bytes": 5187,
+    "sha256": "7960b6b1cc63e619abb77acaea5427159605afee8c8b362664f4effc7d7f7d15"
+  },
+  {
+    "name": "libwebp",
+    "url": "https://raw.githubusercontent.com/webmproject/libwebp/v1.0.0/COPYING",
+    "bytes": 1496,
+    "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+  },
+  {
+    "name": "libtiff",
+    "url": "https://gitlab.com/libtiff/libtiff/-/raw/v4.0.9/COPYRIGHT",
+    "bytes": 1146,
+    "sha256": "fbd6fed7938541d2c809c0826225fc85e551fdbfa8732b10f0c87e0847acafd7"
+  },
+  {
+    "name": "libpng-win",
+    "url": "https://raw.githubusercontent.com/pnggroup/libpng/v1.6.58/LICENSE",
+    "bytes": 5345,
+    "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+  },
+  {
+    "name": "zlib-win",
+    "url": "https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE",
+    "bytes": 1002,
+    "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+  },
+  {
+    "name": "libtiff-win",
+    "url": "https://gitlab.com/libtiff/libtiff/-/raw/v4.7.1/LICENSE.md",
+    "bytes": 2416,
+    "sha256": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade"
+  },
+  {
+    "name": "zstd",
+    "url": "https://raw.githubusercontent.com/facebook/zstd/v1.5.7/LICENSE",
+    "bytes": 1549,
+    "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+  },
+  {
+    "name": "OpenJPEG",
+    "url": "https://raw.githubusercontent.com/uclouvain/openjpeg/v2.5.4/LICENSE",
+    "bytes": 2112,
+    "sha256": "a6af136f3e15038a666b61f376612a07d9a4e48cb7c01adbf3e33b3f14ab49b6"
+  },
+  {
+    "name": "XZ",
+    "url": "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.3/COPYING",
+    "bytes": 3119,
+    "sha256": "616a3ad264ce29b8f1cb97e53037b139d406899ca8d1f799651e17bfa09830b8"
+  },
+  {
+    "name": "gif",
+    "url": "https://sourceforge.net/p/giflib/code/ci/a8e3114a81f0987a61d06a41c99fd7cc2d58232c/tree/COPYING?format=raw",
+    "bytes": 1039,
+    "sha256": "ed5d90cb4a041bddad679470a071302ab05ae5d0ec2cf8f9c97ad7b2708751e6"
+  },
+  {
+    "name": "jpeg-win",
+    "url": "https://www.ijg.org/files/jpegsrc.v10.tar.gz",
+    "bytes": 1099508,
+    "sha256": "8b9eaa13242690ebd03e1728ab1edf97a81a78ed6e83624d493655f31ac95ab5",
+    "member": "jpeg-10/README"
+  }
+]

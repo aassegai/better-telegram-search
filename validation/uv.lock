@@ -79,13 +79,17 @@ requires-dist = [
     { name = "psutil", specifier = ">=6,<8" },
     { name = "pyarrow", marker = "extra == 'semantic'", specifier = ">=18,<30" },
     { name = "safetensors", marker = "extra == 'semantic'", specifier = ">=0.5,<1" },
-    { name = "tesserocr", marker = "sys_platform != 'win32' and extra == 'ocr'", specifier = ">=2.11,<3" },
+    { name = "tesserocr", marker = "python_full_version == '3.11.*' and sys_platform == 'win32' and extra == 'ocr'", url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp311-cp311-win_amd64.whl" },
+    { name = "tesserocr", marker = "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'ocr'", url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp312-cp312-win_amd64.whl" },
+    { name = "tesserocr", marker = "python_full_version == '3.13.*' and sys_platform == 'win32' and extra == 'ocr'", url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp313-cp313-win_amd64.whl" },
+    { name = "tesserocr", marker = "(python_full_version < '3.11' and extra == 'ocr') or (python_full_version >= '3.14' and extra == 'ocr') or (sys_platform != 'win32' and extra == 'ocr')", specifier = ">=2.11,<3" },
     { name = "tokenizers", marker = "extra == 'semantic'", specifier = ">=0.21,<1" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
 provides-extras = ["semantic", "ocr"]
 
 [package.metadata.requires-dev]
+bundle = [{ name = "pyinstaller", specifier = "==6.22.3" }]
 dev = [
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pytest", specifier = ">=8,<10" },

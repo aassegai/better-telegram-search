@@ -2,13 +2,14 @@ import argparse
 import json
 import sys
 import threading
-import webbrowser
 from pathlib import Path
 
 import uvicorn
 from filelock import FileLock, Timeout
 
+from telegram_search.config.browser import open_browser
 from telegram_search.config.diagnostics import doctor
+from telegram_search.config.runtime import default_workspace
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.shared.errors import UserError
 from telegram_search.storage.database import Database
@@ -16,7 +17,7 @@ from telegram_search.storage.database import Database
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Локальный поиск по Telegram Desktop (CPU)")
-    parser.add_argument("--workspace", type=Path, default=Path("workspace"))
+    parser.add_argument("--workspace", type=Path, default=default_workspace())
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("setup", "doctor", "rebuild", "compact"):
         commands.add_parser(name)
@@ -59,17 +60,27 @@ def main() -> None:
 
             if not 1 <= args.port <= 65535:
                 raise UserError("Порт должен быть от 1 до 65535.")
-            if not args.no_browser:
-                timer = threading.Timer(1.0, webbrowser.open, [f"http://127.0.0.1:{args.port}"])
-                timer.daemon = True
-                timer.start()
-            uvicorn.run(
-                create_app(args.workspace, args.frontend),
-                host="127.0.0.1",
-                port=args.port,
-                workers=1,
-                access_log=False,
+            server = uvicorn.Server(
+                uvicorn.Config(
+                    create_app(args.workspace, args.frontend),
+                    host="127.0.0.1",
+                    port=args.port,
+                    workers=1,
+                    access_log=False,
+                )
             )
+            if not args.no_browser:
+
+                def open_when_ready():
+                    import time
+
+                    while not server.started and not server.should_exit:
+                        time.sleep(0.1)
+                    if server.started:
+                        open_browser(f"http://127.0.0.1:{args.port}")
+
+                threading.Thread(target=open_when_ready, daemon=True).start()
+            server.run()
         elif args.command == "import":
             importer = ImportService(db)
             try:

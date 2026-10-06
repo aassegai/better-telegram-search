@@ -30,10 +30,19 @@ semantic = [
   "pyarrow>=18,<30",
   "safetensors>=0.5,<1",
 ]
-ocr = ["tesserocr>=2.11,<3; sys_platform != 'win32'"]
+ocr = ["tesserocr>=2.11,<3"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+bundle = ["pyinstaller==6.22.3"]
+
+# Upstream's Windows wheels include Tesseract and Leptonica; PyPI has no Windows wheel.
+[tool.uv.sources]
+tesserocr = [
+  { url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp311-cp311-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.11'" },
+  { url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp312-cp312-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.12'" },
+  { url = "https://github.com/simonflueckiger/tesserocr-windows_build/releases/download/tesserocr-v2.11.0-tesseract-5.5.3/tesserocr-2.11.0-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13'" },
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/telegram_search"]

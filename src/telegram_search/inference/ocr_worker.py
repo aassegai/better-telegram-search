@@ -7,9 +7,15 @@ import sys
 from PIL import Image, ImageOps
 
 
-def main():
+def main(argv=None):
     import tesserocr
 
+    args = sys.argv[1:] if argv is None else argv
+    if args == ["--runtime"]:
+        print(tesserocr.tesseract_version())
+        return
+    if len(args) != 2:
+        raise ValueError("worker arguments")
     Image.MAX_IMAGE_PIXELS = 25_000_000
     data = sys.stdin.buffer.read(32 * 1024 * 1024 + 1)
     if len(data) > 32 * 1024 * 1024:
@@ -18,15 +24,15 @@ def main():
         if original.width * original.height > Image.MAX_IMAGE_PIXELS:
             raise ValueError("pixel budget")
         image = ImageOps.exif_transpose(original).convert("RGB")
-        image.thumbnail((int(sys.argv[2]), int(sys.argv[2])), Image.Resampling.LANCZOS)
+        image.thumbnail((int(args[1]), int(args[1])), Image.Resampling.LANCZOS)
         image = ImageOps.autocontrast(image.convert("L"))
-    with tesserocr.PyTessBaseAPI(path=sys.argv[1], lang="rus+eng", psm=tesserocr.PSM.AUTO) as api:
+    with tesserocr.PyTessBaseAPI(path=args[0], lang="rus+eng", psm=tesserocr.PSM.AUTO) as api:
         api.SetImage(image)
         text = api.GetUTF8Text().strip()
         if len(text) > 65536:
             raise ValueError("output budget")
         print(
-            json.dumps({"text": text, "confidence": float(api.MeanTextConf())}, ensure_ascii=False)
+            json.dumps({"text": text, "confidence": float(api.MeanTextConf())}, ensure_ascii=True)
         )
 
 
