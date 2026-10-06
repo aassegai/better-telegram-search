@@ -1,0 +1,29 @@
+name: Completed build diagnostics
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Portable builds]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-reports.yml'
+      - 'scripts/collect_build_diagnostics.py'
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: completed-build-diagnostics
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BTS_COMPLETED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: python3 scripts/collect_build_diagnostics.py
