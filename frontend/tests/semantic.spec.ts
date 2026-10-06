@@ -15,6 +15,7 @@ const status = {
 test('search modes show partial coverage, fallback and exact phrase semantics', async ({ page }) => {
   await page.route('**/api/semantic', route => route.fulfill({ json: status }));
   await page.goto('/');
+  await page.getByRole('tab', { name: 'Текст', exact: true }).click();
   await expect(page.getByText('Смысловой индекс: 1 / 3 сегментов')).toBeVisible();
   await page.getByLabel('Режим поиска').selectOption('hybrid');
   await page.getByLabel('Поисковый запрос').fill('велосипед');
@@ -32,7 +33,7 @@ test('search modes show partial coverage, fallback and exact phrase semantics', 
   await expect(page.getByLabel('Режим поиска')).toBeDisabled();
   await page.getByRole('button', { name: 'Найти' }).click();
   await expect(page.getByText('Смысловой поиск ещё не готов. Показаны результаты по словам.')).toHaveCount(0);
-  await expect(page.getByText('Точная фраза ищется в полном тексте сообщений по всему архиву.')).toBeVisible();
+  await expect(page.getByText('Точная фраза ищется в сообщениях и распознанном тексте фотографий.')).toBeVisible();
 });
 
 test('chunk result renders the eighth message and escapes its text', async ({ page }) => {

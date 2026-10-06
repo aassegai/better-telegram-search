@@ -28,7 +28,9 @@ semantic = [
   "huggingface-hub>=0.34,<2",
   "lancedb>=0.25,<1",
   "pyarrow>=18,<30",
+  "safetensors>=0.5,<1",
 ]
+ocr = ["tesserocr>=2.11,<3; sys_platform != 'win32'"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]

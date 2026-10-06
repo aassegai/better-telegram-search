@@ -12,9 +12,22 @@ export type Message = {
 export type Hit = {
   chat_id: string; chat_name: string; message_id: number; timestamp: number;
   messages: Message[];
-  matched_by?: ('words' | 'meaning')[];
+  matched_by?: ('words' | 'meaning' | 'image' | 'ocr_words' | 'ocr_meaning')[];
+  result_type?: 'text' | 'image' | 'ocr';
+  media_id?: number;
+  ocr_text?: string | null;
+  ocr_confidence?: number | null;
+  ocr_range?: { char_start: number; char_end: number };
   chunk_id?: string;
   matched_parts?: { message_id: number; char_start: number; char_end: number }[];
+};
+
+export type MediaStatus = {
+  ocr_enabled: number; images_enabled: number; paused: number; running: boolean;
+  preparation_state: string; error: string | null; resource_error: string | null;
+  total_photos: number; ocr_ready: number; ocr_failed: number; ocr_dense_ready: number;
+  images_ready: number; missing_refs: number; ocr_available: boolean; images_available: boolean;
+  ocr_runtime_installed: boolean; device: string;
 };
 
 export type SemanticStatus = {

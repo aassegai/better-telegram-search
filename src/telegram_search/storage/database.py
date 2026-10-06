@@ -8,7 +8,7 @@ from telegram_search.config.settings import Settings
 from telegram_search.security.privacy import repository_warning
 from telegram_search.shared.errors import UserError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def execute_sql(conn, sql: str) -> None:
@@ -84,6 +84,7 @@ class Database:
         with self.connect() as conn:
             conn.execute("INSERT INTO message_fts(message_fts) VALUES ('rebuild')")
             conn.execute("INSERT INTO chunk_fts(chunk_fts) VALUES ('rebuild')")
+            conn.execute("INSERT INTO ocr_fts(ocr_fts) VALUES ('rebuild')")
 
     def compact(self) -> None:
         with self.connect() as conn:

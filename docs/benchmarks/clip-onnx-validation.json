@@ -1,0 +1,20 @@
+{
+  "device": "cpu",
+  "provider": "CPUExecutionProvider",
+  "text_revision": "58edf8cada9e398793dca955574a48cbb7f18be2",
+  "image_reference_revision": "e6a30b603a447e251fdaca1c3056b2a16cdfebeb",
+  "image_onnx_revision": "d15189d7028b43f1d3e65039190477f6af591c2a",
+  "synthetic_images": 6,
+  "synthetic_queries": 9,
+  "dimension": 512,
+  "preprocessing_max_absolute_error": 4.76837158203125e-07,
+  "text_max_absolute_error": 1.4901161193847656e-07,
+  "image_max_absolute_error": 4.172325134277344e-07,
+  "text_min_cosine": 0.9999998807907104,
+  "image_min_cosine": 0.9999999403953552,
+  "top3_overlap": 1.0,
+  "ru_shape_top1_accuracy": 1.0,
+  "image_batch2_seconds_including_load": 0.8342737660004786,
+  "rss_bytes": 982192128,
+  "scope": "Procedural shapes, colors, bilingual and Unicode queries; numerical compatibility, not a real-photo quality claim."
+}

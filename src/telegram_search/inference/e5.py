@@ -9,6 +9,7 @@ from typing import Literal
 import numpy as np
 
 from telegram_search.config.model_registry import ModelSpec
+from telegram_search.inference.resources import compute_lock
 from telegram_search.inference.tokenization import ModelTokenizer
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -119,10 +120,11 @@ class E5Encoder:
             prepared = [prefix + text for text in texts]
             limit = self.spec.manifest["chunk_max_tokens"] if purpose == "passage" else 512
             inputs = self.tokenizer.batch(prepared, limit)
-            session = self._load()
-            feed = {item.name: inputs[item.name] for item in session.get_inputs()}
             try:
-                hidden = session.run([self.spec.manifest["output_name"]], feed)[0]
+                with compute_lock.slot(interactive=interactive):
+                    session = self._load()
+                    feed = {item.name: inputs[item.name] for item in session.get_inputs()}
+                    hidden = session.run([self.spec.manifest["output_name"]], feed)[0]
             except Exception as exc:
                 raise UserError(
                     "Ошибка ONNX-инференса на CPU. Уменьшите batch или повторите."

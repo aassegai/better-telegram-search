@@ -1,0 +1,10 @@
+{
+  "device": "cpu",
+  "provider": "tesserocr",
+  "languages": "rus+eng",
+  "synthetic_screenshots": 3,
+  "passed": 3,
+  "ocr_cache_version": "495eee83972694ddb8e0e0abd0ac71ca0afb99ded75ff8b45c371cdc6a70b66f",
+  "dictionary_revision": "87416418657359cb625c412a48b6e1d6d41c29bd",
+  "scope": "Clear procedural screenshots with Cyrillic, Latin, numbers and punctuation; not a noisy-photo quality claim."
+}

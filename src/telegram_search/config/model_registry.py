@@ -43,3 +43,8 @@ def model_spec(profile: str) -> ModelSpec:
         return registry()[profile]
     except KeyError as exc:
         raise UserError("Неизвестный профиль модели. Выберите small или base.") from exc
+
+
+def media_registry() -> dict[str, ModelSpec]:
+    manifest = json.loads(files("telegram_search.config").joinpath("media_models.json").read_text())
+    return {profile: ModelSpec(profile, value) for profile, value in manifest.items()}

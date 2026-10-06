@@ -43,6 +43,11 @@ def main() -> None:
     prepare.add_argument("--local-bundle", type=Path)
     indexing = commands.add_parser("index")
     indexing.add_argument("--retry", action="store_true")
+    media = commands.add_parser("prepare-media")
+    media.add_argument("--kind", choices=["ocr", "images"], required=True)
+    media.add_argument("--offline", action="store_true")
+    media_index = commands.add_parser("index-media")
+    media_index.add_argument("--retry", action="store_true")
     args = parser.parse_args()
     if getattr(args, "run_workspace", None) is not None:
         args.workspace = args.run_workspace
@@ -105,6 +110,10 @@ def main() -> None:
             with FileLock(db.workspace / ".writer.lock", timeout=0):
                 db.rebuild()
             print("FTS5 перестроен.")
+        elif args.command in {"prepare-media", "index-media"}:
+            from telegram_search.indexing.media_commands import media_command
+
+            print(json.dumps(media_command(db, args), ensure_ascii=False, indent=2))
         elif args.command in {"prepare-model", "index", "compact"}:
             from telegram_search.indexing.commands import semantic_command
 

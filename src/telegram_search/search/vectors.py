@@ -112,3 +112,22 @@ class VectorStore:
                 table = self.table(space["id"], space["dimension"])
                 if table is not None:
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
+
+    def prune_media(self, space_id, dimension, eligible):
+        """Stream only media IDs; never load corpus vectors into Python during cleanup."""
+        with self.lock:
+            table = self.table(space_id, dimension)
+            if table is None:
+                return
+            batches = (
+                table.search()
+                .where("utc_day='media'")
+                .select(["id"])
+                .limit(None)
+                .to_batches(batch_size=512)
+            )
+            for batch in batches:
+                ids = batch.column("id").to_pylist()
+                stale = set(ids) - eligible(ids)
+                if stale:
+                    table.delete("id IN (" + ",".join(sql_literal(key) for key in stale) + ")")

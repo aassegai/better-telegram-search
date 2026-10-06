@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-uv sync --locked --extra semantic
+uv sync --locked --extra semantic --extra ocr
 cd frontend
 npm ci
 npm run build

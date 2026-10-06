@@ -15,12 +15,15 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search.config.diagnostics import doctor
+from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
+from telegram_search.search.media import MediaSearch, UnifiedSearch
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
+from telegram_search.sources.service import WorkspaceService
 from telegram_search.storage.database import Database
 
 
@@ -46,6 +49,16 @@ class ModelRequest(BaseModel):
     local_bundle: str | None = Field(default=None, max_length=4096)
 
 
+class MediaModelRequest(BaseModel):
+    kind: Literal["ocr", "images"]
+    offline: bool = False
+
+
+class SourceRelinkRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    expected_path: str = Field(min_length=1, max_length=4096)
+
+
 def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     db = Database(workspace)
     db.initialize()
@@ -59,10 +72,17 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         app.state.importer = importer
         semantic = SemanticService(db, importer.lifecycle_lock)
         app.state.semantic = semantic
-        app.state.search = HybridSearch(db, semantic, importer.lifecycle_lock)
+        media = MediaService(db, importer.lifecycle_lock, semantic)
+        app.state.media = media
+        app.state.workspace = WorkspaceService(db, importer, semantic, media)
+        app.state.search = UnifiedSearch(
+            HybridSearch(db, semantic, importer.lifecycle_lock),
+            MediaSearch(db, media, semantic, importer.lifecycle_lock),
+        )
         try:
             yield
         finally:
+            media.shutdown()
             semantic.shutdown()
             importer.shutdown()
 
@@ -127,6 +147,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         content_type: Literal["all", "text", "photo", "service"] = "all",
         exact: bool = False,
         mode: Literal["words", "meaning", "hybrid"] = "words",
+        tab: Literal["all", "text", "images", "ocr"] = "text",
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ):
         filters = Filters(
@@ -142,7 +163,56 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             and filters.date_from >= filters.date_to
         ):
             raise UserError("Начало периода должно быть раньше конца.")
-        return app.state.search.search(q, filters, exact, limit, mode)
+        return app.state.search.search(q, filters, exact, limit, mode, tab)
+
+    @app.get("/api/media-index")
+    def media_status():
+        return app.state.media.status()
+
+    @app.post("/api/media-index/prepare", status_code=202)
+    def prepare_media_model(body: MediaModelRequest):
+        return app.state.media.prepare(body.kind, offline=body.offline)
+
+    @app.post("/api/media-index/{action}")
+    def media_control(action: Literal["pause", "resume", "retry"]):
+        return app.state.media.control(action)
+
+    @app.get("/api/settings")
+    def workspace_settings():
+        return app.state.workspace.settings()
+
+    @app.patch("/api/settings")
+    def update_settings(body: dict):
+        return app.state.workspace.update_settings(body)
+
+    @app.get("/api/sources")
+    def sources():
+        return app.state.workspace.sources()
+
+    @app.post("/api/sources/{source_id}/check")
+    def check_source(source_id: int):
+        return app.state.workspace.probe(source_id)
+
+    @app.post("/api/sources/{source_id}/relink")
+    def relink_source(source_id: int, body: SourceRelinkRequest):
+        return app.state.workspace.probe(
+            source_id, new_path=body.path, expected_path=body.expected_path
+        )
+
+    @app.get("/api/storage")
+    def storage_sizes():
+        return app.state.workspace.sizes()
+
+    @app.post("/api/storage/compact")
+    def compact_storage():
+        db.compact()
+        app.state.semantic.cleanup(compact=True)
+        app.state.media.cleanup(compact=True)
+        return app.state.workspace.sizes()
+
+    @app.get("/api/chats/{chat_id}/deletion-estimate")
+    def deletion_estimate(chat_id: str):
+        return app.state.workspace.deletion_estimate(chat_id)
 
     @app.get("/api/semantic")
     def semantic_status():
@@ -292,6 +362,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         # Release lifecycle_lock so it can observe the deletion and close its reader.
         db.compact()
         app.state.semantic.wake.set()
+        app.state.media.wake.set()
         return result
 
     def delete_chat_locked(chat_id: str):

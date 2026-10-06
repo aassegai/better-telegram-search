@@ -97,6 +97,7 @@ Python разделён по ответственности:
 - `indexing`: фоновая очередь, generations/checkpoints, модельная подготовка и CLI.
 - `inference`: проверенные наборы, локальный tokenizer и CPU ONNX encoder.
 - `config`: валидируемые настройки CPU, manifest registry и диагностика.
+- `sources`: проверка/перенос папок, настройки workspace и размеры хранения.
 - `security`: защита путей, symlink boundaries и правила приватности Git.
 - `shared`: нормализация текста и ошибки приложения.
 
@@ -109,6 +110,9 @@ Ruff и production frontend build прошли. Default frontend route посл�
 
 ## Следующие этапы
 
-1. Добавить совместимую CLIP-пару и Tesseract rus+eng с кэшем по SHA/provider version.
-2. Проверить Windows/macOS на устройствах и расширить упаковку.
-3. Расширить контракты Sources/LLM; Q&A остаётся отдельным последующим этапом.
+1. Измерить большие архивы, warm/cold latency и RAM для смешанных text/image/OCR заданий.
+2. Проверить Windows/macOS на устройствах и расширить упаковку, включая OCR.
+3. Расширить контракты LLM; Q&A остаётся отдельным последующим этапом.
+
+CPU media, вкладки общей выдачи и управление источниками/ресурсами реализованы;
+подробности кэшей, восстановление после сбоя и эталонные проверки — в [media-cpu.md](media-cpu.md).

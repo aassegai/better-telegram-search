@@ -28,6 +28,7 @@ telegram_search_onnx_runtime_agent*.md
 *.safetensors
 *.pt
 *.pth
+*.traineddata
 
 # Python
 .venv/

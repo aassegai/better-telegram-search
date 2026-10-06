@@ -37,7 +37,7 @@ for name in filter(None, paths):
         reason = "secrets file"
     elif path.suffix in {".sqlite", ".db"} or ".sqlite-" in path.name:
         reason = "private database"
-    elif path.suffix in {".onnx", ".onnx_data", ".safetensors", ".pt", ".pth"}:
+    elif path.suffix in {".onnx", ".onnx_data", ".safetensors", ".pt", ".pth", ".traineddata"}:
         reason = "model weights"
     elif (repo / path).is_file() and (repo / path).stat().st_size > 10 * 1024 * 1024:
         reason = "file larger than 10 MiB"

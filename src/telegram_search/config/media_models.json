@@ -1,0 +1,81 @@
+{
+  "clip_text": {
+    "model_id": "sentence-transformers/clip-ViT-B-32-multilingual-v1",
+    "revision": "58edf8cada9e398793dca955574a48cbb7f18be2",
+    "dimension": 512,
+    "files": [
+      {
+        "name": "onnx/model.onnx",
+        "bytes": 539049415,
+        "sha256": "ca09969eb6e0f36fb1622654d1b47ac2025f576794f48b249a50b78d4b70373f"
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 1961847,
+        "sha256": "5b4e1a8171c81dfd666ae40265b9530c6e0b3d53923fe8ac493dcc84229adf81"
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 371,
+        "sha256": "8f66d0ad85be46afc77e0bbf48312cff326ddb9e7290926df96a8228d69a814e"
+      },
+      {
+        "name": "special_tokens_map.json",
+        "bytes": 112,
+        "sha256": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3"
+      },
+      {
+        "name": "config.json",
+        "bytes": 572,
+        "sha256": "edc12f518bfc445dedfe8a7c58374ea659525e0b6e67814686bd6cd57f90f8b3"
+      },
+      {
+        "name": "1_Pooling/config.json",
+        "bytes": 190,
+        "sha256": "a37f83ada23e7887be6b88f4998927dbeac0038af301553c7cd5461413bf1a56"
+      },
+      {
+        "name": "2_Dense/config.json",
+        "bytes": 115,
+        "sha256": "48f4dfaf605a6c2869cd200970e54911c6c15053781d2bdcf3e81e89e77662ed"
+      },
+      {
+        "name": "2_Dense/model.safetensors",
+        "bytes": 1572984,
+        "sha256": "d12568dc7300970a4d3dbb49068ad16cd89b99840b74b026f8e48071e9414f74"
+      },
+      {
+        "name": "README.md",
+        "bytes": 5647,
+        "sha256": "023953714bc8541390994257494d21484994d84e45e01cd96304f0b5f9e770a2"
+      }
+    ]
+  },
+  "clip_image": {
+    "model_id": "Xenova/clip-vit-base-patch32",
+    "revision": "d15189d7028b43f1d3e65039190477f6af591c2a",
+    "dimension": 512,
+    "files": [
+      {
+        "name": "onnx/vision_model.onnx",
+        "bytes": 351685709,
+        "sha256": "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40"
+      },
+      {
+        "name": "preprocessor_config.json",
+        "bytes": 520,
+        "sha256": "6f638fb9401a6d6296feff533ee7efe657b787c49f954f82f5906b36ef2a1b1f"
+      },
+      {
+        "name": "config.json",
+        "bytes": 4524,
+        "sha256": "493ef57ff783e42d1530c91b53469b7fdf8db8a9c1408e86998fcb7899a4f495"
+      },
+      {
+        "name": "README.md",
+        "bytes": 1404,
+        "sha256": "19c2ef35fa89966c7fa7aa30666b4e3aeef4b075461626be55e6037133cc6aa4"
+      }
+    ]
+  }
+}
