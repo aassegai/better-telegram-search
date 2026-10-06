@@ -7,14 +7,14 @@ OCR подготавливается из сборки без сети. Пере
 
 | Платформа | Архитектура | Минимальная ОС | Формат |
 | --- | --- | --- | --- |
-| Windows | x86_64 | Windows 10 / Server 2022 | ZIP |
+| Windows | x86_64 | Windows 10 1903+ / Server 2022 | ZIP |
 | Linux / WSL2 | x86_64 | Ubuntu 22.04+ / glibc 2.35+ для CI | tar.gz |
 | Linux | ARM64 | Ubuntu 22.04+ / glibc 2.35+ для CI | tar.gz |
 | macOS | Apple Silicon | macOS 15 | ZIP с .app |
 | macOS | Intel | macOS 15 | ZIP с .app |
 
 Это целевая матрица; готовность конкретного артефакта подтверждается его JSON-отчётом
-с девятью успешными проверками. Windows ARM64 пока без отдельной нативной сборки.
+с десятью успешными проверками. Windows ARM64 пока без отдельной нативной сборки.
 Linux-пакет этой рабочей машины может требовать более новую glibc; переносимая
 сборка из CI создаётся на Ubuntu 22.04. Подпись Windows и нотарификация macOS
 не настроены; macOS использует локальную ad-hoc подпись PyInstaller.
@@ -57,6 +57,10 @@ workspace/build-env/bin/python scripts/build_app.py --expected-arch x86_64
 Результаты лежат в игнорируемой папке `artifacts/`. Сборщик распаковывает готовый
 архив вне репозитория и проверяет SQLite FTS5, LanceDB, CPU ONNX, tokenizer,
 safetensors, OCR rus/eng, HTML/API и защиту мутаций токеном сессии.
+Распаковка и workspace используют кириллицу, китайские символы и пробелы;
+Windows smoke проверяет process code page UTF-8 для native OCR путей.
+macOS Intel закрепляет последние совместимые wheels ONNX Runtime 1.23.2 и
+LanceDB 0.25.3; версии остальных платформ определяет общий uv.lock.
 Лицензии зависимостей и их версии входят в `_internal/licenses` (в macOS — ресурсы
 `.app`). Native-зависимости требуют сборки на каждой ОС/архитектуре отдельно.
 

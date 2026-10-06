@@ -26,9 +26,19 @@ IDENTITY_ONNX = (
 def main():
     if not frozen():
         raise RuntimeError("Self-test must run from the portable executable")
+    if sys.platform == "win32":
+        import ctypes
+
+        if ctypes.windll.kernel32.GetACP() != 65001:
+            raise RuntimeError("Windows UTF-8 process code page missing")
     for module in ("torch", "torchvision", "transformers", "sentence_transformers"):
         if importlib.util.find_spec(module) is not None:
             raise RuntimeError("Excluded ML dependency in bundle")
+    probe = subprocess.run(
+        [sys.executable, "--internal-ocr", "--runtime"], capture_output=True, timeout=20
+    )
+    if probe.returncode:
+        raise RuntimeError("Native OCR runtime failed:\n" + probe.stderr.decode(errors="replace"))
     import numpy as np
     import onnxruntime as ort
     from safetensors.numpy import load, save
@@ -56,7 +66,7 @@ def main():
         raise RuntimeError("Native tokenizer")
     with tempfile.TemporaryDirectory(prefix="bts-smoke-") as temporary:
         root = Path(temporary)
-        db = Database(root / "workspace")
+        db = Database(root / "workspace Тест поиск 中文")
         db.initialize()
         source = root / "result.json"
         source.write_text(
@@ -117,6 +127,7 @@ def main():
                 "frontend_http": True,
                 "csrf": True,
                 "torch_absent": True,
+                "unicode_paths": True,
             }
         )
     )

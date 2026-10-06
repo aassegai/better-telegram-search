@@ -49,6 +49,7 @@ exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="telegram-search",
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
     console=True, argv_emulation=False,
+    manifest=str(repo / "bundle/windows.manifest") if sys.platform == "win32" else None,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="BetterTelegramSearch")
 if sys.platform == "darwin":

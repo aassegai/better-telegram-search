@@ -125,7 +125,8 @@ def main():
                 out.add(product, arcname=product.name)
     # Smoke-check the artifact after extraction, outside the source tree and environment.
     with tempfile.TemporaryDirectory(prefix="bts-release-") as temporary:
-        extracted = Path(temporary)
+        extracted = Path(temporary) / "Тест сборки 中文"
+        extracted.mkdir()
         if sys.platform == "darwin":
             run("ditto", "-x", "-k", str(archive), str(extracted))
             executable = extracted / product.name / "Contents" / "MacOS" / "telegram-search"
