@@ -1,0 +1,60 @@
+{
+  "commit": "8bf801eadfaf92ae5053e0773139e9716eaef23a",
+  "run_id": "37418579002",
+  "result": "pending",
+  "draft": true,
+  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-1fb989ef547c8113a1b1",
+  "builds": {
+    "darwin-arm64": {
+      "state": "pending",
+      "url": null
+    },
+    "linux-arm64": {
+      "state": "pending",
+      "url": null
+    },
+    "darwin-x86_64": {
+      "state": "pending",
+      "url": null
+    },
+    "linux-x86_64": {
+      "state": "pending",
+      "url": null
+    },
+    "win32-x86_64": {
+      "state": "pending",
+      "url": null
+    }
+  },
+  "jobs": [
+    {
+      "name": "prepare",
+      "conclusion": null,
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37418579002/job/112122616472",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run python3 scripts/check_repository.py",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tag=\"build-0.1.0-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"",
+          "conclusion": null
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": null
+        }
+      ]
+    }
+  ],
+  "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/37418579002",
+  "failures": {}
+}
