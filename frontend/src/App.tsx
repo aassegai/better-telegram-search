@@ -6,7 +6,7 @@ import ConflictDialog from './ConflictDialog';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
-import type { Chat, Hit, Job, MediaStatus, Message, Preview, SemanticStatus } from './types';
+import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchModality, SemanticStatus } from './types';
 
 const dates = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
 const date = (value: number) => dates.format(new Date(value * 1000));
@@ -16,6 +16,8 @@ const stateNames: Record<string, string> = {
   paused: 'Приостановлено', interrupted: 'Прервано', cancelled: 'Отменено', failed: 'Ошибка',
 };
 const reasons: Record<string, string> = { words: 'Совпали слова', meaning: 'Близкий смысл', image: 'Фотография по описанию', ocr_words: 'Слова на фотографии', ocr_meaning: 'Смысл текста на фотографии' };
+const allModalities: SearchModality[] = ['text', 'images', 'ocr'];
+const modalityLabels: Record<SearchModality, string> = { text: 'Текст', images: 'Изображения', ocr: 'OCR' };
 
 function Highlight({ text, query }: { text: string; query: string }) {
   const words = new Set(normalize(query).match(/[\p{L}\p{N}]+/gu) || []);
@@ -61,8 +63,8 @@ export default function App() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [semantic, setSemantic] = useState<SemanticStatus | null>(null);
   const [media, setMedia] = useState<MediaStatus | null>(null);
-  const [tab, setTab] = useState('all');
-  const [submittedTab, setSubmittedTab] = useState('all');
+  const [modalities, setModalities] = useState<SearchModality[]>(allModalities);
+  const [submittedModalities, setSubmittedModalities] = useState<SearchModality[]>(allModalities);
   const [deleting, setDeleting] = useState(false);
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -121,12 +123,18 @@ export default function App() {
     return chosen.includes(id) ? chosen.filter(value => value !== id) : [...chosen, id];
   });
 
+  const changeModalities = (next: SearchModality[]) => {
+    setModalities(next); setHits(null); setWarnings([]); setHasMore(false); closeContext();
+  };
+
   async function search(event: FormEvent) {
     event.preventDefault();
     if (!query.trim() || busy) return;
+    if (!modalities.length) { setError('Выберите хотя бы один тип поиска.'); return; }
     if (selected?.length === 0) { setError('Выберите хотя бы один диалог.'); return; }
     setBusy(true); setError('');
-    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode, tab });
+    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode });
+    modalities.forEach(kind => params.append('modality', kind));
     selected?.forEach(id => params.append('chat_id', id));
     if (author) params.set('author_id', author);
     if (from) params.set('date_from', from);
@@ -137,7 +145,7 @@ export default function App() {
       setSubmittedLimit(result.limit ?? 20);
       setEffectiveMode(result.effective_mode); setWarnings(result.warnings);
       setSearchFilters(params.toString());
-      setSubmittedTab(tab);
+      setSubmittedModalities([...modalities]);
     } catch (error) { reportError(error); }
     finally { setBusy(false); }
   }
@@ -180,6 +188,7 @@ export default function App() {
 
   const messageCount = chats.reduce((sum, chat) => sum + chat.messages, 0);
   const photoCount = chats.reduce((sum, chat) => sum + chat.photos, 0);
+  const onlyImages = submittedModalities.length === 1 && submittedModalities[0] === 'images';
   return <div className="app">
     <aside className="sidebar">
       <a href="/" className="brand"><span className="brand-icon" aria-hidden="true">↗</span>
@@ -193,7 +202,7 @@ export default function App() {
         </div>)}
         {!chats.length && <p className="sidebar-empty">Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.</p>}
       </div>
-      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span> Импортировать экспорт</button>
+      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span> Импортировать выгрузку</button>
       {previews.length > 0 && <div className="jobs"><div className="sidebar-title">Проверки экспорта</div>
         {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name}</strong> · {preview.scope}</small><small>{preview.processed} проверено · {preview.state === 'ready' ? 'отчёт готов' : stateNames[preview.state] || preview.state}</small><div className="job-actions"><button onClick={() => { setActivePreview(preview); setModal('import'); }}>Открыть отчёт</button></div></div>)}
       </div>}
@@ -225,7 +234,7 @@ export default function App() {
         <form onSubmit={search} className="search-form">
           <div className="search-box"><span className="search-icon" aria-hidden="true">⌕</span>
             <input aria-label="Поисковый запрос" placeholder="Что вы хотите найти в переписке?" value={query} onChange={event => setQuery(event.target.value)} />
-            <button disabled={busy || !query.trim() || !connected}>{busy ? 'Ищем…' : 'Найти'}<span aria-hidden="true"> ↗</span></button></div>
+            <button disabled={busy || !query.trim() || !connected || !modalities.length}>{busy ? 'Ищем…' : 'Найти'}<span aria-hidden="true"> ↗</span></button></div>
           <div className="filters">
             <label>Режим<select aria-label="Режим поиска" value={mode} disabled={exact} onChange={event => setMode(event.target.value)}><option value="words">По словам</option><option value="meaning">По смыслу</option><option value="hybrid">Слова и смысл</option></select></label>
             <label>Автор<select aria-label="Автор" value={author} onChange={event => setAuthor(event.target.value)}><option value="">Все авторы</option>{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
@@ -235,8 +244,19 @@ export default function App() {
           </div>
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />Точная фраза</label>
             <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setSelected(null); }}>Сбросить фильтры</button></div>
+          <fieldset className="search-modalities" disabled={busy} aria-describedby="search-modality-help">
+            <legend>Искать в</legend>
+            <div className="modality-options">
+              <button type="button" aria-pressed={modalities.length === allModalities.length} onClick={() => changeModalities([...allModalities])}>Всё</button>
+              {allModalities.map(kind => <label key={kind} className={modalities.includes(kind) ? 'selected' : ''}>
+                <input type="checkbox" checked={modalities.includes(kind)} onChange={() => changeModalities(allModalities.filter(value => value === kind ? !modalities.includes(kind) : modalities.includes(value)))} />
+                {modalityLabels[kind]}
+              </label>)}
+            </div>
+            <p id="search-modality-help" className="baseline-note">Можно выбрать несколько типов поиска — результаты объединятся.</p>
+            {!modalities.length && <p className="warning" role="status">Выберите хотя бы один тип поиска.</p>}
+          </fieldset>
         </form>
-        <div className="search-tabs" role="tablist" aria-label="Раздел поиска">{[['all', 'Всё'], ['text', 'Текст'], ['images', 'Изображения'], ['ocr', 'OCR']].map(([key, label]) => <button type="button" role="tab" key={key} aria-selected={tab === key} disabled={busy} onClick={() => { setTab(key); setHits(null); setWarnings([]); }}>{label}</button>)}</div>
         {exact && <p className="baseline-note">Точная фраза ищется в сообщениях и распознанном тексте фотографий.</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">Смысловой индекс: {semantic.ready_segments} / {semantic.total_segments} сегментов{semantic.paused ? ' · на паузе' : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">Фотографии: {media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos} · OCR по смыслу: {media.ocr_dense_ready}{media.paused ? ' · медиа на паузе' : ''}</p>}
@@ -248,9 +268,9 @@ export default function App() {
           <div className="stats"><div><strong>{messageCount.toLocaleString('ru-RU')}</strong><span>сообщений</span></div><div><strong>{chats.length}</strong><span>диалогов</span></div><div><strong>{photoCount}</strong><span>фотографий</span></div></div>
           <div className="baseline-note">Поиск по словам доступен сразу. Для поиска по смыслу подготовьте модель в настройках.</div>
         </section> : <section className="results" aria-live="polite">
-          <div className="results-heading"><h2>{hits.length ? `Найдено фрагментов: ${hits.length}${hasMore ? '+' : ''}` : 'Совпадений пока нет'}</h2><span>{submittedTab === 'images' ? 'По описанию · CLIP' : effectiveMode === 'mixed' ? 'Общая выдача · RRF' : effectiveMode === 'hybrid' ? 'Слова и смысл · RRF' : effectiveMode === 'meaning' ? 'По смыслу · E5' : 'По словам · BM25'}</span></div>
-          {!hits.length && <div className="no-results">Попробуйте другой запрос или расширьте область поиска.{submittedTab === 'images' ? ' Проверьте готовность индекса фотографий.' : effectiveMode === 'words' ? ' Поиск по словам требует все слова запроса.' : ' Проверьте готовность выбранных индексов.'}</div>}
-          <div className={submittedTab === 'images' ? 'photo-grid' : 'result-list'}>{hits.map(hit => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
+          <div className="results-heading"><h2>{hits.length ? `Найдено фрагментов: ${hits.length}${hasMore ? '+' : ''}` : 'Совпадений пока нет'}</h2><span>{onlyImages ? 'По описанию · CLIP' : effectiveMode === 'mixed' ? `${submittedModalities.map(kind => modalityLabels[kind]).join(' + ')} · общая выдача` : effectiveMode === 'hybrid' ? 'Слова и смысл · RRF' : effectiveMode === 'meaning' ? 'По смыслу · E5' : 'По словам · BM25'}</span></div>
+          {!hits.length && <div className="no-results">Попробуйте другой запрос или расширьте область поиска.{onlyImages ? ' Проверьте готовность индекса фотографий.' : effectiveMode === 'words' ? ' Поиск по словам требует все слова запроса.' : ' Проверьте готовность выбранных индексов.'}</div>}
+          <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map(hit => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? 'Опорное сообщение фрагмента' : 'Совпадение в'} #{hit.message_id}</small></div>
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => reasons[reason]).join(' · ')}</div>}
             {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} />)}

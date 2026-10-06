@@ -4,6 +4,7 @@ import sqlite3
 
 import psutil
 
+from telegram_search import __version__
 from telegram_search.config.hardware import hardware_info
 from telegram_search.storage.database import Database
 
@@ -23,7 +24,7 @@ def doctor(db: Database) -> dict:
         ]
         schema_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     return {
-        "version": "0.1.0",
+        "version": __version__,
         "platform": platform.system(),
         "architecture": platform.machine(),
         "python": platform.python_version(),

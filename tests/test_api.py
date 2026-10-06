@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from conftest import export, load, message
 from fastapi.testclient import TestClient
@@ -5,6 +7,7 @@ from PIL import Image
 
 from telegram_search.backend.api import create_app
 from telegram_search.security.paths import safe_media_path
+from telegram_search.shared.text import normalize_text
 
 
 @pytest.fixture
@@ -115,6 +118,79 @@ def test_saved_search_options_and_request_overrides(client, tmp_path):
         )
     assert client.get("/api/search", params={"q": "термин", "chunk_size": 101}).status_code == 422
     assert client.get("/api/settings").json()["display_chunk_size"] == 1
+
+
+def test_multimodal_api_merges_evidence_and_preserves_filters(client, tmp_path, monkeypatch):
+    root = tmp_path / "synthetic"
+    root.mkdir()
+    Image.new("RGB", (10, 10), "red").save(root / "photo.png")
+    job = load(
+        client.app.state.importer,
+        export(root, [message(1, "заказ"), message(2, "заказ", photo="photo.png", author="user2")]),
+    )
+    media = client.app.state.media
+    media.control("pause")
+    with client.app.state.db.connect() as conn:
+        sha = conn.execute("SELECT sha256 FROM media_refs").fetchone()[0]
+        conn.execute(
+            "INSERT INTO ocr_cache(sha256,version,state,text,text_normalized,confidence) "
+            "VALUES(?,?,'ready',?,?,91)",
+            (sha, "synthetic-ocr", "заказ 12345", normalize_text("заказ 12345")),
+        )
+        conn.execute(
+            "INSERT INTO media_embeddings(id,sha256,space_id,kind) VALUES(?,?,?,'image')",
+            ("synthetic-image", sha, "synthetic-clip"),
+        )
+    media.ocr = SimpleNamespace(version="synthetic-ocr")
+    media.clip = SimpleNamespace(
+        space_id="synthetic-clip", encode_text=lambda _: [[0.0] * 512], unload=lambda: None
+    )
+    monkeypatch.setattr(client.app.state.search.media, "_dense", lambda *args: ["synthetic-image"])
+    for selected in (["text", "ocr"], ["images", "ocr"], ["text", "images", "ocr"]):
+        params = [("q", "заказ"), ("chunk_size", 1), *[("modality", kind) for kind in selected]]
+        response = client.get("/api/search", params=params)
+        assert response.status_code == 200
+        result = response.json()
+        assert result["modalities"] == selected and result["effective_mode"] == "mixed"
+        photo_hit = next(hit for hit in result["results"] if hit["message_id"] == 2)
+        expected = {"text": "words", "images": "image", "ocr": "ocr_words"}
+        assert set(photo_hit["matched_by"]) == {expected[kind] for kind in selected}
+        assert photo_hit["ocr_text"] == "заказ 12345" and photo_hit["media_id"] is not None
+        assert len(photo_hit["messages"]) == 1
+        assert len({(hit["chat_id"], hit["message_id"]) for hit in result["results"]}) == len(
+            result["results"]
+        )
+        filtered = client.get("/api/search", params=[*params, ("author_id", "user2")]).json()
+        assert [(hit["chat_id"], hit["message_id"]) for hit in filtered["results"]] == [
+            (job["chat_id"], 2)
+        ]
+        for key, value in (
+            ("author_id", "absent"),
+            ("chat_id", "absent"),
+            ("date_from", "2030-01-01"),
+            ("date_to", "2020-01-01"),
+            ("content_type", "service"),
+        ):
+            assert not client.get("/api/search", params=[*params, (key, value)]).json()["results"]
+    exact = client.get(
+        "/api/search",
+        params=[
+            ("q", "заказ 12345"),
+            ("exact", "true"),
+            ("modality", "images"),
+            ("modality", "ocr"),
+        ],
+    ).json()
+    assert len(exact["results"]) == 1 and exact["results"][0]["matched_by"] == ["ocr_words"]
+    assert any("Точная фраза" in warning for warning in exact["warnings"])
+
+
+@pytest.mark.parametrize("selection", [[""], ["all"], ["text", "gpu"], ["ocr"] * 4])
+def test_api_rejects_invalid_modalities(client, selection):
+    response = client.get(
+        "/api/search", params=[("q", "проверка"), *[("modality", kind) for kind in selection]]
+    )
+    assert response.status_code == 422
 
 
 def test_image_mime_uses_bytes_and_blocks_changed_file(client, tmp_path):

@@ -11,7 +11,8 @@ test('search display settings persist and control result cards and their message
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
     await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-    await page.getByRole('tab', { name: 'Текст', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
+    await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');
     await page.getByRole('button', { name: 'Найти' }).click();
     await expect(page.locator('.result-card')).toHaveCount(1);
@@ -28,7 +29,8 @@ test('search display settings persist and control result cards and their message
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
     await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-    await page.getByRole('tab', { name: 'Текст', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
+    await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');
     await page.getByRole('button', { name: 'Найти' }).click();
     await expect(page.locator('.result-card')).toHaveCount(2);

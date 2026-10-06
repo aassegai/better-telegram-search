@@ -1,3 +1,3 @@
-"""Telegram archive search. The initial release uses CPU and SQLite FTS5 only."""
+"""Local Telegram archive search with CPU inference."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

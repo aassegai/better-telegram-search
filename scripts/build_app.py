@@ -17,6 +17,7 @@ import sys
 import sysconfig
 import tarfile
 import tempfile
+import tomllib
 import urllib.request
 from pathlib import Path
 
@@ -109,7 +110,8 @@ def main():
         cwd=REPO,
         env=environment,
     )
-    name = f"better-telegram-search-0.1.0-{sys.platform}-{arch}"
+    version = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
+    name = f"better-telegram-search-{version}-{sys.platform}-{arch}"
     if sys.platform == "darwin":
         product = build_root / "dist" / "Better Telegram Search.app"
         archive = output / f"{name}.zip"

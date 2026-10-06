@@ -15,7 +15,8 @@ const status = {
 test('search modes show partial coverage, fallback and exact phrase semantics', async ({ page }) => {
   await page.route('**/api/semantic', route => route.fulfill({ json: status }));
   await page.goto('/');
-  await page.getByRole('tab', { name: 'Текст', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
   await expect(page.getByText('Смысловой индекс: 1 / 3 сегментов')).toBeVisible();
   await page.getByLabel('Режим поиска').selectOption('hybrid');
   await page.getByLabel('Поисковый запрос').fill('велосипед');

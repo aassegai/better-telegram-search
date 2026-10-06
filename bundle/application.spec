@@ -2,11 +2,13 @@ import importlib.metadata
 import importlib.util
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 repo = Path(SPECPATH).parent
+version = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["version"]
 assets = Path(os.environ["BTS_BUNDLE_ASSETS"])
 datas = [
     (str(repo / "frontend" / "dist"), "frontend"),
@@ -55,4 +57,4 @@ coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="BetterTel
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="Better Telegram Search.app",
                  bundle_identifier="local.bettertelegramsearch.app",
-                 info_plist={"CFBundleShortVersionString": "0.1.0", "NSHighResolutionCapable": True})
+                 info_plist={"CFBundleShortVersionString": version, "NSHighResolutionCapable": True})

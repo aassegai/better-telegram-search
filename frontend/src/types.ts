@@ -2,6 +2,7 @@ export type Chat = {
   id: string; name: string; scope: string; messages: number; photos: number;
   date_from: number | null; date_to: number | null;
 };
+export type SearchModality = 'text' | 'images' | 'ocr';
 export type Message = {
   chat_id: string; message_id: number; timestamp: number; author: string;
   text: string; kind: string; action: string | null; reply_to: number | null;

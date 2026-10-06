@@ -28,13 +28,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/check_repository.py
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - id: version
+        name: Read the project version for native builds
+        run: |
+          uv run --no-project --python 3.12 python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+              raise ValueError("Native releases require a numeric project version")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
+              out.write(f"version={version}\n")
+          PY
       - id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          BTS_BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          tag="build-0.1.0-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          tag="build-${BTS_BUILD_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           gh release create "$tag" --draft --target "$GITHUB_SHA" \
-            --title "CPU builds 0.1.0 ($GITHUB_RUN_NUMBER)" \
+            --title "CPU builds $BTS_BUILD_VERSION ($GITHUB_RUN_NUMBER)" \
             --notes "Unpublished native CPU builds. Each archive includes its SHA-256 and offline smoke report. No Telegram exports or E5/CLIP weights are included."
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           BTS_RELEASE_TAG="$tag" BTS_BUILD_RESULT=pending python3 scripts/report_builds.py

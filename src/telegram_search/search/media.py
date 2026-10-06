@@ -198,23 +198,43 @@ class UnifiedSearch:
     def __init__(self, text, media):
         self.text, self.media = text, media
 
-    def search(self, query, filters, exact, limit, mode, tab="text", chunk_size=None):
+    def search(
+        self, query, filters, exact, limit, mode, tab="text", chunk_size=None, *, modalities=None
+    ):
         limit, chunk_size = search_options(self.media.db.settings, limit, chunk_size)
-        if tab not in {"all", "text", "images", "ocr"}:
-            raise UserError("Неизвестная вкладка поиска.")
+        available = ("text", "images", "ocr")
+        if modalities is None:
+            if tab not in {"all", *available}:
+                raise UserError("Неизвестная вкладка поиска.")
+            modalities = available if tab == "all" else (tab,)
+        if (
+            not isinstance(modalities, (list, tuple))
+            or not 1 <= len(modalities) <= 3
+            or any(kind not in available for kind in modalities)
+        ):
+            raise UserError("Выберите от одного до трёх типов поиска: текст, изображения, OCR.")
+        # Stable branch order makes selection order and repeated values irrelevant.
+        selected = tuple(kind for kind in available if kind in modalities)
+        tab = selected[0] if len(selected) == 1 else "all"
         result = {"results": [], "warnings": [], "effective_mode": mode, "has_more": False}
         branches = []
-        if tab in {"all", "text"}:
-            result = self.text.search(
-                query, filters, exact, limit if tab == "text" else 100, mode, chunk_size
-            )
-            for hit in result["results"]:
-                hit["result_type"] = "text"
-            if tab == "text":
-                return result
-            branches.append(result["results"])
+        if "text" in selected:
+            try:
+                result = self.text.search(
+                    query, filters, exact, limit if tab == "text" else 100, mode, chunk_size
+                )
+            except UserError as exc:
+                if tab == "text":
+                    raise
+                result["warnings"].append(str(exc))
+            else:
+                for hit in result["results"]:
+                    hit["result_type"] = "text"
+                if tab == "text":
+                    return {**result, "tab": tab, "modalities": list(selected)}
+                branches.append(result["results"])
         for kind in ("images", "ocr"):
-            if tab not in {"all", kind}:
+            if kind not in selected:
                 continue
             try:
                 hits, warnings = self.media.search(
@@ -246,7 +266,11 @@ class UnifiedSearch:
             combined.values(), key=lambda hit: (-hit["score"], hit["chat_id"], hit["message_id"])
         )
         result.update(
-            results=hits[:limit], has_more=len(hits) > limit or result["has_more"], tab=tab
+            results=hits[:limit],
+            has_more=len(hits) > limit or result["has_more"],
+            tab=tab,
+            modalities=list(selected),
+            warnings=list(dict.fromkeys(result["warnings"])),
         )
         if tab == "all":
             result["effective_mode"] = "mixed"

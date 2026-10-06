@@ -150,6 +150,9 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         exact: bool = False,
         mode: Literal["words", "meaning", "hybrid"] = "words",
         tab: Literal["all", "text", "images", "ocr"] = "text",
+        modality: Annotated[
+            list[Literal["text", "images", "ocr"]] | None, Query(min_length=1, max_length=3)
+        ] = None,
         limit: Annotated[int | None, Query(ge=1, le=100)] = None,
         chunk_size: Annotated[int | None, Query(ge=1, le=100)] = None,
     ):
@@ -167,7 +170,9 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         ):
             raise UserError("Начало периода должно быть раньше конца.")
         limit, chunk_size = search_options(db.settings, limit, chunk_size)
-        result = app.state.search.search(q, filters, exact, limit, mode, tab, chunk_size)
+        result = app.state.search.search(
+            q, filters, exact, limit, mode, tab, chunk_size, modalities=modality
+        )
         return {**result, "limit": limit, "chunk_size": chunk_size}
 
     @app.get("/api/media-index")
