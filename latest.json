@@ -421,5 +421,13 @@
     }
   ],
   "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/37418579002",
-  "failures": {}
+  "failures": {
+    "build (windows-2022, x86_64, win32-x86_64)": [
+      "GitHub log API: the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway\n"
+    ],
+    "build (macos-15-intel, x86_64, darwin-x86_64)": [
+      "GitHub log API: the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway\n"
+    ]
+  },
+  "diagnostics_complete": false
 }
