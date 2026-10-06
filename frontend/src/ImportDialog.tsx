@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from './api';
@@ -24,7 +25,7 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
       try {
         const next = await api<Preview>(`/api/import-previews/${preview.id}`);
         if (alive && current()) setPreview(next);
-      } catch (error) { if (alive && current()) setError(error instanceof Error ? error.message : 'Ошибка проверки.'); }
+      } catch (error) { if (alive && current()) setError(error instanceof Error ? error.message : t('Ошибка проверки.')); }
     };
     const timer = window.setInterval(() => void poll(), 750);
     return () => { alive = false; clearInterval(timer); };
@@ -67,33 +68,33 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
   }
 
   return <section className="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
-    <button className="close" aria-label="Закрыть" disabled={busy} onClick={onClose}>×</button>
-    <div className="eyebrow">ПОПОЛНИТЬ АРХИВ</div><h2 id="import-title">Импорт Telegram Desktop</h2>
-    <p>Сначала проверим экспорт и покажем изменения. Сообщения попадут в базу после применения отчёта. Фотографии останутся в папке источника.</p>
-    {error && <div className="error" role="alert">{error}</div>}
+    <button className="close" aria-label={t("Закрыть")} disabled={busy} onClick={onClose}>×</button>
+    <div className="eyebrow">{t("ПОПОЛНИТЬ АРХИВ")}</div><h2 id="import-title">{t("Импорт Telegram Desktop")}</h2>
+    <p>{t("Сначала проверим экспорт и покажем изменения. Сообщения попадут в базу после применения отчёта. Фотографии останутся в папке источника.")}</p>
+    {error && <div className="error" role="alert">{t(error)}</div>}
     {!preview ? <form onSubmit={inspect} className="import-form">
-      <label>Путь к JSON<input required value={jsonPath} placeholder="/папка/экспорта/result.json" onChange={event => setJsonPath(event.target.value)} /></label>
-      <label>Папка экспорта (необязательно)<input value={root} placeholder="По умолчанию — папка рядом с JSON" onChange={event => setRoot(event.target.value)} /></label>
-      <label>Область аккаунта<input required value={scope} onChange={event => setScope(event.target.value)} /><small>Для разных аккаунтов укажите разные значения.</small></label>
-      <label>Диалог для обновления<select value={target} onChange={event => {
+      <label>{t("Путь к JSON")}<input required value={jsonPath} placeholder={t("/папка/экспорта/result.json")} onChange={event => setJsonPath(event.target.value)} /></label>
+      <label>{t("Папка экспорта (необязательно)")}<input value={root} placeholder={t("По умолчанию — папка рядом с JSON")} onChange={event => setRoot(event.target.value)} /></label>
+      <label>{t("Область аккаунта")}<input required value={scope} onChange={event => setScope(event.target.value)} /><small>{t("Для разных аккаунтов укажите разные значения.")}</small></label>
+      <label>{t("Диалог для обновления")}<select value={target} onChange={event => {
         setTarget(event.target.value); const chat = chats.find(chat => chat.id === event.target.value); if (chat) setScope(chat.scope);
-      }}><option value="">Определить по ID экспорта</option>{chats.map(chat => <option key={chat.id} value={chat.id}>{chat.name}</option>)}</select></label>
-      <label className="check-label"><input type="checkbox" checked={createNew} onChange={event => setCreateNew(event.target.checked)} />Создать новый диалог, если в JSON нет ID</label>
-      <label className="check-label"><input type="checkbox" checked={preferImported} onChange={event => setPreferImported(event.target.checked)} />Считать экспорт актуальным при неоднозначных редакциях</label>
-      <button className="primary" disabled={busy}>{busy ? 'Проверяем источник…' : 'Проверить экспорт'}</button>
+      }}><option value="">{t("Определить по ID экспорта")}</option>{chats.map(chat => <option key={chat.id} value={chat.id}>{chat.name}</option>)}</select></label>
+      <label className="check-label"><input type="checkbox" checked={createNew} onChange={event => setCreateNew(event.target.checked)} />{t("Создать новый диалог, если в JSON нет ID")}</label>
+      <label className="check-label"><input type="checkbox" checked={preferImported} onChange={event => setPreferImported(event.target.checked)} />{t("Считать экспорт актуальным при неоднозначных редакциях")}</label>
+      <button className="primary" disabled={busy}>{busy ? t('Проверяем источник…') : t('Проверить экспорт')}</button>
     </form> : <div className="preview-report">
-      <p><strong>{preview.chat_name}</strong> · аккаунт: {preview.scope}</p>
-      <p className="source-summary">Источник: {preview.root_relative_path}/{preview.json_relative_path}</p>
-      <h3>{preview.state === 'ready' ? 'Отчёт готов' : preview.state === 'running' ? 'Проверяем сообщения…' : preview.state === 'queued' ? 'Проверка в очереди' : preview.state === 'paused' ? 'Проверка приостановлена' : 'Проверка остановлена'}</h3>
-      <dl className="diagnostics"><dt>Обработано</dt><dd>{preview.processed}</dd><dt>Новые</dt><dd>{preview.added}</dd><dt>Без изменений</dt><dd>{preview.unchanged}</dd><dt>Обновлённые редакции</dt><dd>{preview.updated}</dd><dt>Конфликты</dt><dd>{preview.conflicts}</dd><dt>Недоступные вложения</dt><dd>{preview.missing_media + preview.invalid_media}</dd></dl>
-      {preview.error && <div className="error" role="alert">{preview.error}</div>}
-      {preview.warnings.map(warning => <p className="warning-note" key={warning}>{warning}</p>)}
-      {preview.conflicts > 0 && <p>Конфликтующие версии пока сохранятся отдельно. После импорта вы сможете сравнить их и выбрать нужную.</p>}
+      <p><strong>{preview.chat_name}</strong>{t(" · аккаунт: ")}{preview.scope}</p>
+      <p className="source-summary">{t("Источник: ")}{preview.root_relative_path}/{preview.json_relative_path}</p>
+      <h3>{preview.state === 'ready' ? t('Отчёт готов') : preview.state === 'running' ? t('Проверяем сообщения…') : preview.state === 'queued' ? t('Проверка в очереди') : preview.state === 'paused' ? t('Проверка приостановлена') : t('Проверка остановлена')}</h3>
+      <dl className="diagnostics"><dt>{t("Обработано")}</dt><dd>{preview.processed}</dd><dt>{t("Новые")}</dt><dd>{preview.added}</dd><dt>{t("Без изменений")}</dt><dd>{preview.unchanged}</dd><dt>{t("Обновлённые редакции")}</dt><dd>{preview.updated}</dd><dt>{t("Конфликты")}</dt><dd>{preview.conflicts}</dd><dt>{t("Недоступные вложения")}</dt><dd>{preview.missing_media + preview.invalid_media}</dd></dl>
+      {preview.error && <div className="error" role="alert">{t(preview.error)}</div>}
+      {preview.warnings.map(warning => <p className="warning-note" key={warning}>{t(warning)}</p>)}
+      {preview.conflicts > 0 && <p>{t("Конфликтующие версии пока сохранятся отдельно. После импорта вы сможете сравнить их и выбрать нужную.")}</p>}
       <div className="dialog-actions">
-        {preview.state === 'ready' && <button className="primary" disabled={busy} onClick={() => void apply()}>{busy ? 'Применяем…' : 'Применить изменения'}</button>}
-        {['running', 'queued'].includes(preview.state) && <button disabled={busy} onClick={() => void control('pause')}>Пауза</button>}
-        {['paused', 'interrupted'].includes(preview.state) && <button disabled={busy} onClick={() => void control('resume')}>Продолжить проверку</button>}
-        <button disabled={busy} onClick={() => void discard()}>Проверить другой экспорт</button>
+        {preview.state === 'ready' && <button className="primary" disabled={busy} onClick={() => void apply()}>{busy ? t('Применяем…') : t('Применить изменения')}</button>}
+        {['running', 'queued'].includes(preview.state) && <button disabled={busy} onClick={() => void control('pause')}>{t("Пауза")}</button>}
+        {['paused', 'interrupted'].includes(preview.state) && <button disabled={busy} onClick={() => void control('resume')}>{t("Продолжить проверку")}</button>}
+        <button disabled={busy} onClick={() => void discard()}>{t("Проверить другой экспорт")}</button>
       </div>
     </div>}
   </section>;

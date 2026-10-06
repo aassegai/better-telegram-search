@@ -40,6 +40,11 @@ input[type="checkbox"] { accent-color: #2a7153; width: 15px; height: 15px; flex-
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { display: flex; justify-content: space-between; align-items: center; height: 77px; border-bottom: 1px solid #e6e9e0; padding: 0 46px; font-size: 12px; color: #819082; }
 .pill { border: 1px solid #d9e2d5; border-radius: 20px; font-size: 10px; padding: 4px 11px; color: #54725a; display: flex; align-items: center; gap: 8px; }
+.topbar { gap: 12px; }
+.topbar-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.language-switch { display: flex; align-items: center; gap: 6px; font-size: 10px; cursor: pointer; }
+.language-switch .active { color: #2d6146; font-weight: 600; }
+.language-switch input { width: 48px; height: 24px; margin: 0; accent-color: #2a7153; cursor: pointer; }
 .content { width: min(930px, 100%); margin: 0 auto; padding: 55px 46px 45px; }
 .eyebrow { font-size: 10px; letter-spacing: 2px; color: #6e8a72; margin-bottom: 12px; font-weight: 600; }
 h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(29px, 3vw, 42px); letter-spacing: -1.4px; margin: 0; color: #203c2d; }

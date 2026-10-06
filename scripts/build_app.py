@@ -119,6 +119,7 @@ def main():
     else:
         product = build_root / "dist" / "BetterTelegramSearch"
         shutil.copyfile(REPO / "docs" / "portable-builds.md", product / "README.md")
+        shutil.copyfile(REPO / "docs" / "portable-builds.en.md", product / "README.en.md")
         archive = output / (f"{name}.zip" if sys.platform == "win32" else f"{name}.tar.gz")
         if sys.platform == "win32":
             shutil.make_archive(str(archive.with_suffix("")), "zip", product.parent, product.name)

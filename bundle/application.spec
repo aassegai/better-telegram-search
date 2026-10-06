@@ -15,6 +15,8 @@ datas = [
     (str(assets / "tessdata"), "tessdata"),
     (str(repo / "bundle" / "ocr-smoke.png"), "smoke"),
     (str(assets / "licenses"), "licenses"),
+    (str(repo / "docs" / "portable-builds.md"), "docs"),
+    (str(repo / "docs" / "portable-builds.en.md"), "docs"),
 ]
 datas += collect_data_files("telegram_search", includes=["**/*.json", "**/*.sql"])
 binaries = []

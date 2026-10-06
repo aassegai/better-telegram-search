@@ -1,9 +1,10 @@
+import { t, uiLocale } from './i18n';
 import { useEffect, useState } from 'react';
 import { api } from './api';
 import { useDialogOperation } from './useDialogOperation';
 import type { Conflict, Job } from './types';
 
-const date = (timestamp: number | null) => timestamp === null ? 'не указана' : new Date(timestamp * 1000).toLocaleString('ru-RU');
+const date = (timestamp: number | null) => timestamp === null ? t('не указана') : new Date(timestamp * 1000).toLocaleString(uiLocale());
 const labels: Record<string, string> = {
   type: 'Тип сообщения', date: 'Исходная дата', date_unixtime: 'Исходная дата (Unix)',
   from_id: 'ID автора', actor_id: 'ID участника', text: 'Текст с форматированием',
@@ -14,12 +15,12 @@ const labels: Record<string, string> = {
   mime_type: 'Формат файла', sticker_emoji: 'Эмодзи стикера', duration_seconds: 'Длительность',
   media: 'Вложения: тип и SHA-256 содержимого (или путь отсутствующего файла)',
 };
-const value = (item: unknown) => item === undefined ? 'Не указано' : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
+const value = (item: unknown) => item === undefined ? t('Не указано') : typeof item === 'string' ? item : JSON.stringify(item, null, 2);
 
 function Details({ metadata, other }: { metadata: Record<string, unknown>; other: Record<string, unknown> }) {
   const changed = [...new Set([...Object.keys(metadata), ...Object.keys(other)])]
     .filter(key => JSON.stringify(metadata[key]) !== JSON.stringify(other[key]));
-  return <dl className="metadata-diff">{changed.map(key => <div key={key}><dt>{labels[key] || key}</dt><dd>{value(metadata[key])}</dd></div>)}</dl>;
+  return <dl className="metadata-diff">{changed.map(key => <div key={key}><dt>{t(labels[key] || key)}</dt><dd>{value(metadata[key])}</dd></div>)}</dl>;
 }
 
 export default function ConflictDialog({ job, onClose, onChanged }: {
@@ -38,7 +39,7 @@ export default function ConflictDialog({ job, onClose, onChanged }: {
     let alive = true;
     api<{ results: Conflict[]; pending: number; has_more: boolean }>(`/api/imports/${job.id}/conflicts`).then(result => {
       if (alive) { setItems(result.results); setPending(result.pending); setMore(result.has_more); }
-    }).catch(error => { if (alive) setError(error instanceof Error ? error.message : 'Ошибка списка.'); });
+    }).catch(error => { if (alive) setError(error instanceof Error ? error.message : t('Ошибка списка.')); });
     return () => { alive = false; };
   }, [job.id]);
 
@@ -50,17 +51,17 @@ export default function ConflictDialog({ job, onClose, onChanged }: {
   }
 
   return <section className="modal conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-    <button className="close" aria-label="Закрыть конфликты" onClick={onClose}>×</button>
-    <div className="eyebrow">ВЫБОР РЕДАКЦИЙ</div><h2 id="conflict-title">Конфликты импорта</h2>
-    <p>Неразрешённых: {pending}. В базе сохраняется текущая версия, пока вы не выберете другую.</p>
-    {error && <div className="error" role="alert">{error}<button disabled={busy} onClick={() => void run(async () => { await load(); })}>Обновить список</button></div>}
+    <button className="close" aria-label={t("Закрыть конфликты")} onClick={onClose}>×</button>
+    <div className="eyebrow">{t("ВЫБОР РЕДАКЦИЙ")}</div><h2 id="conflict-title">{t("Конфликты импорта")}</h2>
+    <p>{t("Неразрешённых: ")}{pending}{t(". В базе сохраняется текущая версия, пока вы не выберете другую.")}</p>
+    {error && <div className="error" role="alert">{t(error)}<button disabled={busy} onClick={() => void run(async () => { await load(); })}>{t("Обновить список")}</button></div>}
     {items.map(item => <article className="conflict-item" key={item.message_id}>
-      <h3>Сообщение #{item.message_id} · {item.reason === 'older_revision' ? 'В экспорте более старая редакция' : 'Нет надёжной даты редакции'}</h3>
-      <div className="conflict-versions"><div><strong>Текущая версия</strong><small>{item.current?.author} · {date(item.current?.timestamp ?? null)}</small><small>Редакция: {date(item.current?.edited_timestamp ?? null)}</small><p>{item.current?.text || 'Без текста'}</p><Details metadata={item.current_metadata} other={item.incoming.metadata} /></div>
-        <div><strong>Версия из экспорта</strong><small>{item.incoming.author} · {date(item.incoming.timestamp)}</small><small>Редакция: {date(item.incoming.edited_timestamp)}</small><p>{item.incoming.text || 'Без текста'}</p><Details metadata={item.incoming.metadata} other={item.current_metadata} /></div></div>
-      <div className="dialog-actions"><button disabled={busy || !item.current_version} onClick={() => void resolve(item, 'keep_current')}>Оставить текущую</button><button className="primary" disabled={busy || !item.current_version} onClick={() => void resolve(item, 'use_imported')}>Использовать версию из экспорта</button></div>
+      <h3>{t("Сообщение #")}{item.message_id} · {item.reason === 'older_revision' ? t('В экспорте более старая редакция') : t('Нет надёжной даты редакции')}</h3>
+      <div className="conflict-versions"><div><strong>{t("Текущая версия")}</strong><small>{item.current?.author} · {date(item.current?.timestamp ?? null)}</small><small>{t("Редакция: ")}{date(item.current?.edited_timestamp ?? null)}</small><p>{item.current?.text || t('Без текста')}</p><Details metadata={item.current_metadata} other={item.incoming.metadata} /></div>
+        <div><strong>{t("Версия из экспорта")}</strong><small>{item.incoming.author} · {date(item.incoming.timestamp)}</small><small>{t("Редакция: ")}{date(item.incoming.edited_timestamp)}</small><p>{item.incoming.text || t('Без текста')}</p><Details metadata={item.incoming.metadata} other={item.current_metadata} /></div></div>
+      <div className="dialog-actions"><button disabled={busy || !item.current_version} onClick={() => void resolve(item, 'keep_current')}>{t("Оставить текущую")}</button><button className="primary" disabled={busy || !item.current_version} onClick={() => void resolve(item, 'use_imported')}>{t("Использовать версию из экспорта")}</button></div>
     </article>)}
-    {!items.length && !pending && <p>Все конфликты разрешены.</p>}
-    {more && <p>Показаны первые 30 конфликтов. После выбора версий появятся следующие.</p>}
+    {!items.length && !pending && <p>{t("Все конфликты разрешены.")}</p>}
+    {more && <p>{t("Показаны первые 30 конфликтов. После выбора версий появятся следующие.")}</p>}
   </section>;
 }

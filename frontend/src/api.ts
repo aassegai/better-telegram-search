@@ -1,3 +1,4 @@
+import { t } from './i18n';
 let token = '';
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
@@ -6,7 +7,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(typeof error.detail === 'string' ? error.detail : 'Не удалось выполнить запрос.');
+    throw new Error(typeof error.detail === 'string' ? error.detail : t('Не удалось выполнить запрос.'));
   }
   return response.json() as Promise<T>;
 }

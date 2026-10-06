@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { useEffect, useRef, useState } from 'react';
 
 export function useDialogOperation() {
@@ -20,7 +21,7 @@ export function useDialogOperation() {
     inFlight.current = true; revision.current++; setBusy(true); setError('');
     const current = guard();
     try { await action(current); }
-    catch (error) { if (current()) setError(error instanceof Error ? error.message : 'Ошибка операции.'); }
+    catch (error) { if (current()) setError(error instanceof Error ? error.message : t('Ошибка операции.')); }
     finally { inFlight.current = false; if (current()) setBusy(false); }
   }
   return { busy, error, setError, guard, run };

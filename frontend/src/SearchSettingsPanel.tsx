@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { useEffect, useState } from 'react';
 import { api } from './api';
 import { useDialogOperation } from './useDialogOperation';
@@ -11,13 +12,13 @@ export default function SearchSettingsPanel() {
   useEffect(() => {
     let alive = true;
     api<SearchSettings>('/api/settings').then(value => { if (alive) setSettings(value); })
-      .catch(error => { if (alive) op.setError(error instanceof Error ? error.message : 'Не удалось прочитать настройки поиска.'); });
+      .catch(error => { if (alive) op.setError(error instanceof Error ? error.message : t('Не удалось прочитать настройки поиска.')); });
     return () => { alive = false; };
   }, []);
   const valid = settings && [settings.search_result_limit, settings.display_chunk_size].every(value => Number.isInteger(value) && value >= 1 && value <= 100);
   return <section className="search-settings-panel">
-    <h3>Выдача поиска</h3>
-    <p>Количество результатов задаёт максимум карточек. Размер фрагмента — максимум сообщений в одной карточке, включая совпадение и соседние сообщения. Диапазон: 1–100.</p>
+    <h3>{t("Выдача поиска")}</h3>
+    <p>{t("Количество результатов задаёт максимум карточек. Размер фрагмента — максимум сообщений в одной карточке, включая совпадение и соседние сообщения. Диапазон: 1–100.")}</p>
     <form onSubmit={event => {
       event.preventDefault();
       if (!valid || !settings) return;
@@ -27,11 +28,11 @@ export default function SearchSettingsPanel() {
       });
     }}>
       {settings && <div className="resource-fields">
-        {([['search_result_limit', 'Количество результатов'], ['display_chunk_size', 'Сообщений в одном фрагменте']] as const).map(([key, label]) => <label key={key}>{label}<input type="number" aria-label={label} min="1" max="100" step="1" value={settings[key]} disabled={op.busy} onChange={event => { setSaved(false); setSettings({ ...settings, [key]: Number(event.target.value) }); }} /></label>)}
+        {([['search_result_limit', t('Количество результатов')], ['display_chunk_size', t('Сообщений в одном фрагменте')]] as const).map(([key, label]) => <label key={key}>{label}<input type="number" aria-label={label} min="1" max="100" step="1" value={settings[key]} disabled={op.busy} onChange={event => { setSaved(false); setSettings({ ...settings, [key]: Number(event.target.value) }); }} /></label>)}
       </div>}
-      <button type="submit" disabled={!valid || op.busy}>Сохранить настройки поиска</button>
+      <button type="submit" disabled={!valid || op.busy}>{t("Сохранить настройки поиска")}</button>
     </form>
-    {saved && <p role="status">Настройки поиска сохранены. Они применятся к следующему запросу; переиндексация не требуется.</p>}
-    {op.error && <p className="error" role="alert">{op.error}</p>}
+    {saved && <p role="status">{t("Настройки поиска сохранены. Они применятся к следующему запросу; переиндексация не требуется.")}</p>}
+    {op.error && <p className="error" role="alert">{t(op.error)}</p>}
   </section>;
 }
