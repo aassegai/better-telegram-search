@@ -121,6 +121,7 @@ class WorkspaceService:
         return asdict(self.db.settings)
 
     def update_settings(self, values):
+        display_keys = {"search_result_limit", "display_chunk_size"}
         allowed = {
             "cpu_threads",
             "embedding_batch",
@@ -134,10 +135,16 @@ class WorkspaceService:
             "ocr_timeout_seconds",
             "ocr_max_edge",
             "memory_limit_mib",
-        }
+        } | display_keys
         if set(values) - allowed:
             raise UserError("Неизвестные или недоступные настройки.")
         with self.lock:
+            candidate = replace(self.db.settings, **values)
+            candidate.validate()
+            if set(values) <= display_keys:
+                candidate.save(self.db.workspace)
+                self.db.settings = candidate
+                return asdict(candidate)
             if (self.semantic.preparation and self.semantic.preparation.is_alive()) or (
                 self.media.preparation and self.media.preparation.is_alive()
             ):
@@ -149,8 +156,6 @@ class WorkspaceService:
                     "SELECT 1 FROM index_work WHERE state='running' LIMIT 1"
                 ).fetchone():
                     raise UserError("Приостановите текстовую индексацию перед изменением настроек.")
-            candidate = replace(self.db.settings, **values)
-            candidate.validate()
             new_ocr = self.media._new_ocr(candidate) if self.media.ocr else None
             if new_ocr:
                 new_ocr.verify()

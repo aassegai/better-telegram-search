@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
 from telegram_search.storage.database import Database
@@ -140,28 +141,23 @@ class ContextService:
                 for row in [*reversed(previous), anchor, *following]
             ]
 
-    def get_chunk_context(self, conn, chunk_id, filters):
-        """Show every matched original message plus one neighbour on each side."""
-        matched = conn.execute(
-            "SELECT DISTINCT m.* FROM chunk_parts p JOIN messages m "
-            "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
-            "WHERE p.chunk_id=? ORDER BY m.timestamp,m.message_id",
-            (chunk_id,),
-        ).fetchall()
-        if not matched:
-            return []
-        first, last = matched[0], matched[-1]
-        before = conn.execute(
+    def get_result_context(self, conn, anchor, size, filters):
+        """Keep the anchor and fill a chronological window, including at chat boundaries."""
+        previous = conn.execute(
             "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
-            "ORDER BY timestamp DESC,message_id DESC LIMIT 1",
-            (first["chat_id"], first["timestamp"], first["message_id"]),
+            "ORDER BY timestamp DESC,message_id DESC LIMIT ?",
+            (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
-        after = conn.execute(
+        following = conn.execute(
             "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
-            "ORDER BY timestamp,message_id LIMIT 1",
-            (last["chat_id"], last["timestamp"], last["message_id"]),
+            "ORDER BY timestamp,message_id LIMIT ?",
+            (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
-        return [self.serialize_message(conn, row, filters) for row in [*before, *matched, *after]]
+        before = min((size - 1) // 2, len(previous))
+        after = min(size - 1 - before, len(following))
+        before = min(size - 1 - after, len(previous))
+        rows = [*reversed(previous[:before]), anchor, *following[:after]]
+        return [self.serialize_message(conn, row, filters) for row in rows]
 
 
 class SearchService:
@@ -170,10 +166,14 @@ class SearchService:
         self.context = ContextService(db)
 
     def search(
-        self, query: str, filters: Filters | None = None, exact: bool = False, limit: int = 20
+        self,
+        query: str,
+        filters: Filters | None = None,
+        exact: bool = False,
+        limit: int | None = None,
+        chunk_size: int | None = None,
     ) -> dict:
-        if not 1 <= limit <= 100:
-            raise UserError("Лимит поиска должен быть от 1 до 100.")
+        limit, chunk_size = search_options(self.db.settings, limit, chunk_size)
         filters = filters or Filters()
         where, params = filters.sql()
         match = fts_query(query, exact)
@@ -200,9 +200,7 @@ class SearchService:
                 if len(results) == limit:
                     has_more = True
                     break
-                context = self.context.get_context(
-                    row["chat_id"], row["message_id"], before=2, after=3, filters=filters
-                )
+                context = self.context.get_result_context(conn, row, chunk_size, filters)
                 seen.update((row["chat_id"], item["message_id"]) for item in context)
                 results.append(
                     {

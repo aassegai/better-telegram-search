@@ -1,6 +1,7 @@
 import heapq
 
 from telegram_search.search.lexical import ContextService, fts_query
+from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
 
@@ -34,7 +35,10 @@ class MediaSearch:
                         heapq.heapreplace(best, candidate)
         return [key for _, key in sorted(best, reverse=True)]
 
-    def search(self, query, filters, *, kind, exact=False, mode="words", limit=100):
+    def search(
+        self, query, filters, *, kind, exact=False, mode="words", limit=100, chunk_size=None
+    ):
+        limit, chunk_size = search_options(self.db.settings, limit, chunk_size)
         engine, clip, encoder = self.media.ocr, self.media.clip, self.semantic.encoder
         warnings, lexical, dense = [], [], []
         if kind == "images":
@@ -170,9 +174,9 @@ class MediaSearch:
                                     "score": 0,
                                     "ocr_text": evidence["text"],
                                     "ocr_confidence": evidence["confidence"],
-                                    "messages": [
-                                        self.context.serialize_message(conn, ref, filters)
-                                    ],
+                                    "messages": self.context.get_result_context(
+                                        conn, ref, chunk_size, filters
+                                    ),
                                 }
                             hit = candidates[identity]
                             # Multiple OCR parts are one branch vote for the same source message.
@@ -194,13 +198,16 @@ class UnifiedSearch:
     def __init__(self, text, media):
         self.text, self.media = text, media
 
-    def search(self, query, filters, exact, limit, mode, tab="text"):
+    def search(self, query, filters, exact, limit, mode, tab="text", chunk_size=None):
+        limit, chunk_size = search_options(self.media.db.settings, limit, chunk_size)
         if tab not in {"all", "text", "images", "ocr"}:
             raise UserError("Неизвестная вкладка поиска.")
         result = {"results": [], "warnings": [], "effective_mode": mode, "has_more": False}
         branches = []
         if tab in {"all", "text"}:
-            result = self.text.search(query, filters, exact, limit if tab == "text" else 100, mode)
+            result = self.text.search(
+                query, filters, exact, limit if tab == "text" else 100, mode, chunk_size
+            )
             for hit in result["results"]:
                 hit["result_type"] = "text"
             if tab == "text":
@@ -211,7 +218,7 @@ class UnifiedSearch:
                 continue
             try:
                 hits, warnings = self.media.search(
-                    query, filters, kind=kind, exact=exact, mode=mode
+                    query, filters, kind=kind, exact=exact, mode=mode, chunk_size=chunk_size
                 )
             except UserError as exc:
                 hits, warnings = [], [str(exc)]

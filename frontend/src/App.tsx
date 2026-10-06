@@ -5,6 +5,7 @@ import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
+import SearchSettingsPanel from './SearchSettingsPanel';
 import type { Chat, Hit, Job, MediaStatus, Message, Preview, SemanticStatus } from './types';
 
 const dates = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
@@ -65,6 +66,7 @@ export default function App() {
   const [deleting, setDeleting] = useState(false);
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [submittedLimit, setSubmittedLimit] = useState(20);
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
@@ -130,8 +132,9 @@ export default function App() {
     if (from) params.set('date_from', from);
     if (to) params.set('date_to', to);
     try {
-      const result = await api<{ results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[] }>(`/api/search?${params}`);
+      const result = await api<{ results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[]; limit: number }>(`/api/search?${params}`);
       setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
+      setSubmittedLimit(result.limit ?? 20);
       setEffectiveMode(result.effective_mode); setWarnings(result.warnings);
       setSearchFilters(params.toString());
       setSubmittedTab(tab);
@@ -142,8 +145,11 @@ export default function App() {
   async function openContext(hit: Hit, anchor = hit.message_id) {
     const version = ++contextVersion.current;
     setLoadingContext(true);
+    const position = hit.messages.findIndex(message => message.message_id === hit.message_id);
+    const before = Math.min(100, Math.max(15, position + 5));
+    const after = Math.min(100, Math.max(15, hit.messages.length - position - 1 + 5));
     try {
-      const result = await api<{ messages: Message[] }>(`/api/chats/${hit.chat_id}/context/${anchor}?before=15&after=15&${searchFilters}`);
+      const result = await api<{ messages: Message[] }>(`/api/chats/${hit.chat_id}/context/${anchor}?before=${before}&after=${after}&${searchFilters}`);
       if (version === contextVersion.current) setContext({ hit, messages: result.messages });
     } catch (error) { if (version === contextVersion.current) reportError(error); }
     finally { if (version === contextVersion.current) setLoadingContext(false); }
@@ -248,10 +254,11 @@ export default function App() {
             <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? 'Опорное сообщение фрагмента' : 'Совпадение в'} #{hit.message_id}</small></div>
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => reasons[reason]).join(' · ')}</div>}
             {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} />)}
+            {hit.matched_parts?.some(part => !hit.messages.some(message => message.message_id === part.message_id)) && <p className="baseline-note">Показана часть найденного фрагмента. Другие сообщения доступны через «Открыть контекст».</p>}
             {hit.ocr_text && <details className="ocr-evidence"><summary>Распознанный текст{hit.ocr_confidence != null ? ` · уверенность OCR ${Math.round(hit.ocr_confidence)} / 100` : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>Распознавание может содержать ошибки. Откройте фотографию для проверки.</p></details>}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>Открыть контекст <span>↗</span></button>
           </article>)}</div>
-          {hasMore && <p className="more-note">Показаны первые 20 фрагментов. Уточните запрос или фильтры.</p>}
+          {hasMore && <p className="more-note">Показано фрагментов: {hits.length} из лимита {submittedLimit}. Увеличьте количество результатов в настройках или уточните запрос.</p>}
         </section>}
       </div><footer className="main-footer">Сообщения хранятся и обрабатываются на этом компьютере.</footer>
     </main>
@@ -263,6 +270,7 @@ export default function App() {
       <div className="eyebrow">ЭТОТ КОМПЬЮТЕР</div><h2 id="modal-title">Настройки и диагностика</h2><p>Приложение использует только CPU.</p>
       {diagnostics ? <dl className="diagnostics"><dt>Устройство</dt><dd>CPU</dd><dt>База</dt><dd>{diagnostics.database_check === 'ok' ? 'Исправна' : 'Требует проверки'}</dd><dt>Сообщений</dt><dd>{String(diagnostics.messages)}</dd><dt>Сегменты в очереди индекса</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>Доступно памяти</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd><dt>Свободно на диске</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd></dl> : <p>Проверяем…</p>}
       <p className="baseline-note">База хранится локально без шифрования.</p>
+      <SearchSettingsPanel />
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
     </section></div>}

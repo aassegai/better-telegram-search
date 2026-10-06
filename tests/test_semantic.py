@@ -228,6 +228,22 @@ def test_chunk_card_includes_match_in_eighth_message(db, importer, tmp_path):
     assert len(hit["messages"]) <= 10
 
 
+def test_small_chunk_display_keeps_query_evidence_and_filter_witness(db, importer, tmp_path):
+    _, service, worker, work = setup_index(
+        db, importer, tmp_path, ["обычная реплика"] * 7 + ["уникальный ремонт"]
+    )
+    assert worker.run(work)["state"] == "done"
+    search = HybridSearch(db, service, importer.lifecycle_lock)
+    for mode in ("hybrid", "meaning"):
+        hit = search.search("ремонт", mode=mode, chunk_size=1)["results"][0]
+        assert hit["message_id"] == 8 and [row["message_id"] for row in hit["messages"]] == [8]
+        assert [part["message_id"] for part in hit["matched_parts"]] == list(range(1, 9))
+        filtered = search.search("ремонт", Filters(author_ids=["user1"]), mode=mode, chunk_size=1)[
+            "results"
+        ][0]
+        assert len(filtered["messages"]) == 1 and filtered["messages"][0]["matches_filters"]
+
+
 def test_model_activation_preserves_user_pause(db, importer, tmp_path):
     _, service, _, _ = setup_index(db, importer, tmp_path)
     service.control("pause")

@@ -1,6 +1,7 @@
 import heapq
 
 from telegram_search.search.lexical import ContextService, Filters, SearchService, fts_query
+from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
 
 
@@ -38,13 +39,14 @@ class HybridSearch:
             "Выберите «По словам», чтобы искать по всему архиву."
         ]
 
-    def search(self, query, filters=None, exact=False, limit=20, mode="words"):
-        if not 1 <= limit <= 100 or mode not in {"words", "meaning", "hybrid"}:
+    def search(self, query, filters=None, exact=False, limit=None, mode="words", chunk_size=None):
+        limit, chunk_size = search_options(self.db.settings, limit, chunk_size)
+        if mode not in {"words", "meaning", "hybrid"}:
             raise UserError("Недопустимые параметры поиска.")
         filters = filters or Filters()
         if mode == "words" or exact:
             with self.lock:
-                result = self.lexical.search(query, filters, exact, limit)
+                result = self.lexical.search(query, filters, exact, limit, chunk_size)
             return {**result, "effective_mode": "words", "warnings": []}
         if not query.strip():
             return {"results": [], "backend": "chunks", "has_more": False, "warnings": []}
@@ -52,7 +54,7 @@ class HybridSearch:
         warnings = self.coverage_warnings(status)
         if not status["dense_available"] or not status["ready_segments"]:
             with self.lock:
-                result = self.lexical.search(query, filters, exact, limit)
+                result = self.lexical.search(query, filters, exact, limit, chunk_size)
             warnings = ["Смысловой поиск ещё не готов. Показаны результаты по словам."]
             return {**result, "effective_mode": "words", "warnings": warnings}
         # Interactive inference happens outside the writer lock. Revalidate the space
@@ -64,7 +66,7 @@ class HybridSearch:
                 status = self.semantic.status()
                 if status["dense_available"]:
                     raise
-                result = self.lexical.search(query, filters, exact, limit)
+                result = self.lexical.search(query, filters, exact, limit, chunk_size)
                 return {
                     **result,
                     "effective_mode": "words",
@@ -76,7 +78,7 @@ class HybridSearch:
             status = self.semantic.status()
             warnings = self.coverage_warnings(status)
             if not status["dense_available"] or not status["ready_segments"]:
-                result = self.lexical.search(query, filters, exact, limit)
+                result = self.lexical.search(query, filters, exact, limit, chunk_size)
                 warnings = ["Смысловой поиск ещё не готов. Показаны результаты по словам."]
                 return {**result, "effective_mode": "words", "warnings": warnings}
             with self.db.connect() as conn:
@@ -133,20 +135,31 @@ class HybridSearch:
                 results, seen = [], set()
                 more = False
                 witness, witness_params = filters.sql()
+                # Prefer a source message containing query terms when a small
+                # display window cannot show the complete indexed chunk.
+                anchor_order = ""
+                anchor_params = []
+                if match:
+                    anchor_order = (
+                        "CASE WHEN EXISTS (SELECT 1 FROM message_fts "
+                        "WHERE rowid=m.rowid AND message_fts MATCH ?) THEN 0 ELSE 1 END,"
+                    )
+                    anchor_params = [match.replace(" AND ", " OR ")]
                 for chunk_id in sorted(scores, key=lambda key: (-scores[key], key)):
                     anchor = conn.execute(
                         "SELECT m.*,ch.name AS chat_name FROM chunk_parts p JOIN messages m "
                         "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
                         "JOIN chats ch ON ch.id=m.chat_id "
-                        f"WHERE p.chunk_id=? AND {witness} ORDER BY p.ordinal LIMIT 1",
-                        [chunk_id, *witness_params],
+                        f"WHERE p.chunk_id=? AND {witness} "
+                        f"ORDER BY {anchor_order}p.ordinal LIMIT 1",
+                        [chunk_id, *witness_params, *anchor_params],
                     ).fetchone()
                     if not anchor or (anchor["chat_id"], anchor["message_id"]) in seen:
                         continue
                     if len(results) == limit:
                         more = True
                         break
-                    context = self.context.get_chunk_context(conn, chunk_id, filters)
+                    context = self.context.get_result_context(conn, anchor, chunk_size, filters)
                     seen.update((anchor["chat_id"], item["message_id"]) for item in context)
                     parts = [
                         dict(row)

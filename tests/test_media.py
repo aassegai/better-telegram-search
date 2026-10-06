@@ -126,6 +126,54 @@ def test_settings_reject_invalid_values_and_write_atomic_config(db, importer):
     assert not list(db.workspace.glob(".config-*.tmp"))
 
 
+def test_display_settings_do_not_interrupt_active_models_and_old_configs_load(db, importer):
+    import json
+
+    from telegram_search.config.settings import Settings
+
+    semantic, media = services(db, importer)
+    workspace = WorkspaceService(db, importer, semantic, media)
+    semantic.preparation = SimpleNamespace(is_alive=lambda: True)
+    media.running = True
+    fake_ocr(media)
+    original_ocr = media.ocr
+    workspace.update_settings({"search_result_limit": 7, "display_chunk_size": 3})
+    assert media.ocr is original_ocr and media.running
+    assert Settings.load(db.workspace).display_chunk_size == 3
+    with pytest.raises(UserError):
+        workspace.update_settings({"cpu_threads": 2, "display_chunk_size": 4})
+    assert db.settings.display_chunk_size == 3
+    config = db.workspace / "config.json"
+    legacy = json.loads(config.read_text())
+    del legacy["search_result_limit"], legacy["display_chunk_size"]
+    config.write_text(json.dumps(legacy), encoding="utf-8")
+    assert Settings.load(db.workspace).search_result_limit == 20
+    assert Settings.load(db.workspace).display_chunk_size == 10
+
+
+def test_ocr_cards_use_configurable_context_without_losing_photo_anchor(db, importer, tmp_path):
+    root = photo_export(tmp_path / "source").parent
+    first = load(
+        importer,
+        export(
+            root,
+            [
+                message(i, "подпись", date=i, **({"photo": "photo.png"} if i == 3 else {}))
+                for i in range(1, 6)
+            ],
+        ),
+    )
+    semantic, media = services(db, importer)
+    fake_ocr(media)
+    assert media._ocr_one()
+    search = MediaSearch(db, media, semantic, importer.lifecycle_lock)
+    for size, expected in ((1, [3]), (3, [2, 3, 4])):
+        hits, _ = search.search("12345", Filters([first["chat_id"]]), kind="ocr", chunk_size=size)
+        assert len(hits) == 1 and hits[0]["message_id"] == 3
+        assert [row["message_id"] for row in hits[0]["messages"]] == expected
+        assert next(row for row in hits[0]["messages"] if row["message_id"] == 3)["media"]
+
+
 def test_ocr_dense_parts_preserve_ranges_and_version(db, importer, tmp_path):
     pytest.importorskip("lancedb")
     from test_semantic import TestEncoder

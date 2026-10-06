@@ -79,6 +79,44 @@ def test_missing_frontend_and_invalid_filters(client):
     assert result["database_check"] == "ok"
 
 
+def test_saved_search_options_and_request_overrides(client, tmp_path):
+    from telegram_search.config.settings import Settings
+
+    load(
+        client.app.state.importer,
+        export(tmp_path / "a", [message(i, "термин", date=i) for i in range(1, 21)]),
+    )
+    body = {"search_result_limit": 2, "display_chunk_size": 1}
+    assert client.patch("/api/settings", json=body).status_code == 403
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    assert client.patch("/api/settings", json=body, headers=headers).status_code == 200
+    assert Settings.load(client.app.state.db.workspace).search_result_limit == 2
+    for tab in ("text", "all"):
+        result = client.get("/api/search", params={"q": "термин", "tab": tab}).json()
+        assert (result["limit"], result["chunk_size"]) == (2, 1)
+        assert len(result["results"]) == 2 and result["has_more"]
+        assert all(len(hit["messages"]) == 1 for hit in result["results"])
+    result = client.get("/api/search", params={"q": "термин", "limit": 3, "chunk_size": 4}).json()
+    assert (result["limit"], result["chunk_size"]) == (3, 4)
+    assert len(result["results"]) == 3 and result["has_more"]
+    assert all(len(hit["messages"]) == 4 for hit in result["results"])
+    for value in (0, 101, 1.5, True):
+        assert (
+            client.patch(
+                "/api/settings", json={"display_chunk_size": value}, headers=headers
+            ).status_code
+            == 400
+        )
+        assert (
+            client.patch(
+                "/api/settings", json={"search_result_limit": value}, headers=headers
+            ).status_code
+            == 400
+        )
+    assert client.get("/api/search", params={"q": "термин", "chunk_size": 101}).status_code == 422
+    assert client.get("/api/settings").json()["display_chunk_size"] == 1
+
+
 def test_image_mime_uses_bytes_and_blocks_changed_file(client, tmp_path):
     root = tmp_path / "images"
     root.mkdir()

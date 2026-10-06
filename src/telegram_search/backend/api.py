@@ -22,6 +22,7 @@ from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 from telegram_search.search.media import MediaSearch, UnifiedSearch
+from telegram_search.search.presentation import search_options
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
@@ -149,7 +150,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         exact: bool = False,
         mode: Literal["words", "meaning", "hybrid"] = "words",
         tab: Literal["all", "text", "images", "ocr"] = "text",
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+        chunk_size: Annotated[int | None, Query(ge=1, le=100)] = None,
     ):
         filters = Filters(
             chat_id or [],
@@ -164,7 +166,9 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             and filters.date_from >= filters.date_to
         ):
             raise UserError("Начало периода должно быть раньше конца.")
-        return app.state.search.search(q, filters, exact, limit, mode, tab)
+        limit, chunk_size = search_options(db.settings, limit, chunk_size)
+        result = app.state.search.search(q, filters, exact, limit, mode, tab, chunk_size)
+        return {**result, "limit": limit, "chunk_size": chunk_size}
 
     @app.get("/api/media-index")
     def media_status():

@@ -52,9 +52,32 @@ def test_context_order_and_overlapping_window_dedup(importer, db, tmp_path):
     )
     context = ContextService(db).get_context(first["chat_id"], 7, 2, 2)
     assert [m["message_id"] for m in context] == [5, 6, 7, 8, 9]
-    hits = SearchService(db).search("термин", limit=2)
+    hits = SearchService(db).search("термин", limit=2, chunk_size=6)
     assert len(hits["results"]) == 2 and hits["has_more"]
-    assert [h["message_id"] for h in hits["results"]] == [1, 5]
+    assert [h["message_id"] for h in hits["results"]] == [1, 7]
+
+
+def test_display_window_fills_boundaries_preserves_order_and_anchor(importer, db, tmp_path):
+    first = load(
+        importer, export(tmp_path / "a", [message(i, "термин", date=1) for i in range(1, 21)])
+    )
+    load(importer, export(tmp_path / "b", [message(1, "чужой контекст", date=1)], 200))
+    context = ContextService(db)
+    with db.connect() as conn:
+        for anchor_id, size, expected in (
+            (1, 1, [1]),
+            (1, 4, [1, 2, 3, 4]),
+            (10, 4, [9, 10, 11, 12]),
+            (20, 4, [17, 18, 19, 20]),
+            (10, 100, list(range(1, 21))),
+        ):
+            anchor = conn.execute(
+                "SELECT * FROM messages WHERE chat_id=? AND message_id=?",
+                (first["chat_id"], anchor_id),
+            ).fetchone()
+            rows = context.get_result_context(conn, anchor, size, Filters())
+            assert [row["message_id"] for row in rows] == expected
+            assert all(row["chat_id"] == first["chat_id"] for row in rows)
 
 
 def test_date_bound_utc_and_empty_import(importer, db, tmp_path):

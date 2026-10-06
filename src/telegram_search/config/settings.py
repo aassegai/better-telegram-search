@@ -24,6 +24,8 @@ class Settings:
     ocr_timeout_seconds: int = 45
     ocr_max_edge: int = 2400
     memory_limit_mib: int = 4096
+    search_result_limit: int = 20
+    display_chunk_size: int = 10
 
     @classmethod
     def load(cls, workspace: Path) -> "Settings":
@@ -61,6 +63,8 @@ class Settings:
             ("ocr_timeout_seconds", 5, 300),
             ("ocr_max_edge", 512, 4096),
             ("memory_limit_mib", 1024, 65536),
+            ("search_result_limit", 1, 100),
+            ("display_chunk_size", 1, 100),
         ):
             value = getattr(settings, name)
             if type(value) is not int or not lower <= value <= upper:
