@@ -3,8 +3,8 @@ from conftest import export, load, message
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from telegram_search.api import create_app
-from telegram_search.paths import safe_media_path
+from telegram_search.backend.api import create_app
+from telegram_search.security.paths import safe_media_path
 
 
 @pytest.fixture
@@ -110,3 +110,34 @@ def test_extended_context_preserves_filter_markers(client, tmp_path):
     )
     response = client.get(f"/api/chats/{first['chat_id']}/context/1", params={"author_id": "alice"})
     assert [item["matches_filters"] for item in response.json()["messages"]] == [True, False]
+
+
+def test_preview_and_conflict_contracts_require_token(client, tmp_path):
+    importer = client.app.state.importer
+    first = load(importer, export(tmp_path / "a", [message(text="текущая", reply_to_message_id=7)]))
+    body = {
+        "json_path": str(export(tmp_path / "b", [message(text="новая", reply_to_message_id=8)]))
+    }
+    assert client.post("/api/import-previews", json=body).status_code == 403
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    response = client.post("/api/import-previews", json=body, headers=headers)
+    assert response.status_code == 202
+    pid = response.json()["id"]
+    importer.futures[pid].result(timeout=5)
+    assert len(client.get("/api/import-previews").json()) == 1
+    assert client.post(f"/api/import-previews/{pid}/apply").status_code == 403
+    job = client.post(f"/api/import-previews/{pid}/apply", headers=headers).json()
+    importer.futures[job["id"]].result(timeout=5)
+    item = client.get(f"/api/imports/{job['id']}/conflicts").json()["results"][0]
+    assert item["current_metadata"]["reply_to_message_id"] == 7
+    assert item["incoming"]["metadata"]["reply_to_message_id"] == 8
+    endpoint = f"/api/imports/{job['id']}/conflicts/1"
+    choice = {"choice": "keep_current", "expected_version": item["current_version"]}
+    assert client.post(endpoint, json=choice).status_code == 403
+    assert client.post(endpoint, json=choice, headers=headers).status_code == 200
+    assert client.post(endpoint, json=choice, headers=headers).status_code == 400
+    # Deleting the chat removes staged payloads and all segment work.
+    client.delete(f"/api/chats/{first['chat_id']}", headers=headers)
+    with client.app.state.db.connect() as conn:
+        for table in ("import_previews", "preview_entries", "index_work", "index_segments"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0

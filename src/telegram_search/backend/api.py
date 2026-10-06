@@ -13,12 +13,12 @@ from PIL import Image
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .database import Database
-from .diagnostics import doctor
-from .errors import UserError
-from .importer import ImportService
-from .paths import safe_media_path
-from .search import ContextService, Filters, SearchService, date_bound
+from telegram_search.config.diagnostics import doctor
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
+from telegram_search.security.paths import safe_media_path
+from telegram_search.shared.errors import UserError
+from telegram_search.storage.database import Database
 
 
 class ImportRequest(BaseModel):
@@ -28,6 +28,11 @@ class ImportRequest(BaseModel):
     target_chat_id: str | None = None
     policy: Literal["preserve", "prefer_imported"] = "preserve"
     create_new: bool = False
+
+
+class ConflictResolution(BaseModel):
+    choice: Literal["keep_current", "use_imported"]
+    expected_version: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
@@ -191,6 +196,46 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             app.state.importer.submit(job_id)
         return app.state.importer.get(job_id)
 
+    @app.post("/api/import-previews", status_code=202)
+    def preview_export(body: ImportRequest):
+        service = app.state.importer.previews
+        with app.state.importer.lifecycle_lock:
+            preview_id = service.create(**body.model_dump())
+            service.submit(preview_id)
+        return service.get(preview_id)
+
+    @app.get("/api/import-previews")
+    def list_previews():
+        with db.connect() as conn:
+            ids = conn.execute(
+                "SELECT id FROM import_previews WHERE state NOT IN ('applied','cancelled') "
+                "ORDER BY created_at DESC LIMIT 20"
+            ).fetchall()
+        return [app.state.importer.previews.get(row[0]) for row in ids]
+
+    @app.get("/api/import-previews/{preview_id}")
+    def get_preview(preview_id: str):
+        return app.state.importer.previews.get(preview_id)
+
+    @app.post("/api/import-previews/{preview_id}/apply", status_code=202)
+    def apply_preview(preview_id: str):
+        job_id = app.state.importer.previews.apply(preview_id)
+        return app.state.importer.get(job_id)
+
+    @app.post("/api/import-previews/{preview_id}/{action}")
+    def control_preview(preview_id: str, action: Literal["pause", "resume", "cancel"]):
+        return app.state.importer.previews.control(preview_id, action)
+
+    @app.get("/api/imports/{job_id}/conflicts")
+    def conflicts(job_id: str, after: int = -1, limit: Annotated[int, Query(ge=1, le=100)] = 30):
+        return app.state.importer.conflicts.list(job_id, after, limit)
+
+    @app.post("/api/imports/{job_id}/conflicts/{message_id}")
+    def resolve_conflict(job_id: str, message_id: int, body: ConflictResolution):
+        return app.state.importer.conflicts.resolve(
+            job_id, message_id, body.choice, body.expected_version
+        )
+
     @app.get("/api/imports")
     def imports():
         with db.connect() as conn:
@@ -216,14 +261,17 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             raise UserError("Дождитесь завершения или остановки фоновой задачи этого диалога.")
         with db.connect() as conn:
             active = conn.execute(
-                "SELECT 1 FROM imports WHERE chat_id=? AND state IN ('queued','running')",
-                (chat_id,),
+                "SELECT 1 FROM imports WHERE chat_id=? AND state IN ('queued','running') "
+                "UNION ALL SELECT 1 FROM import_previews WHERE chat_id=? "
+                "AND state IN ('queued','running') LIMIT 1",
+                (chat_id, chat_id),
             ).fetchone()
             if active:
                 raise UserError("Сначала приостановите или отмените импорт этого диалога.")
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
                 raise HTTPException(status_code=404, detail="Диалог не найден.")
             # Paused tasks have no further writes; cascade also removes their checkpoints.
+            conn.execute("DELETE FROM import_previews WHERE chat_id=?", (chat_id,))
             conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
         db.compact()
         return {"deleted": True, "source_files_preserved": True}
@@ -237,7 +285,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         db.rebuild()
         return {"rebuilt": "fts5"}
 
-    frontend_dir = frontend_dir or Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    frontend_dir = frontend_dir or Path(__file__).resolve().parents[3] / "frontend" / "dist"
     if (frontend_dir / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=frontend_dir / "assets"), name="assets")
 

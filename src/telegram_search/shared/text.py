@@ -3,7 +3,7 @@ import json
 import unicodedata
 from datetime import UTC, datetime
 
-from .errors import UserError
+from telegram_search.shared.errors import UserError
 
 
 def normalize_text(text: str) -> str:
@@ -40,7 +40,7 @@ def serialize(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def content_hash(message: dict, media: list[dict]) -> str:
+def meaningful_content(message: dict, media: list[dict]) -> dict:
     meaningful = {
         key: message.get(key)
         for key in (
@@ -72,4 +72,8 @@ def content_hash(message: dict, media: list[dict]) -> str:
         {"kind": item["kind"], "identity": item["sha256"] or item["relative_path"]}
         for item in media
     ]
-    return hashlib.sha256(serialize(meaningful).encode("utf-8")).hexdigest()
+    return meaningful
+
+
+def content_hash(message: dict, media: list[dict]) -> str:
+    return hashlib.sha256(serialize(meaningful_content(message, media)).encode("utf-8")).hexdigest()

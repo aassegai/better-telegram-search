@@ -5,9 +5,9 @@ from pathlib import Path
 
 import uvicorn
 
-from telegram_search.api import create_app
-from telegram_search.database import Database
-from telegram_search.importer import ImportService
+from telegram_search.backend.api import create_app
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.storage.database import Database
 
 repo = Path(__file__).resolve().parents[1]
 (repo / "workspace").mkdir(exist_ok=True)

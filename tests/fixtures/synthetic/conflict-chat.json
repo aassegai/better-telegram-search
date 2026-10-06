@@ -1,0 +1,8 @@
+{
+  "id": 100,
+  "name": "Синтетический диалог: поездки",
+  "type": "personal_chat",
+  "messages": [
+    {"id": 1, "type": "message", "date_unixtime": "1750000000", "from": "Алиса", "from_id": "alice", "text": "В воскресенье поедем в лес. literal <img src=x onerror=window.conflictInjected=true>"}
+  ]
+}

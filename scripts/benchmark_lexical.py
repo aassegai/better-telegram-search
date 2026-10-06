@@ -16,10 +16,10 @@ import ijson
 import psutil
 from fastapi.testclient import TestClient
 
-from telegram_search.api import create_app
-from telegram_search.database import Database
-from telegram_search.importer import ImportService
-from telegram_search.normalize import flatten_text
+from telegram_search.backend.api import create_app
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.shared.text import flatten_text
+from telegram_search.storage.database import Database
 
 
 def percentile(values, fraction):

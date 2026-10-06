@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, initializeSession } from './api';
-import type { Chat, Hit, Job, Message } from './types';
+import ImportDialog from './ImportDialog';
+import ConflictDialog from './ConflictDialog';
+import type { Chat, Hit, Job, Message, Preview } from './types';
 
 const dates = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
 const date = (value: number) => dates.format(new Date(value * 1000));
@@ -40,6 +42,8 @@ export default function App() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [previews, setPreviews] = useState<Preview[]>([]);
+  const [activePreview, setActivePreview] = useState<Preview | null>(null);
   const [authors, setAuthors] = useState<{ author_id: string; name: string }[]>([]);
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -54,25 +58,19 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'import' | 'settings' | null>(null);
-  const [jsonPath, setJsonPath] = useState('');
-  const [sourceRoot, setSourceRoot] = useState('');
-  const [scope, setScope] = useState('default');
-  const [target, setTarget] = useState('');
-  const [createNew, setCreateNew] = useState(false);
-  const [preferImported, setPreferImported] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [conflictJob, setConflictJob] = useState<Job | null>(null);
   const [context, setContext] = useState<{ hit: Hit; messages: Message[] } | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
-  const authorsVersion = jobs.map(job => `${job.id}:${job.processed}:${job.state}`).join('|');
+  const authorsVersion = jobs.map(job => `${job.id}:${job.processed}:${job.state}:${job.pending_conflicts}`).join('|');
   const contextVersion = useRef(0);
   const [searchFilters, setSearchFilters] = useState('');
   const closeContext = () => { contextVersion.current++; setContext(null); setLoadingContext(false); };
 
   const reportError = (error: unknown) => setError(error instanceof Error ? error.message : 'Ошибка соединения.');
   const refresh = async () => {
-    const [chats, jobs] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports')]);
-    setChats(chats); setJobs(jobs);
+    const [chats, jobs, previews] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews')]);
+    setChats(chats); setJobs(jobs); setPreviews(previews);
   };
 
   useEffect(() => {
@@ -99,7 +97,7 @@ export default function App() {
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setModal(null); closeContext(); }
+      if (event.key === 'Escape') { setModal(null); setConflictJob(null); closeContext(); }
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
@@ -126,19 +124,6 @@ export default function App() {
       setSearchFilters(params.toString());
     } catch (error) { reportError(error); }
     finally { setBusy(false); }
-  }
-
-  async function importExport(event: FormEvent) {
-    event.preventDefault(); setImporting(true); setError('');
-    try {
-      await api('/api/imports', { method: 'POST', body: JSON.stringify({
-        json_path: jsonPath, source_root: sourceRoot || null, scope,
-        target_chat_id: target || null, create_new: createNew,
-        policy: preferImported ? 'prefer_imported' : 'preserve',
-      }) });
-      setModal(null); await refresh();
-    } catch (error) { reportError(error); }
-    finally { setImporting(false); }
   }
 
   async function openContext(hit: Hit, anchor = hit.message_id) {
@@ -185,16 +170,20 @@ export default function App() {
         </div>)}
         {!chats.length && <p className="sidebar-empty">Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.</p>}
       </div>
-      <button className="import-button" disabled={!connected} onClick={() => setModal('import')}><span>＋</span> Импортировать экспорт</button>
+      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span> Импортировать экспорт</button>
+      {previews.length > 0 && <div className="jobs"><div className="sidebar-title">Проверки экспорта</div>
+        {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name}</strong> · {preview.scope}</small><small>{preview.processed} проверено · {preview.state === 'ready' ? 'отчёт готов' : stateNames[preview.state] || preview.state}</small><div className="job-actions"><button onClick={() => { setActivePreview(preview); setModal('import'); }}>Открыть отчёт</button></div></div>)}
+      </div>}
       {jobs.length > 0 && <div className="jobs"><div className="sidebar-title">Последние импорты</div>
         {jobs.slice(0, 4).map(job => <div className="job" key={job.id}>
           <div className={`job-state ${job.state}`}><span className="dot" />{stateNames[job.state] || job.state}</div>
           <small>{job.processed} обработано · {job.added} новых · {job.updated} обновлено</small>
-          {job.conflicts > 0 && <small className="warning">Конфликтов: {job.conflicts}. Сохранена текущая версия.</small>}
+          {job.pending_conflicts > 0 && <small className="warning">Неразрешённых конфликтов: {job.pending_conflicts}</small>}
           {(job.missing_media + job.invalid_media) > 0 && <small className="warning">Недоступных вложений: {job.missing_media + job.invalid_media}</small>}
           {job.error && <small className="warning">{job.error}</small>}
           {job.warnings?.map(warning => <small className="warning" key={warning}>{warning}</small>)}
           <div className="job-actions">
+            {job.pending_conflicts > 0 && <button onClick={() => setConflictJob(job)}>Разобрать конфликты</button>}
             {['queued', 'running'].includes(job.state) && <button onClick={() => void control(job, 'pause')}>Пауза</button>}
             {['paused', 'interrupted', 'failed'].includes(job.state) && <button onClick={() => void control(job, 'resume')}>Продолжить</button>}
             {['running', 'queued', 'paused', 'interrupted'].includes(job.state) && <button onClick={() => void control(job, 'cancel')}>Отменить</button>}
@@ -242,21 +231,13 @@ export default function App() {
       </div><footer className="main-footer">Ваш архив хранится локально. Внешние сервисы не подключены.</footer>
     </main>
 
-    {modal && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <button className="close" aria-label="Закрыть" disabled={importing} onClick={() => setModal(null)}>×</button>
-      {modal === 'import' ? <><div className="eyebrow">ПОПОЛНИТЬ АРХИВ</div><h2 id="modal-title">Импорт Telegram Desktop</h2><p>Укажите путь на компьютере, где запущено приложение. Фотографии будут читаться из этой папки — сохраняйте её после импорта.</p>
-        <form onSubmit={importExport} className="import-form">
-          <label>Путь к JSON<input required value={jsonPath} placeholder="/папка/экспорта/result.json" onChange={event => setJsonPath(event.target.value)} /></label>
-          <label>Папка экспорта (необязательно)<input value={sourceRoot} placeholder="По умолчанию — папка рядом с JSON" onChange={event => setSourceRoot(event.target.value)} /></label>
-          <label>Область аккаунта<input required value={scope} onChange={event => setScope(event.target.value)} /><small>Для экспортов разных аккаунтов укажите разные значения.</small></label>
-          <label>Диалог для обновления<select value={target} onChange={event => { setTarget(event.target.value); const chat = chats.find(chat => chat.id === event.target.value); if (chat) setScope(chat.scope); }}><option value="">Определить по ID экспорта</option>{chats.map(chat => <option key={chat.id} value={chat.id}>{chat.name}</option>)}</select></label>
-          <label className="check-label"><input type="checkbox" checked={createNew} onChange={event => setCreateNew(event.target.checked)} />Создать новый диалог, если в JSON нет ID</label>
-          <label className="check-label"><input type="checkbox" checked={preferImported} onChange={event => setPreferImported(event.target.checked)} />Считать экспорт актуальным при неоднозначных редакциях</label>
-          {error && <div className="error" role="alert">{error}</div>}
-          <button className="primary" disabled={importing}>{importing ? 'Проверяем экспорт…' : 'Начать импорт'}</button>
-        </form></> : <><div className="eyebrow">ЭТОТ КОМПЬЮТЕР</div><h2 id="modal-title">Настройки и диагностика</h2><p>Начальный профиль использует только CPU. Модели и внешние провайдеры пока не подключены.</p>
-          {diagnostics ? <dl className="diagnostics"><dt>Устройство</dt><dd>CPU</dd><dt>База</dt><dd>{diagnostics.database_check === 'ok' ? 'Исправна' : 'Требует проверки'}</dd><dt>Сообщений</dt><dd>{String(diagnostics.messages)}</dd><dt>Доступно памяти</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd><dt>Свободно на диске</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd></dl> : <p>Проверяем…</p>}
-          <p className="baseline-note">Поиск изображений по описанию, OCR и Q&amp;A ещё не доступны. База хранится локально без шифрования.</p></>}
+    {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
+    {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
+    {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button className="close" aria-label="Закрыть" onClick={() => setModal(null)}>×</button>
+      <div className="eyebrow">ЭТОТ КОМПЬЮТЕР</div><h2 id="modal-title">Настройки и диагностика</h2><p>Начальный профиль использует только CPU. Модели и внешние провайдеры пока не подключены.</p>
+      {diagnostics ? <dl className="diagnostics"><dt>Устройство</dt><dd>CPU</dd><dt>База</dt><dd>{diagnostics.database_check === 'ok' ? 'Исправна' : 'Требует проверки'}</dd><dt>Сообщений</dt><dd>{String(diagnostics.messages)}</dd><dt>Сегменты в очереди индекса</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>Доступно памяти</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd><dt>Свободно на диске</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd></dl> : <p>Проверяем…</p>}
+      <p className="baseline-note">Поиск изображений по описанию, OCR и Q&amp;A ещё не доступны. База хранится локально без шифрования.</p>
     </section></div>}
 
     {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">

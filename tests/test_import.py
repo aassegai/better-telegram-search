@@ -4,9 +4,9 @@ import pytest
 from conftest import export, load, message
 from PIL import Image
 
-from telegram_search.errors import UserError
-from telegram_search.importer import ImportService
-from telegram_search.search import ContextService, SearchService
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.search.lexical import ContextService, SearchService
+from telegram_search.shared.errors import UserError
 
 
 def test_streaming_entities_service_and_idempotence(importer, db, tmp_path):
@@ -197,7 +197,7 @@ def test_missing_root_cannot_override_known_media_hash(importer, tmp_path):
 
 
 def test_pause_during_media_preparation_resumes_from_checkpoint(importer, tmp_path, monkeypatch):
-    import telegram_search.importer as module
+    import telegram_search.ingestion.importer as module
 
     path = export(tmp_path / "a", [message(i) for i in range(1, 5)])
     job = importer.prepare(str(path))

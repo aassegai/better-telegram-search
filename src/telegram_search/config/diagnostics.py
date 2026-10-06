@@ -4,7 +4,7 @@ import sqlite3
 
 import psutil
 
-from .database import Database
+from telegram_search.storage.database import Database
 
 
 def doctor(db: Database) -> dict:
@@ -17,6 +17,10 @@ def doctor(db: Database) -> dict:
             dict(row)
             for row in conn.execute("SELECT state,COUNT(*) AS count FROM imports GROUP BY state")
         ]
+        pending = conn.execute("SELECT COUNT(*) FROM index_work WHERE state='pending'").fetchone()[
+            0
+        ]
+        schema_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     return {
         "version": "0.1.0",
         "platform": platform.system(),
@@ -38,4 +42,6 @@ def doctor(db: Database) -> dict:
             for root in roots
         ],
         "imports": imports,
+        "schema_version": schema_version,
+        "pending_index_segments": pending,
     }

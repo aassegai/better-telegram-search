@@ -8,10 +8,10 @@ from pathlib import Path
 import uvicorn
 from filelock import FileLock
 
-from .database import Database
-from .diagnostics import doctor
-from .errors import UserError
-from .importer import ImportService
+from telegram_search.config.diagnostics import doctor
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.shared.errors import UserError
+from telegram_search.storage.database import Database
 
 
 def main() -> None:
@@ -32,6 +32,9 @@ def main() -> None:
     load.add_argument("--target-chat-id")
     load.add_argument("--prefer-imported", action="store_true")
     load.add_argument("--create-new", action="store_true")
+    load.add_argument(
+        "--preview", action="store_true", help="Только проверить, без изменения сообщений"
+    )
     args = parser.parse_args()
     if getattr(args, "run_workspace", None) is not None:
         args.workspace = args.run_workspace
@@ -39,7 +42,7 @@ def main() -> None:
     try:
         db.initialize()
         if args.command == "run":
-            from .api import create_app
+            from telegram_search.backend.api import create_app
 
             if not 1 <= args.port <= 65535:
                 raise UserError("Порт должен быть от 1 до 65535.")
@@ -57,7 +60,8 @@ def main() -> None:
         elif args.command == "import":
             importer = ImportService(db)
             try:
-                job = importer.prepare(
+                prepare = importer.previews.create if args.preview else importer.prepare
+                job = prepare(
                     args.json_path,
                     args.source_root,
                     args.scope,
@@ -65,7 +69,7 @@ def main() -> None:
                     "prefer_imported" if args.prefer_imported else "preserve",
                     args.create_new,
                 )
-                result = importer.run(job)
+                result = importer.previews.run(job) if args.preview else importer.run(job)
                 # Do not print chat names, source paths, IDs, or message contents.
                 report = {
                     key: result[key]
@@ -83,7 +87,7 @@ def main() -> None:
                     )
                 }
                 print(json.dumps(report, ensure_ascii=False, indent=2))
-                if result["state"] != "completed":
+                if result["state"] != ("ready" if args.preview else "completed"):
                     sys.exit(1)
             finally:
                 importer.shutdown()

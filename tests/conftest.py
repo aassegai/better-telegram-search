@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from telegram_search.database import Database
-from telegram_search.importer import ImportService
+from telegram_search.ingestion.importer import ImportService
+from telegram_search.storage.database import Database
 
 
 @pytest.fixture

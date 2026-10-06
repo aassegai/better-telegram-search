@@ -5,17 +5,28 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from pathlib import Path
 
 import ijson
 from filelock import FileLock, Timeout
 from PIL import Image, UnidentifiedImageError
 
-from .database import Database
-from .errors import UserError
-from .normalize import content_hash, flatten_text, normalize_text, serialize, timestamp
-from .paths import relative_root, safe_media_path
-from .privacy import repository_warning
+from telegram_search.ingestion.conflicts import ConflictService
+from telegram_search.ingestion.previews import PreviewService
+from telegram_search.security.paths import relative_root, safe_media_path
+from telegram_search.security.privacy import repository_warning
+from telegram_search.shared.errors import UserError
+from telegram_search.shared.text import (
+    content_hash,
+    flatten_text,
+    normalize_text,
+    serialize,
+    timestamp,
+)
+from telegram_search.storage.database import Database
+from telegram_search.storage.generations import bump_revision, invalidate_segments, utc_day
+from telegram_search.storage.revisions import message_version
 
 
 def file_hash(path: Path) -> str:
@@ -91,9 +102,14 @@ class ImportService:
         self.stopping = threading.Event()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="telegram-import")
         self.futures = {}
+        self.previews = PreviewService(self)
+        self.conflicts = ConflictService(self)
         with db.connect() as conn:
             conn.execute(
                 "UPDATE imports SET state='interrupted' WHERE state IN ('running','queued')"
+            )
+            conn.execute(
+                "UPDATE import_previews SET state='interrupted' WHERE state IN ('running','queued')"
             )
 
     def prepare(self, *args, **kwargs) -> str:
@@ -186,6 +202,9 @@ class ImportService:
     def is_active(self, chat_id: str) -> bool:
         with self.db.connect() as conn:
             jobs = conn.execute("SELECT id FROM imports WHERE chat_id=?", (chat_id,)).fetchall()
+            jobs += conn.execute(
+                "SELECT id FROM import_previews WHERE chat_id=?", (chat_id,)
+            ).fetchall()
         return any(row["id"] in self.futures and not self.futures[row["id"]].done() for row in jobs)
 
     def get(self, job_id: str) -> dict:
@@ -201,6 +220,10 @@ class ImportService:
                 self.source_warnings[root[0]] = repository_warning(self.db.source_path(root[0]))
             warning = self.source_warnings[root[0]]
             result["warnings"] = [warning] if warning else []
+            result["pending_conflicts"] = conn.execute(
+                "SELECT COUNT(*) FROM import_conflicts WHERE import_id=? AND state='pending'",
+                (job_id,),
+            ).fetchone()[0]
             return result
 
     def control(self, job_id: str, action: str) -> dict:
@@ -247,27 +270,24 @@ class ImportService:
                     "AND state IN ('queued','running','interrupted','failed')",
                     (job_id,),
                 )
-            with path.open("rb") as stream:
-                iterator = ijson.items(stream, "messages.item", use_float=True)
-                # Resume scans the JSON without retaining skipped objects in memory.
-                for _ in itertools.islice(iterator, job["processed"]):
-                    pass
-                while True:
-                    current = self.get(job_id)
-                    if current["state"] in {"paused", "cancelled"}:
-                        return current
-                    if self.stopping.is_set():
-                        with self.db.connect() as conn:
-                            conn.execute(
-                                "UPDATE imports SET state='interrupted' WHERE id=?", (job_id,)
-                            )
-                        return self.get(job_id)
-                    batch = list(itertools.islice(iterator, self.batch_size))
-                    if not batch:
-                        break
-                    prepared = [(message, inspect_media(root, message)) for message in batch]
-                    if self._apply_batch(job, prepared) is False:
-                        return self.get(job_id)
+            if job["preview_id"] and job["processed"] == 0:
+                preview = self.previews.get(job["preview_id"])
+                with self.db.connect() as conn:
+                    revision = conn.execute(
+                        "SELECT revision FROM chats WHERE id=?", (job["chat_id"],)
+                    ).fetchone()[0]
+                    if revision != preview["base_revision"]:
+                        raise UserError("Диалог изменился после проверки. Создайте новую проверку.")
+            for prepared in self._prepared_batches(job, root, path):
+                current = self.get(job_id)
+                if current["state"] in {"paused", "cancelled"}:
+                    return current
+                if self.stopping.is_set():
+                    with self.db.connect() as conn:
+                        conn.execute("UPDATE imports SET state='interrupted' WHERE id=?", (job_id,))
+                    return self.get(job_id)
+                if self._apply_batch(job, prepared) is False:
+                    return self.get(job_id)
             with self.db.connect() as conn:
                 conn.execute(
                     "UPDATE imports SET state='completed',finished_at=? WHERE id=? "
@@ -289,14 +309,44 @@ class ImportService:
                 )
         return self.get(job_id)
 
+    def _prepared_batches(self, job: dict, root: Path, path: Path):
+        if job["preview_id"]:
+            for prepared in self.previews.batches(job):
+                for entry in prepared:
+                    self.validate_media_snapshot(root, entry[0], entry[1])
+                yield prepared
+            return
+        with path.open("rb") as stream:
+            iterator = ijson.items(stream, "messages.item", use_float=True)
+            for _ in itertools.islice(iterator, job["processed"]):
+                pass
+            while batch := list(itertools.islice(iterator, self.batch_size)):
+                yield [(message, inspect_media(root, message)) for message in batch]
+
+    @staticmethod
+    def validate_media_snapshot(root: Path, message: dict, expected: list[dict]) -> None:
+        if inspect_media(root, message) != expected:
+            raise UserError("Медиа изменились после проверки. Создайте новый отчёт экспорта.")
+
     def _apply_batch(self, job: dict, prepared: list) -> bool:
         with self.lifecycle_lock:
             if self.get(job["id"])["state"] != "running":
                 return False
-            self._apply_batch_unlocked(job, prepared)
+            if job["preview_id"]:
+                with self.db.connect() as conn:
+                    for message, media, expected, reason, version in prepared:
+                        if message_version(
+                            conn, job["chat_id"], message["id"]
+                        ) != version or self.classify(
+                            conn, job["chat_id"], message, media, job["policy"]
+                        ) != (expected, reason):
+                            raise UserError(
+                                "Сообщение изменилось после проверки. Пересчитайте отчёт."
+                            )
+            self._apply_batch_unlocked(job, [item[:2] for item in prepared])
             return True
 
-    def _apply_batch_unlocked(self, job: dict, prepared: list) -> None:
+    def _apply_batch_unlocked(self, job: dict, prepared: list, connection=None) -> None:
         counters = dict.fromkeys(
             (
                 "processed",
@@ -309,9 +359,11 @@ class ImportService:
             ),
             0,
         )
-        with self.db.connect() as conn:
+        with self.db.connect() if connection is None else nullcontext(connection) as conn:
+            changed_days = set()
+            revision_changed = False
             for message, media in prepared:
-                if not isinstance(message.get("id"), int):
+                if type(message.get("id")) is not int:
                     raise UserError("У сообщения отсутствует числовой ID.")
                 message_id = message["id"]
                 date = timestamp(message)
@@ -337,6 +389,7 @@ class ImportService:
                             "UPDATE messages SET edited_timestamp=? WHERE rowid=?",
                             (edited, old["rowid"]),
                         )
+                        revision_changed = True
                 else:
                     if old:
                         previous_edit = old["edited_timestamp"]
@@ -346,25 +399,32 @@ class ImportService:
                             and previous_edit is not None
                             and edited < previous_edit
                         )
-                        if older or (not newer and job["policy"] != "prefer_imported"):
+                        if not job.get("allow_older", False) and (
+                            older or (not newer and job["policy"] != "prefer_imported")
+                        ):
                             counters["conflicts"] += 1
                             conn.execute(
-                                "INSERT OR REPLACE INTO import_conflicts VALUES(?,?,?,?)",
+                                "INSERT INTO import_conflicts(import_id,message_id,reason,"
+                                "incoming_json,base_content_hash,incoming_media_json) "
+                                "VALUES(?,?,?,?,?,?) ON CONFLICT(import_id,message_id) DO NOTHING",
                                 (
                                     job["id"],
                                     message_id,
                                     "older_revision" if older else "uncertain_revision",
                                     serialize(message),
+                                    old["content_hash"],
+                                    serialize(media),
                                 ),
                             )
                             continue
                         counters["updated"] += 1
-                        conn.execute(
-                            "DELETE FROM media_refs WHERE chat_id=? AND message_id=?",
-                            (job["chat_id"], message_id),
-                        )
+                        self._prune_media(conn, job["chat_id"], message_id, media)
                     else:
                         counters["added"] += 1
+                    revision_changed = True
+                    changed_days.add(utc_day(date))
+                    if old:
+                        changed_days.add(utc_day(old["timestamp"]))
                     text = flatten_text(message.get("text"))
                     kind = message.get("type", "message")
                     conn.execute(
@@ -394,6 +454,18 @@ class ImportService:
                         ),
                     )
                 for item in media:
+                    prior_ref = conn.execute(
+                        "SELECT sha256,status FROM media_refs WHERE chat_id=? AND message_id=? "
+                        "AND source_root_id=? AND relative_path=?",
+                        (job["chat_id"], message_id, job["source_root_id"], item["relative_path"]),
+                    ).fetchone()
+                    if (
+                        not prior_ref
+                        or prior_ref["status"] != item["status"]
+                        or (item["sha256"] and prior_ref["sha256"] != item["sha256"])
+                    ):
+                        revision_changed = True
+                        changed_days.add(utc_day(date))
                     if item["sha256"]:
                         conn.execute(
                             "INSERT OR IGNORE INTO media_blobs VALUES(?,?)",
@@ -416,9 +488,50 @@ class ImportService:
                         ),
                     )
             assignments = ",".join(f"{key}={key}+?" for key in counters)
-            conn.execute(
-                f"UPDATE imports SET {assignments} WHERE id=?", (*counters.values(), job["id"])
+            if job.get("record_counters", True):
+                conn.execute(
+                    f"UPDATE imports SET {assignments} WHERE id=?", (*counters.values(), job["id"])
+                )
+            if revision_changed:
+                bump_revision(conn, job["chat_id"])
+            invalidate_segments(conn, job["chat_id"], changed_days, job.get("reason", "import"))
+
+    def classify(self, conn, chat_id: str, message: dict, media: list[dict], policy: str):
+        if type(message.get("id")) is not int:
+            raise UserError("У сообщения отсутствует числовой ID.")
+        timestamp(message)
+        edited = timestamp(message, "edited")
+        old = conn.execute(
+            "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message["id"])
+        ).fetchone()
+        if old is None:
+            return "added", None
+        if old["content_hash"] == content_hash(message, media) or self._same_content(
+            conn, old, message, media
+        ):
+            return "unchanged", None
+        previous = old["edited_timestamp"]
+        if edited is not None and previous is not None and edited < previous:
+            return "conflicts", "older_revision"
+        if (edited is not None and edited > (previous or 0)) or policy == "prefer_imported":
+            return "updated", None
+        return "conflicts", "uncertain_revision"
+
+    @staticmethod
+    def _prune_media(conn, chat_id: str, message_id: int, incoming: list[dict]) -> None:
+        for ref in conn.execute(
+            "SELECT * FROM media_refs WHERE chat_id=? AND message_id=?", (chat_id, message_id)
+        ).fetchall():
+            compatible = any(
+                item["kind"] == ref["kind"]
+                and (
+                    (item["sha256"] is not None and item["sha256"] == ref["sha256"])
+                    or (item["sha256"] is None and item["relative_path"] == ref["relative_path"])
+                )
+                for item in incoming
             )
+            if not compatible:
+                conn.execute("DELETE FROM media_refs WHERE id=?", (ref["id"],))
 
     @staticmethod
     def _same_content(conn, old, incoming: dict, media: list[dict]) -> bool:
@@ -450,6 +563,9 @@ class ImportService:
         with self.db.connect() as conn:
             conn.execute(
                 "UPDATE imports SET state='interrupted' WHERE state IN ('queued','running')"
+            )
+            conn.execute(
+                "UPDATE import_previews SET state='interrupted' WHERE state IN ('queued','running')"
             )
         self.db.checkpoint()
         self.lease.release()

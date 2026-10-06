@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from telegram_search.database import Database
-from telegram_search.errors import UserError
-from telegram_search.privacy import repository_warning
+from telegram_search.security.privacy import repository_warning
+from telegram_search.shared.errors import UserError
+from telegram_search.storage.database import Database
 
 
 def git(root, *args):
@@ -44,7 +44,7 @@ def test_gitignore_private_data_and_source_allowlist(tmp_path):
         "tests/fixtures/synthetic/chat.json",
         "tests/fixtures/synthetic/photo.png",
         "frontend/src/assets/icon.png",
-        "src/telegram_search/schema.sql",
+        "src/telegram_search/storage/schema.sql",
     ]
     for item in private:
         assert git(tmp_path, "check-ignore", "--no-index", "-q", item).returncode == 0, item

@@ -1,10 +1,25 @@
-import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from .errors import UserError
-from .privacy import repository_warning
+from filelock import FileLock, Timeout
+
+from telegram_search.config.settings import Settings
+from telegram_search.security.privacy import repository_warning
+from telegram_search.shared.errors import UserError
+
+SCHEMA_VERSION = 2
+
+
+def execute_sql(conn, sql: str) -> None:
+    statement = ""
+    for line in sql.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            conn.execute(statement)
+            statement = ""
+    if statement.strip():
+        raise RuntimeError("Incomplete SQL migration")
 
 
 class Database:
@@ -20,22 +35,31 @@ class Database:
             )
         for folder in ("data", "cache", "models"):
             (self.workspace / folder).mkdir(parents=True, exist_ok=True)
-        config = self.workspace / "config.json"
-        if not config.exists():
-            config.write_text(
-                json.dumps({"version": 1, "device": "cpu", "search_backend": "fts5_messages"}),
-                encoding="utf-8",
-            )
+        self.settings = Settings.load(self.workspace)
         with self.connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY)"
             )
             version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-            if version is None:
-                conn.executescript(Path(__file__).with_name("schema.sql").read_text())
-            elif version != 1:
+            if version is not None and not 1 <= version <= SCHEMA_VERSION:
                 raise UserError("Версия базы не поддерживается этим приложением.")
+        if version != SCHEMA_VERSION:
+            try:
+                with FileLock(self.workspace / ".writer.lock", timeout=0), self.connect() as conn:
+                    conn.execute("BEGIN IMMEDIATE")
+                    version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[
+                        0
+                    ]
+                    if version is None:
+                        execute_sql(conn, Path(__file__).with_name("schema.sql").read_text())
+                        version = 1
+                    for migration in sorted(Path(__file__).with_name("migrations").glob("*.sql")):
+                        number = int(migration.name.split("_")[0])
+                        if version < number <= SCHEMA_VERSION:
+                            execute_sql(conn, migration.read_text())
+            except Timeout as exc:
+                raise UserError("Остановите приложение перед обновлением схемы workspace.") from exc
 
     @contextmanager
     def connect(self):

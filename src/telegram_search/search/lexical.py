@@ -4,9 +4,9 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from .database import Database
-from .errors import UserError
-from .normalize import normalize_text
+from telegram_search.shared.errors import UserError
+from telegram_search.shared.text import normalize_text
+from telegram_search.storage.database import Database
 
 
 @dataclass

@@ -1,6 +1,6 @@
 from conftest import export, load, message
 
-from telegram_search.search import ContextService, Filters, SearchService, date_bound
+from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 
 
 def test_russian_normalization_literal_query_and_phrase(importer, db, tmp_path):

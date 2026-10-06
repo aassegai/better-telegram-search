@@ -1,7 +1,7 @@
 import os
 from pathlib import Path, PurePosixPath
 
-from .errors import UserError
+from telegram_search.shared.errors import UserError
 
 
 def relative_root(workspace: Path, source: Path) -> str:
