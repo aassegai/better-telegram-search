@@ -1,0 +1,38 @@
+name: Publish verified release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version with a checked-in publication request
+        required: true
+        default: '0.1.0'
+  push:
+    branches: [main]
+    paths:
+      - '.github/releases/*.json'
+permissions:
+  contents: read
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - name: Verify assets and publish the explicitly requested release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BTS_RELEASE_VERSION: ${{ inputs.version }}
+        run: uv run --no-project --python 3.12 python scripts/publish_release.py

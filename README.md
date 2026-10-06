@@ -12,7 +12,7 @@
 ### Готовая сборка
 
 Скачайте архив для своей ОС и архитектуры из
-[черновика релиза](https://github.com/aassegai/better-telegram-search/releases)
+[GitHub Releases](https://github.com/aassegai/better-telegram-search/releases)
 и полностью распакуйте его. Для запуска Python и Node.js не нужны.
 
 | Платформа | Что запустить |
@@ -22,7 +22,6 @@
 | macOS Intel / Apple Silicon | `Better Telegram Search.app` |
 
 Браузер откроется автоматически. Адрес приложения: `http://127.0.0.1:8765`.
-Черновики доступны пользователям с правом записи в репозиторий.
 [Требования к ОС и обновление сборки](docs/portable-builds.md).
 
 ### Запуск из исходников
