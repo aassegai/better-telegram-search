@@ -8,7 +8,7 @@ from telegram_search.config.settings import Settings
 from telegram_search.security.privacy import repository_warning
 from telegram_search.shared.errors import UserError
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def execute_sql(conn, sql: str) -> None:
@@ -34,7 +34,11 @@ class Database:
                 "Выберите папку вне репозитория или добавьте правило до запуска."
             )
         for folder in ("data", "cache", "models"):
+            if not (self.workspace / folder).resolve().is_relative_to(self.workspace):
+                raise UserError("Папки данных должны находиться внутри workspace.")
             (self.workspace / folder).mkdir(parents=True, exist_ok=True)
+        if not self.path.resolve().is_relative_to(self.workspace):
+            raise UserError("База данных должна находиться внутри workspace.")
         self.settings = Settings.load(self.workspace)
         with self.connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
@@ -79,6 +83,7 @@ class Database:
     def rebuild(self) -> None:
         with self.connect() as conn:
             conn.execute("INSERT INTO message_fts(message_fts) VALUES ('rebuild')")
+            conn.execute("INSERT INTO chunk_fts(chunk_fts) VALUES ('rebuild')")
 
     def compact(self) -> None:
         with self.connect() as conn:

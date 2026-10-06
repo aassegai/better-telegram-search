@@ -1,12 +1,13 @@
 # Архитектура
 
-Реализованы lexical baseline и lifecycle обновлений: FastAPI, SQLite/FTS5 и React/TypeScript/Vite. Python 3.11–3.13;
+Реализованы lexical baseline, lifecycle обновлений и CPU dense/hybrid: FastAPI,
+SQLite/FTS5, ONNX Runtime, LanceDB и React/TypeScript/Vite. Python 3.11–3.13;
 на доступной машине используется 3.12.3 вместо предложенного в плане 3.11. uv.lock
 фиксирует зависимости, frontend использует единственный npm package-lock.json.
-PyTorch, LanceDB, модели и OCR не устанавливаются на этом этапе.
+PyTorch отсутствует в runtime; для численной проверки существует отдельное uv-окружение `validation/`.
 
 SQLite — источник истины. `storage/schema.sql` создаёт схему версии 1;
-`storage/migrations/002_lifecycle.sql` обновляет её до версии 2. Миграции выполняются
+`storage/migrations/002_lifecycle.sql` обновляет её до версии 2, `003_semantic.sql` — до 3. Миграции выполняются
 в одной транзакции под межпроцессной блокировкой, существующие сообщения сохраняются.
 `schema_migrations` фиксирует версию; неподдерживаемые версии отвергаются.
 FTS5 имеет external content и транзакционные триггеры. `rebuild` восстанавливает FTS
@@ -69,16 +70,33 @@ SHA JSON и ревизию диалога, затем использует за�
 или ссылки на медиа атомарно повышает target generation и создаёт запись `index_work`.
 При переносе времени сообщения обновляются старый и новый день. Предыдущие работы
 сегмента становятся superseded; неизменённый импорт не меняет поколения.
-Lexical generation сразу соответствует message FTS. Dense generation пока 0;
-очередь сохраняется до появления dense worker на следующем этапе.
+Lexical generation сразу соответствует message FTS. CPU worker потоково строит чанки
+каждого изменившегося дня в отдельном поколении. До embedding измеряется число чанков
+и токенов; прогресс батчей сохраняется. Lance upsert стабильных IDs предшествует SQLite
+checkpoint: после сбоя повтор не дублирует векторы. Публикация проверяет source generation
+и embedding space под общим lifecycle lock. Старые поколения исключаются из поиска;
+durable cleanup удаляет устаревшие векторы, а compact очищает старые Lance versions.
+Удаление диалога оставляет durable tombstone; при reimport того же ID он удаляется
+до записи любых новых векторов. Snapshot строителя освобождается до SQLite compaction.
+
+Чанки содержат до 8 сообщений, перекрытие около 4, максимум 480 model tokens с авторами,
+prefix и photo markers. Разрывы: диалог, UTC-день, часовой интервал. Длинный текст
+делится по исходным Unicode ranges, без скрытого model truncation; оригинал сохраняется.
+Hybrid BM25 и cosine используют одни и те же опубликованные чанки. Каждый кандидат
+имеет одно canonical сообщение, одновременно проходящее все фильтры. SQL whitelist
+поступает в Lance до top-k; IDs идут батчами по 512, top100 хранится в ограниченной heap.
+RRF k=60 с равными весами объединяет списки. Exact выбран после сравнения с ANN.
+Карточка показывает все исходные сообщения чанка и по одному соседу (до 10 сообщений).
 
 Python разделён по ответственности:
 
 - `storage`: SQLite, миграции, ревизии и поколения индексов.
 - `backend`: FastAPI и локальные HTTP-контракты.
 - `ingestion`: импорт, предварительные отчёты, разрешение конфликтов.
-- `search`: lexical retrieval, фильтры и контекст; сюда добавятся dense и hybrid.
-- `config`: валидируемые настройки CPU и диагностика.
+- `search`: lexical/dense/hybrid retrieval, чанки, фильтры, LanceDB и контекст.
+- `indexing`: фоновая очередь, generations/checkpoints, модельная подготовка и CLI.
+- `inference`: проверенные наборы, локальный tokenizer и CPU ONNX encoder.
+- `config`: валидируемые настройки CPU, manifest registry и диагностика.
 - `security`: защита путей, symlink boundaries и правила приватности Git.
 - `shared`: нормализация текста и ошибки приложения.
 
@@ -91,8 +109,6 @@ Ruff и production frontend build прошли. Default frontend route посл�
 
 ## Следующие этапы
 
-1. Построить token-budget chunks, закрепить revision E5-small и измерить CPU embeddings;
-   затем LanceDB exact retrieval, RRF и оценка filtered recall.
-2. Добавить совместимую CLIP-пару и Tesseract rus+eng с кэшем по SHA/provider version.
-3. Проверить Windows/macOS на устройствах, поставить модели/offline режим и упаковку.
-4. Расширить контракты Sources/LLM; Q&A остаётся отдельным последующим этапом.
+1. Добавить совместимую CLIP-пару и Tesseract rus+eng с кэшем по SHA/provider version.
+2. Проверить Windows/macOS на устройствах и расширить упаковку.
+3. Расширить контракты Sources/LLM; Q&A остаётся отдельным последующим этапом.

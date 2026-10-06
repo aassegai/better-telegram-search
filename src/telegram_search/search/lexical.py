@@ -140,6 +140,29 @@ class ContextService:
                 for row in [*reversed(previous), anchor, *following]
             ]
 
+    def get_chunk_context(self, conn, chunk_id, filters):
+        """Show every matched original message plus one neighbour on each side."""
+        matched = conn.execute(
+            "SELECT DISTINCT m.* FROM chunk_parts p JOIN messages m "
+            "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
+            "WHERE p.chunk_id=? ORDER BY m.timestamp,m.message_id",
+            (chunk_id,),
+        ).fetchall()
+        if not matched:
+            return []
+        first, last = matched[0], matched[-1]
+        before = conn.execute(
+            "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
+            "ORDER BY timestamp DESC,message_id DESC LIMIT 1",
+            (first["chat_id"], first["timestamp"], first["message_id"]),
+        ).fetchall()
+        after = conn.execute(
+            "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
+            "ORDER BY timestamp,message_id LIMIT 1",
+            (last["chat_id"], last["timestamp"], last["message_id"]),
+        ).fetchall()
+        return [self.serialize_message(conn, row, filters) for row in [*before, *matched, *after]]
+
 
 class SearchService:
     def __init__(self, db: Database):
@@ -188,7 +211,7 @@ class SearchService:
                         "message_id": row["message_id"],
                         "timestamp": row["timestamp"],
                         "lexical_score": row["lexical_score"],
-                        "matched_by": ["bm25"],
+                        "matched_by": ["words"],
                         "messages": context,
                     }
                 )

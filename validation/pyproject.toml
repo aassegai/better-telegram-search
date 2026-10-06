@@ -1,0 +1,19 @@
+[project]
+name = "telegram-search-model-validation"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "better-telegram-search[semantic]",
+  "torch>=2.6,<3",
+  "transformers>=4.50,<5",
+  "onnx>=1.17,<2",
+]
+
+[tool.uv.sources]
+better-telegram-search = {path = "..", editable = true}
+torch = [{index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'"}]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

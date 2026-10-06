@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { api, initializeSession } from './api';
 import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
-import type { Chat, Hit, Job, Message, Preview } from './types';
+import SemanticPanel from './SemanticPanel';
+import type { Chat, Hit, Job, Message, Preview, SemanticStatus } from './types';
 
 const dates = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
 const date = (value: number) => dates.format(new Date(value * 1000));
@@ -52,6 +53,10 @@ export default function App() {
   const [to, setTo] = useState('');
   const [contentType, setContentType] = useState('all');
   const [exact, setExact] = useState(false);
+  const [mode, setMode] = useState('words');
+  const [effectiveMode, setEffectiveMode] = useState('words');
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [semantic, setSemantic] = useState<SemanticStatus | null>(null);
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -69,8 +74,8 @@ export default function App() {
 
   const reportError = (error: unknown) => setError(error instanceof Error ? error.message : 'Ошибка соединения.');
   const refresh = async () => {
-    const [chats, jobs, previews] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews')]);
-    setChats(chats); setJobs(jobs); setPreviews(previews);
+    const [chats, jobs, previews, semantic] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews'), api<SemanticStatus>('/api/semantic')]);
+    setChats(chats); setJobs(jobs); setPreviews(previews); setSemantic(semantic);
   };
 
   useEffect(() => {
@@ -113,14 +118,15 @@ export default function App() {
     if (!query.trim() || busy) return;
     if (selected?.length === 0) { setError('Выберите хотя бы один диалог.'); return; }
     setBusy(true); setError('');
-    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType });
+    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode });
     selected?.forEach(id => params.append('chat_id', id));
     if (author) params.set('author_id', author);
     if (from) params.set('date_from', from);
     if (to) params.set('date_to', to);
     try {
-      const result = await api<{ results: Hit[]; has_more: boolean }>(`/api/search?${params}`);
+      const result = await api<{ results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[] }>(`/api/search?${params}`);
       setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
+      setEffectiveMode(result.effective_mode); setWarnings(result.warnings);
       setSearchFilters(params.toString());
     } catch (error) { reportError(error); }
     finally { setBusy(false); }
@@ -204,6 +210,7 @@ export default function App() {
             <input aria-label="Поисковый запрос" placeholder="Что вы хотите найти в переписке?" value={query} onChange={event => setQuery(event.target.value)} />
             <button disabled={busy || !query.trim() || !connected}>{busy ? 'Ищем…' : 'Найти'}<span aria-hidden="true"> ↗</span></button></div>
           <div className="filters">
+            <label>Режим<select aria-label="Режим поиска" value={mode} disabled={exact} onChange={event => setMode(event.target.value)}><option value="words">По словам</option><option value="meaning">По смыслу</option><option value="hybrid">Слова и смысл</option></select></label>
             <label>Автор<select aria-label="Автор" value={author} onChange={event => setAuthor(event.target.value)}><option value="">Все авторы</option>{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
             <label>С даты (UTC)<input type="date" value={from} onChange={event => setFrom(event.target.value)} /></label>
             <label>По дату (UTC)<input type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
@@ -212,32 +219,37 @@ export default function App() {
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />Точная фраза</label>
             <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setSelected(null); }}>Сбросить фильтры</button></div>
         </form>
+        {exact && <p className="baseline-note">Точная фраза ищется в полном тексте сообщений по всему архиву.</p>}
+        {semantic?.enabled === 1 && <p className="baseline-note">Смысловой индекс: {semantic.ready_segments} / {semantic.total_segments} сегментов{semantic.paused ? ' · на паузе' : ''}</p>}
+        {warnings.map(warning => <p className="warning" role="status" key={warning}>{warning}</p>)}
 
         {hits === null ? <section className="welcome">
           <div className="archive-symbol" aria-hidden="true">▤</div><h2>Разговоры остаются рядом.</h2>
           <p>{chats.length ? 'Введите слово или фразу. Откройте результат, чтобы увидеть сообщения до и после совпадения.' : 'Начните с JSON-экспорта Telegram Desktop. Мы прочитаем сообщения и свяжем фотографии с вашей папкой.'}</p>
           <div className="stats"><div><strong>{messageCount.toLocaleString('ru-RU')}</strong><span>сообщений</span></div><div><strong>{chats.length}</strong><span>диалогов</span></div><div><strong>{photoCount}</strong><span>фотографий</span></div></div>
-          <div className="baseline-note">Сейчас доступен поиск по словам и фразам. Семантический поиск и OCR появятся на следующих этапах.</div>
+          <div className="baseline-note">Поиск по словам доступен сразу. Для поиска по смыслу подготовьте модель в настройках.</div>
         </section> : <section className="results" aria-live="polite">
-          <div className="results-heading"><h2>{hits.length ? `Найдено фрагментов: ${hits.length}${hasMore ? '+' : ''}` : 'Совпадений пока нет'}</h2><span>По релевантности · BM25</span></div>
-          {!hits.length && <div className="no-results">Попробуйте другое слово или расширьте область поиска. В обычном режиме результат должен содержать все слова запроса.</div>}
-          {hits.map(hit => <article className="result-card" key={`${hit.chat_id}/${hit.message_id}`}>
-            <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>Совпадение в #{hit.message_id}</small></div>
+          <div className="results-heading"><h2>{hits.length ? `Найдено фрагментов: ${hits.length}${hasMore ? '+' : ''}` : 'Совпадений пока нет'}</h2><span>{effectiveMode === 'hybrid' ? 'Слова и смысл · RRF' : effectiveMode === 'meaning' ? 'По смыслу · E5' : 'По словам · BM25'}</span></div>
+          {!hits.length && <div className="no-results">Попробуйте другой запрос или расширьте область поиска.{effectiveMode === 'words' ? ' Поиск по словам требует все слова запроса.' : ' Проверьте готовность смыслового индекса.'}</div>}
+          {hits.map(hit => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
+            <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? 'Опорное сообщение фрагмента' : 'Совпадение в'} #{hit.message_id}</small></div>
+            {hit.matched_by && <div className="message-note">{hit.matched_by.includes('words') ? 'Совпали слова' : ''}{hit.matched_by.length === 2 ? ' · ' : ''}{hit.matched_by.includes('meaning') ? 'Близкий смысл' : ''}</div>}
             {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} />)}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>Открыть контекст <span>↗</span></button>
           </article>)}
           {hasMore && <p className="more-note">Показаны первые 20 фрагментов. Уточните запрос или фильтры.</p>}
         </section>}
-      </div><footer className="main-footer">Ваш архив хранится локально. Внешние сервисы не подключены.</footer>
+      </div><footer className="main-footer">Сообщения хранятся и обрабатываются на этом компьютере.</footer>
     </main>
 
     {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
     {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button className="close" aria-label="Закрыть" onClick={() => setModal(null)}>×</button>
-      <div className="eyebrow">ЭТОТ КОМПЬЮТЕР</div><h2 id="modal-title">Настройки и диагностика</h2><p>Начальный профиль использует только CPU. Модели и внешние провайдеры пока не подключены.</p>
+      <div className="eyebrow">ЭТОТ КОМПЬЮТЕР</div><h2 id="modal-title">Настройки и диагностика</h2><p>Приложение использует только CPU.</p>
       {diagnostics ? <dl className="diagnostics"><dt>Устройство</dt><dd>CPU</dd><dt>База</dt><dd>{diagnostics.database_check === 'ok' ? 'Исправна' : 'Требует проверки'}</dd><dt>Сообщений</dt><dd>{String(diagnostics.messages)}</dd><dt>Сегменты в очереди индекса</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>Доступно памяти</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd><dt>Свободно на диске</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)} ГиБ</dd></dl> : <p>Проверяем…</p>}
       <p className="baseline-note">Поиск изображений по описанию, OCR и Q&amp;A ещё не доступны. База хранится локально без шифрования.</p>
+      <SemanticPanel status={semantic} onChange={setSemantic} />
     </section></div>}
 
     {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">

@@ -1,8 +1,8 @@
 # Better Telegram Search
 
-Локальное приложение для поиска по JSON-экспорту Telegram Desktop. Начальная версия:
-потоковый импорт, SQLite FTS5/BM25, фильтры, контекст и исходные фотографии. Только CPU.
-Семантический поиск, CLIP и OCR пока не реализованы.
+Локальное приложение для поиска по JSON-экспорту Telegram Desktop: потоковый импорт,
+SQLite FTS5/BM25, смысловой и гибридный поиск E5, фильтры, полный контекст и фотографии.
+Инференс работает строго через ONNX Runtime на CPU. CLIP, OCR и Q&A пока не реализованы.
 
 ## Окружение
 
@@ -10,13 +10,13 @@ Python 3.11–3.13, uv и Node.js 22+ для сборки интерфейса. 
 не нужен. uv создаёт отдельное окружение `.venv` в репозитории.
 
 ```sh
-uv sync --locked
+uv sync --locked --extra semantic
 cd frontend
 npm ci
 npm run build
 cd ..
-uv run telegram-search setup
-uv run telegram-search run
+uv run --no-sync telegram-search setup
+uv run --no-sync telegram-search run
 ```
 
 Откройте приложение и нажмите «Импортировать экспорт». Введите путь к JSON, например
@@ -32,9 +32,9 @@ uv run telegram-search run
 Также можно импортировать без браузера, **после остановки сервера**:
 
 ```sh
-uv run telegram-search import test_chat_export/result.json
-uv run telegram-search import test_chat_export/result.json --preview
-uv run telegram-search doctor
+uv run --no-sync telegram-search import test_chat_export/result.json
+uv run --no-sync telegram-search import test_chat_export/result.json --preview
+uv run --no-sync telegram-search doctor
 ```
 
 Готовые скрипты: `bash scripts/setup.sh`, `bash scripts/run.sh`; в PowerShell 7+
@@ -44,9 +44,43 @@ uv run telegram-search doctor
 в PATH, если новая оболочка ещё не видит `uv`.
 
 Сервер запускается на `http://127.0.0.1:8765`; один процесс, без GPU и внешних API.
-Для отдельного каталога данных: `uv run telegram-search --workspace /path/to/workspace doctor`.
-Для запуска: `uv run telegram-search run --workspace /path/to/workspace --no-browser`.
+Для отдельного каталога данных: `uv run --no-sync telegram-search --workspace /path/to/workspace doctor`.
+Для запуска: `uv run --no-sync telegram-search run --workspace /path/to/workspace --no-browser`.
 Node после сборки интерфейса не требуется. Готовые файлы frontend/dist не хранятся в Git.
+
+## Смысловой поиск
+
+В настройках нажмите «Подготовить модель и индекс». Рекомендуется E5-small (~465 МиБ
+файлов); E5-base (~1075 МиБ) требует больше памяти. Загрузка начинается только по
+вашему действию. Содержимое переписки не отправляется наружу. Модель и tokenizer
+закреплены revision и SHA-256; runtime не содержит PyTorch или sentence-transformers.
+
+Без браузера, при остановленном сервере:
+
+```sh
+uv run --no-sync telegram-search prepare-model --profile small
+uv run --no-sync telegram-search index
+uv run --no-sync telegram-search prepare-model --offline
+uv run --no-sync telegram-search prepare-model --profile base --reindex
+uv run --no-sync telegram-search index --retry
+```
+
+`prepare-model` готовит модель; `index` обрабатывает сохранённую очередь. В UI очередь
+выполняется автоматически, есть пауза, продолжение и повтор ошибок. При смене модели
+или версии runtime требуется явная переиндексация. Пока она идёт, смысловой/гибридный
+режим ищет только по готовым сегментам и показывает предупреждение; «По словам» и
+«Точная фраза» доступны по всему архиву. Если готовых сегментов нет, выдача переключается
+на поиск по словам с явным уведомлением.
+
+После загрузки работа полностью offline. `--offline` использует только проверенный
+локальный набор/кэш; `--local-bundle /path/to/bundle` импортирует набор с `manifest.json`
+и теми же закреплёнными файлами. `--repair` позволяет заменить повреждённый набор.
+Не запускайте обычный `uv run` после установки extra: uv может удалить optional пакеты.
+Используйте `--no-sync` после `uv sync --locked --extra semantic`, либо `uv run --locked --extra semantic`.
+Минимальный профиль без моделей: `uv sync --locked`; поиск по словам работает отдельно.
+
+[ONNX, offline и проверка моделей](docs/onnx-cpu.md),
+[численные и поисковые CPU-замеры](docs/benchmarks/onnx-cpu.md).
 
 ## Данные
 
@@ -74,7 +108,7 @@ Workspace внутри любого Git-репозитория должен бы
 CLI без `--preview` сразу запускает импорт; `--preview` оставляет локальный отчёт
 для последующего просмотра и применения в UI.
 
-Поиск пока работает по словам, не по смыслу. Обычный запрос требует все слова;
+Поиск по словам требует все слова;
 «Точная фраза» требует непрерывный текст после нормализации регистра и ё/е. Даты
 фильтров считаются в UTC; «по дату» включает весь выбранный день. Фильтры применяются
 к одному совпавшему сообщению, соседние сообщения помечаются как контекст.
@@ -83,10 +117,10 @@ CLI без `--preview` сразу запускает импорт; `--preview` �
 ещё не распознаётся. Оригиналы больше 32 МиБ и нерастровые вложения через API не выдаются.
 
 ```sh
-uv run pytest
-uv run ruff check .
-uv run telegram-search rebuild
-uv run telegram-search compact
+uv run --no-sync pytest
+uv run --no-sync ruff check .
+uv run --no-sync telegram-search rebuild
+uv run --no-sync telegram-search compact
 ```
 
 Браузерные тесты (только synthetic fixtures, в отдельном временном workspace):
@@ -107,4 +141,5 @@ CI проверяет Python 3.11–3.13 на Linux/Windows/macOS и synthetic C
 Состояние удалённого CI после push нужно проверять отдельно.
 
 Проверено на Linux/WSL x86_64. Windows и macOS требуют проверки на соответствующих
-устройствах. Установка начальной версии не содержит PyTorch, CUDA или скачивания моделей.
+устройствах; отдельный semantic CI job добавлен для трёх ОС. Пользовательское окружение
+не содержит PyTorch/CUDA. Сама установка окружения модели не скачивает.

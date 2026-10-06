@@ -1,6 +1,7 @@
 import hashlib
 import io
 import secrets
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
@@ -14,7 +15,9 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search.config.diagnostics import doctor
+from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
+from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
@@ -35,6 +38,14 @@ class ConflictResolution(BaseModel):
     expected_version: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class ModelRequest(BaseModel):
+    profile: Literal["small", "base"] = "small"
+    reindex: bool = False
+    offline: bool = False
+    repair: bool = False
+    local_bundle: str | None = Field(default=None, max_length=4096)
+
+
 def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     db = Database(workspace)
     db.initialize()
@@ -46,8 +57,14 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         importer = ImportService(db)
         app.state.importer = importer
-        yield
-        importer.shutdown()
+        semantic = SemanticService(db, importer.lifecycle_lock)
+        app.state.semantic = semantic
+        app.state.search = HybridSearch(db, semantic, importer.lifecycle_lock)
+        try:
+            yield
+        finally:
+            semantic.shutdown()
+            importer.shutdown()
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.state.db = db
@@ -109,6 +126,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
         exact: bool = False,
+        mode: Literal["words", "meaning", "hybrid"] = "words",
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ):
         filters = Filters(
@@ -124,7 +142,22 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             and filters.date_from >= filters.date_to
         ):
             raise UserError("Начало периода должно быть раньше конца.")
-        return search.search(q, filters, exact, limit)
+        return app.state.search.search(q, filters, exact, limit, mode)
+
+    @app.get("/api/semantic")
+    def semantic_status():
+        return app.state.semantic.status()
+
+    @app.post("/api/semantic/prepare", status_code=202)
+    def prepare_model(body: ModelRequest):
+        return app.state.semantic.prepare(**body.model_dump())
+
+    @app.post("/api/semantic/{action}")
+    def control_semantic(action: Literal["pause", "resume", "retry", "compact"]):
+        if action == "compact":
+            app.state.semantic.cleanup(compact=True)
+            return app.state.semantic.status()
+        return app.state.semantic.control(action)
 
     @app.get("/api/chats/{chat_id}/context/{message_id}")
     def get_context(
@@ -254,7 +287,12 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @app.delete("/api/chats/{chat_id}")
     def delete_chat(chat_id: str):
         with app.state.importer.lifecycle_lock:
-            return delete_chat_locked(chat_id)
+            result = delete_chat_locked(chat_id)
+        # A chunk builder may hold a WAL read snapshot while waiting to stage.
+        # Release lifecycle_lock so it can observe the deletion and close its reader.
+        db.compact()
+        app.state.semantic.wake.set()
+        return result
 
     def delete_chat_locked(chat_id: str):
         if app.state.importer.is_active(chat_id):
@@ -271,18 +309,30 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
                 raise HTTPException(status_code=404, detail="Диалог не найден.")
             # Paused tasks have no further writes; cascade also removes their checkpoints.
+            conn.execute(
+                "INSERT INTO vector_deletions(chat_id,created_at) VALUES(?,?) "
+                "ON CONFLICT(chat_id) DO UPDATE SET created_at=excluded.created_at,error=NULL",
+                (chat_id, int(time.time())),
+            )
+            conn.execute("DELETE FROM vector_segment_cleanup WHERE chat_id=?", (chat_id,))
             conn.execute("DELETE FROM import_previews WHERE chat_id=?", (chat_id,))
             conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
-        db.compact()
         return {"deleted": True, "source_files_preserved": True}
 
     @app.get("/api/doctor")
     def diagnostics():
-        return doctor(db)
+        status = app.state.semantic.status()
+        return {
+            **doctor(db),
+            "semantic": status,
+            "dense_available": status["dense_available"],
+            "models_loaded": int(bool(status["backend"] and status["backend"]["loaded"])),
+        }
 
     @app.post("/api/rebuild")
     def rebuild():
-        db.rebuild()
+        with app.state.importer.lifecycle_lock:
+            db.rebuild()
         return {"rebuilt": "fts5"}
 
     frontend_dir = frontend_dir or Path(__file__).resolve().parents[3] / "frontend" / "dist"

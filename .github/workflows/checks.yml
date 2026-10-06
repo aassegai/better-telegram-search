@@ -40,3 +40,16 @@ jobs:
         working-directory: frontend
       - run: npm test
         working-directory: frontend
+  semantic:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - run: uv sync --locked --extra semantic
+      - run: uv run --no-sync pytest tests/test_chunks.py tests/test_inference.py tests/test_semantic.py
+      - run: uv run --no-sync python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('sentence_transformers') is None"

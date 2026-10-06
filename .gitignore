@@ -19,6 +19,15 @@ telegram_search_onnx_runtime_agent*.md
 !.env.example
 !.env.*.example
 .cache/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.onnx
+*.onnx_data
+*.safetensors
+*.pt
+*.pth
 
 # Python
 .venv/

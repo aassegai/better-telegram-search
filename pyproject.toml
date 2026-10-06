@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "better-telegram-search"
 version = "0.1.0"
-description = "Local, CPU-only lexical search for Telegram Desktop exports"
+description = "Local CPU search for Telegram Desktop exports with ONNX semantic inference"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
@@ -19,6 +19,16 @@ dependencies = [
 
 [project.scripts]
 telegram-search = "telegram_search.cli:main"
+
+[project.optional-dependencies]
+semantic = [
+  "onnxruntime>=1.20,<2",
+  "tokenizers>=0.21,<1",
+  "numpy>=1.26,<3",
+  "huggingface-hub>=0.34,<2",
+  "lancedb>=0.25,<1",
+  "pyarrow>=18,<30",
+]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]

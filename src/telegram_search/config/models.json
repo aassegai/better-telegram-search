@@ -1,0 +1,138 @@
+{
+  "small": {
+    "schema_version": 1,
+    "bundle_version": 1,
+    "runtime": "onnxruntime",
+    "precision": "fp32",
+    "query_prefix": "query: ",
+    "passage_prefix": "passage: ",
+    "max_length": 512,
+    "chunk_max_tokens": 480,
+    "pooling": "masked-mean",
+    "normalization": "l2",
+    "postprocessing_version": "masked-mean-l2-numpy-v1",
+    "preprocessing_version": "telegram-windows-v1",
+    "license": "MIT",
+    "allowed_inputs": [
+      "input_ids",
+      "attention_mask",
+      "token_type_ids"
+    ],
+    "required_inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "output_name": "last_hidden_state",
+    "input_dtype": "int64",
+    "output_dtype": "float32",
+    "opset": 11,
+    "verified_platforms": [
+      "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+    ],
+    "model_id": "intfloat/multilingual-e5-small",
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "tokenizer_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "dimension": 384,
+    "source": "https://huggingface.co/intfloat/multilingual-e5-small/tree/614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "files": [
+      {
+        "name": "onnx/model.onnx",
+        "bytes": 470268510,
+        "sha256": "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665"
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 17082730,
+        "sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+      },
+      {
+        "name": "config.json",
+        "bytes": 655,
+        "sha256": "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959"
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 443,
+        "sha256": "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b"
+      },
+      {
+        "name": "special_tokens_map.json",
+        "bytes": 167,
+        "sha256": "d05497f1da52c5e09554c0cd874037a083e1dc1b9cfd48034d1c717f1afc07a7"
+      },
+      {
+        "name": "README.md",
+        "bytes": 497538,
+        "sha256": "0038de97aee16258cecbad7ffda4b4febd6953e747a00e0ddbc8e6ed241e9c1c"
+      }
+    ]
+  },
+  "base": {
+    "schema_version": 1,
+    "bundle_version": 1,
+    "runtime": "onnxruntime",
+    "precision": "fp32",
+    "query_prefix": "query: ",
+    "passage_prefix": "passage: ",
+    "max_length": 512,
+    "chunk_max_tokens": 480,
+    "pooling": "masked-mean",
+    "normalization": "l2",
+    "postprocessing_version": "masked-mean-l2-numpy-v1",
+    "preprocessing_version": "telegram-windows-v1",
+    "license": "MIT",
+    "allowed_inputs": [
+      "input_ids",
+      "attention_mask",
+      "token_type_ids"
+    ],
+    "required_inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "output_name": "last_hidden_state",
+    "input_dtype": "int64",
+    "output_dtype": "float32",
+    "opset": 11,
+    "verified_platforms": [
+      "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+    ],
+    "model_id": "intfloat/multilingual-e5-base",
+    "revision": "d128750597153bb5987e10b1c3493a34e5a4502a",
+    "tokenizer_revision": "d128750597153bb5987e10b1c3493a34e5a4502a",
+    "dimension": 768,
+    "source": "https://huggingface.co/intfloat/multilingual-e5-base/tree/d128750597153bb5987e10b1c3493a34e5a4502a",
+    "files": [
+      {
+        "name": "onnx/model.onnx",
+        "bytes": 1110059084,
+        "sha256": "84a4d426f7e87a6bf5bf195f0bae2c4a7d15f675b23ca96f42fab8326d7a77aa"
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 17082660,
+        "sha256": "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626"
+      },
+      {
+        "name": "config.json",
+        "bytes": 694,
+        "sha256": "9dab198f24c8c0879e481cf7822005d5ecbceedbacb390ffafa594e28d31bac4"
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 418,
+        "sha256": "efb5c0d09722e5fe59a462cd2a9976ee216d55b037597d997cd3fe833216da15"
+      },
+      {
+        "name": "special_tokens_map.json",
+        "bytes": 280,
+        "sha256": "06e405a36dfe4b9604f484f6a1e619af1a7f7d09e34a8555eb0b77b66318067f"
+      },
+      {
+        "name": "README.md",
+        "bytes": 179345,
+        "sha256": "9d129cb0b912b55c7b5378f976a9c35ae4796c80466b659ad63930d8ca090fca"
+      }
+    ]
+  }
+}

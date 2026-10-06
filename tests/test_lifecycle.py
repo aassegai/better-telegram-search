@@ -6,7 +6,7 @@ from PIL import Image
 
 from telegram_search.search.lexical import ContextService
 from telegram_search.shared.errors import UserError
-from telegram_search.storage.database import Database, execute_sql
+from telegram_search.storage.database import SCHEMA_VERSION, Database, execute_sql
 from telegram_search.storage.generations import utc_day
 
 
@@ -219,7 +219,10 @@ def test_v1_database_migrates_in_place_and_preserves_fts(tmp_path):
     db.initialize()
     db.initialize()
     with db.connect() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 2
+        assert (
+            conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+            == SCHEMA_VERSION
+        )
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM message_fts WHERE message_fts MATCH 'велосипед'"

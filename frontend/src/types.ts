@@ -12,6 +12,19 @@ export type Message = {
 export type Hit = {
   chat_id: string; chat_name: string; message_id: number; timestamp: number;
   messages: Message[];
+  matched_by?: ('words' | 'meaning')[];
+  chunk_id?: string;
+  matched_parts?: { message_id: number; char_start: number; char_end: number }[];
+};
+
+export type SemanticStatus = {
+  runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;
+  preparation_state: string; profile: string | null; error: string | null;
+  download_completed_bytes: number; download_total_bytes: number;
+  total_segments: number; ready_segments: number; pending_segments: number;
+  estimated_remaining_seconds?: number | null;
+  works: { state: string; count: number; chunks_total: number; chunks_done: number }[];
+  profiles: { profile: string; model_id: string; download_bytes: number; dimension: number }[];
 };
 export type Job = {
   id: string; chat_name: string; state: string; processed: number; added: number;

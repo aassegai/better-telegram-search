@@ -4,6 +4,7 @@ import sqlite3
 
 import psutil
 
+from telegram_search.config.hardware import hardware_info
 from telegram_search.storage.database import Database
 
 
@@ -44,4 +45,5 @@ def doctor(db: Database) -> dict:
         "imports": imports,
         "schema_version": schema_version,
         "pending_index_segments": pending,
+        "hardware": hardware_info(db.workspace),
     }

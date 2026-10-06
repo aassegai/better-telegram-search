@@ -6,11 +6,11 @@ function Invoke-Checked {
     & $Program @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Program failed with exit code $LASTEXITCODE" }
 }
-Invoke-Checked 'uv' @('sync', '--locked')
+Invoke-Checked 'uv' @('sync', '--locked', '--extra', 'semantic')
 Push-Location 'frontend'
 try {
     Invoke-Checked 'npm' @('ci')
     Invoke-Checked 'npm' @('run', 'build')
 } finally { Pop-Location }
-Invoke-Checked 'uv' @('run', 'telegram-search', 'setup')
-Invoke-Checked 'uv' @('run', 'telegram-search', 'doctor')
+Invoke-Checked 'uv' @('run', '--no-sync', 'telegram-search', 'setup')
+Invoke-Checked 'uv' @('run', '--no-sync', 'telegram-search', 'doctor')

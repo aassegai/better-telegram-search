@@ -1,0 +1,40 @@
+{
+  "profile": "base",
+  "model_id": "intfloat/multilingual-e5-base",
+  "revision": "d128750597153bb5987e10b1c3493a34e5a4502a",
+  "runtime": {
+    "backend": "onnxruntime",
+    "version": "1.30.0",
+    "tokenizers_version": "0.23.2",
+    "dtype": "float32",
+    "provider": "CPUExecutionProvider",
+    "model_id": "intfloat/multilingual-e5-base",
+    "revision": "d128750597153bb5987e10b1c3493a34e5a4502a",
+    "embedding_space": "a6fe89e3cdab52f1252ed02a87c0b33985c1fffe5fff797ae1c239b547fb39ff",
+    "dimension": 768,
+    "loaded": true,
+    "threads": 4
+  },
+  "reference_torch": "2.14.1+cpu",
+  "opsets": {
+    "ai.onnx": 11
+  },
+  "query_cases": 7,
+  "passage_cases": 8,
+  "batch_sizes": [
+    1,
+    2,
+    4
+  ],
+  "max_absolute_error": 1.7881393432617188e-07,
+  "min_cosine_agreement": 0.9999998807907104,
+  "max_padding_error": 0.0,
+  "topk_overlap": 1.0,
+  "ranking_k": 5,
+  "thresholds": {
+    "max_absolute_error": 0.0001,
+    "min_cosine_agreement": 0.99999,
+    "min_topk_overlap": 0.99
+  },
+  "passed": true
+}

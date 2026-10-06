@@ -6,7 +6,7 @@ import webbrowser
 from pathlib import Path
 
 import uvicorn
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from telegram_search.config.diagnostics import doctor
 from telegram_search.ingestion.importer import ImportService
@@ -35,6 +35,14 @@ def main() -> None:
     load.add_argument(
         "--preview", action="store_true", help="Только проверить, без изменения сообщений"
     )
+    prepare = commands.add_parser("prepare-model")
+    prepare.add_argument("--profile", choices=["small", "base"], default="small")
+    prepare.add_argument("--reindex", action="store_true")
+    prepare.add_argument("--offline", action="store_true")
+    prepare.add_argument("--repair", action="store_true")
+    prepare.add_argument("--local-bundle", type=Path)
+    indexing = commands.add_parser("index")
+    indexing.add_argument("--retry", action="store_true")
     args = parser.parse_args()
     if getattr(args, "run_workspace", None) is not None:
         args.workspace = args.run_workspace
@@ -97,15 +105,21 @@ def main() -> None:
             with FileLock(db.workspace / ".writer.lock", timeout=0):
                 db.rebuild()
             print("FTS5 перестроен.")
-        elif args.command == "compact":
-            with FileLock(db.workspace / ".writer.lock", timeout=0):
-                db.compact()
-            print("База уплотнена.")
+        elif args.command in {"prepare-model", "index", "compact"}:
+            from telegram_search.indexing.commands import semantic_command
+
+            print(json.dumps(semantic_command(db, args), ensure_ascii=False, indent=2))
         else:
             print("Workspace создан. Устройство: CPU. Модели не загружаются.")
-    except (UserError, OSError) as exc:
+    except (UserError, OSError, Timeout) as exc:
         print(
-            str(exc) if isinstance(exc, UserError) else "Ошибка доступа к локальным файлам.",
+            str(exc)
+            if isinstance(exc, UserError)
+            else (
+                "Workspace занят другим процессом."
+                if isinstance(exc, Timeout)
+                else "Ошибка доступа к локальным файлам."
+            ),
             file=sys.stderr,
         )
         sys.exit(1)

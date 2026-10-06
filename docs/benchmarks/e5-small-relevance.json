@@ -1,0 +1,76 @@
+{
+  "corpus": "public synthetic manual gold; not private archive relevance",
+  "profile": "small",
+  "embedding_space_id": "28a1f1ef35358760b8495c7546b699ae50ac84069f1ec8adffcbbf87562037d9",
+  "queries": 56,
+  "ranked_queries": 54,
+  "empty_scopes": 2,
+  "messages": 144,
+  "chats": 3,
+  "chunks": {
+    "chunks": 52,
+    "tokens": 3584,
+    "max_tokens": 480
+  },
+  "indexing": {
+    "chunks": 52,
+    "seconds": 3.2712748140002077
+  },
+  "first_segment_cold_seconds": 1.782,
+  "query_during_indexing": {
+    "p50_ms": 46.62,
+    "p95_ms": 70.05
+  },
+  "retrieval": {
+    "words": {
+      "recall_at_10": 0.0185,
+      "ndcg_at_10": 0.0185,
+      "p50_ms": 1.12,
+      "p95_ms": 1.73,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    },
+    "meaning": {
+      "recall_at_10": 0.9815,
+      "ndcg_at_10": 0.9328,
+      "p50_ms": 21.6,
+      "p95_ms": 24.45,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    },
+    "hybrid": {
+      "recall_at_10": 0.9815,
+      "ndcg_at_10": 0.9328,
+      "p50_ms": 16.71,
+      "p95_ms": 18.91,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    }
+  },
+  "peak_process_rss_bytes": 1308033024,
+  "runtime": {
+    "backend": "onnxruntime",
+    "version": "1.30.0",
+    "tokenizers_version": "0.23.2",
+    "dtype": "float32",
+    "provider": "CPUExecutionProvider",
+    "model_id": "intfloat/multilingual-e5-small",
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "embedding_space": "28a1f1ef35358760b8495c7546b699ae50ac84069f1ec8adffcbbf87562037d9",
+    "dimension": 384,
+    "loaded": true,
+    "threads": 4
+  },
+  "notes": [
+    "Exact LanceDB, no ANN; candidates=100, RRF k=60, equal weights.",
+    "Words uses message BM25; hybrid branches both use chunks.",
+    "Gold judges matched messages; the split-tail query also requires its range.",
+    "Synthetic query repetitions may hit the bounded query cache."
+  ]
+}

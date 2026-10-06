@@ -1,0 +1,35 @@
+{
+  "vectors": 4096,
+  "dimension": 384,
+  "dtype": "float32",
+  "index": "IVF_FLAT",
+  "partitions": 32,
+  "nprobes": 8,
+  "training_seconds": 0.207,
+  "scopes": {
+    "all": {
+      "recall_at_10_vs_exact": 0.51,
+      "exact": {
+        "p50_ms": 8.948,
+        "p95_ms": 10.652
+      },
+      "ann": {
+        "p50_ms": 6.609,
+        "p95_ms": 7.949
+      }
+    },
+    "filtered_128": {
+      "recall_at_10_vs_exact": 0.4233,
+      "exact": {
+        "p50_ms": 8.87,
+        "p95_ms": 9.851
+      },
+      "ann": {
+        "p50_ms": 6.987,
+        "p95_ms": 7.531
+      }
+    }
+  },
+  "decision": "Keep exact for current corpus; ANN recall is not guaranteed, especially for filters.",
+  "limitations": "Synthetic random vectors, engine timings only; not Telegram recall or end-to-end latency."
+}
