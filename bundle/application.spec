@@ -6,8 +6,6 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
-import tesserocr
-
 repo = Path(SPECPATH).parent
 assets = Path(os.environ["BTS_BUNDLE_ASSETS"])
 datas = [
@@ -36,7 +34,9 @@ if importlib.util.find_spec("cysignals") is not None:
     datas += collect_data_files("cysignals", include_py_files=True, includes=["*-helper.py"])
 a = Analysis(
     [str(repo / "bundle" / "entry.py")],
-    pathex=[str(repo / "src"), str(Path(tesserocr.__file__).parent)],
+    # Package directories must not be import roots: Windows tesserocr contains
+    # a same-named .pyd that otherwise shadows the package and loses its DLL path.
+    pathex=[str(repo / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
