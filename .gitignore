@@ -1,5 +1,7 @@
 # Private requirements and Telegram exports
+/plans/
 telegram_search_requirements_and_plan*.md
+telegram_search_onnx_runtime_agent*.md
 /test_chat_export/
 /exports/
 /data/

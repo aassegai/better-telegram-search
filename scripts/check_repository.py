@@ -7,6 +7,7 @@ from pathlib import Path
 repo = Path(__file__).resolve().parents[1]
 paths = subprocess.check_output(["git", "-C", str(repo), "ls-files", "-z"]).decode().split("\0")
 forbidden = {
+    "plans",
     "workspace",
     "exports",
     "test_chat_export",
@@ -28,7 +29,9 @@ for name in filter(None, paths):
     reason = None
     if set(path.parts) & forbidden or name.startswith("frontend/dist/"):
         reason = "private/runtime directory"
-    elif path.name.startswith("telegram_search_requirements_and_plan"):
+    elif path.name.startswith(
+        ("telegram_search_requirements_and_plan", "telegram_search_onnx_runtime_agent")
+    ):
         reason = "private requirements"
     elif path.name.startswith(".env") and not path.name.endswith(".example"):
         reason = "secrets file"
