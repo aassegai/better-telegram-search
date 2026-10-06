@@ -1,35 +1,105 @@
 {
   "commit": "c41ce4e5aa123a0045717306568acc85b0a38cc5",
   "run_id": "37443929912",
-  "result": "pending",
+  "result": "success",
   "draft": true,
   "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-15e8f94ac9c812723824",
   "builds": {
-    "darwin-arm64": {
-      "state": "pending",
-      "url": null
+    "linux-arm64": {
+      "state": "ready",
+      "sha256": "67304547c695c74ca58b2ddc6fc6ce19a527d4a0d29b9038f91c60688d2a8e9b",
+      "bytes": 189434845,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-linux-arm64.tar.gz"
     },
     "win32-x86_64": {
-      "state": "pending",
-      "url": null
+      "state": "ready",
+      "sha256": "d1d37da10501c5dad8e7b9917bdb0c36401d1d2e334597c2a638901391a35d4e",
+      "bytes": 197949718,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-win32-x86_64.zip"
     },
     "darwin-x86_64": {
-      "state": "pending",
-      "url": null
+      "state": "ready",
+      "sha256": "e277d336a50ba88f4dbf2d60330165f89e8b660353fbea244d65063c03977939",
+      "bytes": 142116274,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-darwin-x86_64.zip"
     },
-    "linux-arm64": {
-      "state": "pending",
-      "url": null
+    "darwin-arm64": {
+      "state": "ready",
+      "sha256": "86b2526282cc0b1d15c5044dd06b2b437ce76dc6d298487bc9115e6b259736ed",
+      "bytes": 160317129,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-darwin-arm64.zip"
     },
     "linux-x86_64": {
-      "state": "pending",
-      "url": null
+      "state": "ready",
+      "sha256": "768e8afa60e76b77127416dfae32b1d554e5fe7976b38b07ade4fdd1b4617fa8",
+      "bytes": 205146792,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-linux-x86_64.tar.gz"
     }
   },
   "jobs": [
     {
       "name": "prepare",
-      "conclusion": null,
+      "conclusion": "success",
       "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204061515",
       "steps": [
         {
@@ -54,10 +124,336 @@
         },
         {
           "name": "Run tag=\"build-${BTS_BUILD_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"",
-          "conclusion": null
+          "conclusion": "success"
         },
         {
           "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (ubuntu-22.04, x86_64, linux-x86_64)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204193766",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (macos-15, arm64, darwin-arm64)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204193854",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (macos-15-intel, x86_64, darwin-x86_64)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204193865",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (windows-2022, x86_64, win32-x86_64)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204193917",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (ubuntu-22.04-arm, arm64, linux-arm64)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112204193936",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "report",
+      "conclusion": null,
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912/job/112205363834",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record statuses and download links",
           "conclusion": null
         },
         {
