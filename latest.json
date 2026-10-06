@@ -2,8 +2,8 @@
   "commit": "c41ce4e5aa123a0045717306568acc85b0a38cc5",
   "run_id": "37443929912",
   "result": "success",
-  "draft": true,
-  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-15e8f94ac9c812723824",
+  "draft": false,
+  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.2.0",
   "builds": {
     "linux-arm64": {
       "state": "ready",
@@ -21,7 +21,7 @@
         "torch_absent": true,
         "unicode_paths": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-linux-arm64.tar.gz"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.2.0/better-telegram-search-0.2.0-linux-arm64.tar.gz"
     },
     "win32-x86_64": {
       "state": "ready",
@@ -39,7 +39,7 @@
         "torch_absent": true,
         "unicode_paths": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-win32-x86_64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.2.0/better-telegram-search-0.2.0-win32-x86_64.zip"
     },
     "darwin-x86_64": {
       "state": "ready",
@@ -57,7 +57,7 @@
         "torch_absent": true,
         "unicode_paths": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-darwin-x86_64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.2.0/better-telegram-search-0.2.0-darwin-x86_64.zip"
     },
     "darwin-arm64": {
       "state": "ready",
@@ -75,7 +75,7 @@
         "torch_absent": true,
         "unicode_paths": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-darwin-arm64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.2.0/better-telegram-search-0.2.0-darwin-arm64.zip"
     },
     "linux-x86_64": {
       "state": "ready",
@@ -93,7 +93,7 @@
         "torch_absent": true,
         "unicode_paths": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-15e8f94ac9c812723824/better-telegram-search-0.2.0-linux-x86_64.tar.gz"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.2.0/better-telegram-search-0.2.0-linux-x86_64.tar.gz"
     }
   },
   "jobs": [
@@ -465,5 +465,7 @@
   ],
   "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/37443929912",
   "failures": {},
-  "diagnostics_complete": true
+  "diagnostics_complete": true,
+  "published_tag": "v0.2.0",
+  "release_commit": "9872e5627b0d3e376d2d6c2a23695a4d9d52e6b9"
 }
