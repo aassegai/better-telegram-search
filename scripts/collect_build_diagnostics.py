@@ -7,6 +7,7 @@ The metadata branch makes diagnostics accessible with Git SSH without a local AP
 import base64
 import json
 import os
+import re
 import subprocess
 
 
@@ -50,12 +51,19 @@ def main():
         if job["conclusion"] != "failure":
             continue
         logs = subprocess.run(
-            ["gh", "api", f"repos/{repository}/actions/jobs/{job['id']}/logs"],
+            [
+                "gh",
+                "api",
+                "--allow-escape-sequences",
+                f"repos/{repository}/actions/jobs/{job['id']}/logs",
+            ],
             text=True,
             capture_output=True,
         )
+        safe_logs = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", logs.stdout)
+        safe_logs = "".join(ch for ch in safe_logs if ch in "\n\t" or 32 <= ord(ch) != 127)
         failures[job["name"]] = (
-            logs.stdout.splitlines()[-120:]
+            safe_logs.splitlines()[-120:]
             if logs.returncode == 0
             else ["GitHub log API: " + logs.stderr[:1000]]
         )
