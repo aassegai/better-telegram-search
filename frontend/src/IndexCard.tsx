@@ -4,12 +4,13 @@ import { t } from './i18n';
 import { estimatedTime } from './estimatedTime';
 import { useDialogOperation } from './useDialogOperation';
 import type { ReactNode } from 'react';
+import IndexErrors from './IndexErrors';
 
 export type Mutation = { onStart?: () => void; onEnd?: () => void; pending?: boolean };
 type Props = Mutation & {
   title: string; model: string; ready: number; total: number; paused: boolean;
   enabled: boolean; preparing: boolean; seconds?: number | null; chatId?: string;
-  blocked?: boolean;
+  blocked?: boolean; failed?: number;
   batch: number; kind: 'embedding_batch' | 'image_batch'; busy: boolean;
   onPrepare: () => void; onControl: (action: string) => void; onSaved: (value: unknown) => void;
   children?: ReactNode;
@@ -40,6 +41,7 @@ export default function IndexCard(props: Props) {
       <span>{preparing ? t('Подготавливаем…') : props.blocked ? t('Ошибка индексации') : paused ? t('На паузе') : enabled ? ready >= total ? t('Готово') : t('Индексация') : t('Не подготовлен')}</span></div>
     <progress aria-label={t('Прогресс индексации {p0}', { p0: title })} value={ready} max={Math.max(1, total)} />
     {enabled && !props.blocked && <p className="index-eta" role="status">{estimatedTime(seconds)}</p>}
+    <IndexErrors count={props.failed ?? 0} busy={busy || !enabled} onRetry={() => props.onControl('retry')} />
     <div className="index-batch">
       <label>{t('Размер батча')}<input aria-label={t('Размер батча {p0}', { p0: title })} type="number" min="1" max={max} step="1"
         value={batch} disabled={busy} onChange={event => { setBatch(Number(event.target.value)); setDirty(true); }} /></label>
@@ -51,10 +53,9 @@ export default function IndexCard(props: Props) {
       <small>{t('Больший батч использует больше памяти. При нехватке памяти он уменьшается автоматически.')}</small>
     </div>
     <div className="job-actions index-actions">
-      {enabled ? <button className="primary" disabled={busy} onClick={() => props.onControl(props.blocked ? 'retry' : paused ? 'resume' : 'pause')}>
-        {props.blocked ? t('Повторить ошибки') : paused ? t('Продолжить индексацию') : t('Пауза индексации')}</button> :
+      {enabled ? !props.blocked && <button className="primary" disabled={busy} onClick={() => props.onControl(paused ? 'resume' : 'pause')}>
+        {paused ? t('Продолжить индексацию') : t('Пауза индексации')}</button> :
         <button className="primary" disabled={busy} onClick={props.onPrepare}>{t('Открыть настройки моделей')}</button>}
-      {enabled && !props.blocked && <button disabled={busy} onClick={() => props.onControl('retry')}>{t('Повторить ошибки')}</button>}
     </div>
     {op.error && <p className="error" role="alert">{t(op.error)}</p>}
     {props.children}

@@ -239,3 +239,8 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
   .mobile-settings-button { display: grid; width: 40px; height: 40px; }
 }
 @media (max-width: 700px) { .topbar { height: auto; min-height: 54px; flex-wrap: wrap; padding-block: 10px; } .topbar-actions { gap: 10px; flex-wrap: wrap; } }
+
+.index-errors { margin: 14px 0 18px; padding: 14px; border: 1px solid var(--error-text, #a94432); border-radius: 8px; background: var(--error-bg, #fff2ed); color: var(--error-text, #9b5237); overflow-wrap: anywhere; }
+.index-errors > strong { display: block; font-size: 14px; }
+.index-errors p { margin: 7px 0; }
+.index-errors button { margin-top: 5px; max-width: 100%; }

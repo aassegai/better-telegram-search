@@ -29,7 +29,7 @@ export type MediaStatus = {
   ocr_paused?: boolean | number; ocr_engine?: 'tesseract' | 'paddle'; ocr_backend?: { device: string; provider: string };
   preparation_state: string; error: string | null; resource_error: string | null;
   total_photos: number; ocr_ready: number; ocr_failed: number; ocr_dense_ready: number;
-  ocr_nonempty_ready?: number; ocr_dense_available?: boolean;
+  ocr_dense_failed?: number; ocr_nonempty_ready?: number; ocr_dense_available?: boolean;
   ocr_estimated_remaining_seconds?: number | null;
   images_ready: number; missing_refs: number; ocr_available: boolean; images_available: boolean;
   images_failed?: number; images_estimated_remaining_seconds?: number | null;

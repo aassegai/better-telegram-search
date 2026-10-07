@@ -61,12 +61,13 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
     {indexing && <>
       {media && <IndexCard title={t('Изображения')} model="CLIP" ready={media.images_ready} total={media.total_photos}
         paused={Boolean(media.paused)} enabled={media.images_enabled === 1} preparing={preparing}
+        failed={media.images_failed ?? 0}
+        blocked={(media.images_failed ?? 0) > 0 && (Boolean(media.paused) || media.images_ready + (media.images_failed ?? 0) >= media.total_photos)}
         seconds={media.images_estimated_remaining_seconds} batch={media.batch_size ?? 1} kind="image_batch"
         chatId={chatId} busy={busy} onPrepare={onModels ?? (() => {})} onControl={control}
         onSaved={accept} onStart={onStart} onEnd={onEnd}>
         {[media.error, media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
         {media.missing_refs > 0 && <p className="warning">{t('Недоступных фотографий в источниках: ')}{media.missing_refs}</p>}
-        {(media.images_failed ?? 0) > 0 && <p className="warning">{t('Фотографий с ошибкой: {p0}', { p0: media.images_failed ?? 0 })}</p>}
       </IndexCard>}
       {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={action => control(action, 'ocr')} />}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>

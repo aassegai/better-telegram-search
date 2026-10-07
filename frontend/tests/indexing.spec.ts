@@ -36,9 +36,10 @@ for (const paused of [false, true]) {
     await page.getByRole('slider').press('End');
     const english = page.getByRole('region', { name: 'Text · E5' });
     await expect(english).toContainText('Indexing error');
-    await english.getByRole('button', { name: 'Retry errors', exact: true }).click();
+    await english.getByRole('button', { name: `Retry errors (${paused ? 1 : 723})`, exact: true }).click();
     await expect.poll(() => retried).toBe(true);
     await expect(english).toContainText('1317 / 2040');
+    await expect(english.locator('.index-errors')).toHaveCount(0);
     await expect(english.getByRole('button', { name: 'Pause indexing', exact: true })).toBeVisible();
   });
 }
@@ -57,6 +58,78 @@ async function mockIndex(page: import('@playwright/test').Page, ocrOnly = false)
         ocr_dense_available: true, ocr_estimated_remaining_seconds: 1800,
         images_ready: 10, total_photos: 100, images_estimated_remaining_seconds: 600 },
     } });
+  });
+}
+
+test('CLIP shows a counted retry action at progress and preserves ready images', async ({ page }) => {
+  let retried = false;
+  const clip = { images_enabled: 1, paused: 0, images_ready: 97, images_failed: 3,
+    total_photos: 100, images_estimated_remaining_seconds: 0 };
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...clip,
+      images_failed: retried ? 0 : 3 } } });
+  });
+  await page.route('**/api/chats/*/index/images/retry', async route => {
+    retried = true;
+    const base = await (await page.request.get(route.request().url().replace('/images/retry', ''))).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...clip, images_failed: 0 } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const card = page.getByRole('region', { name: 'Изображения · CLIP' });
+  await expect(card).toContainText('Ошибка индексации');
+  await expect(card).toContainText('Задач с ошибкой: 3');
+  await expect(card).toContainText('готовые результаты сохранятся');
+  await expect(card.locator('.index-eta')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Повторить ошибки (3)', exact: true }).click();
+  await expect.poll(() => retried).toBe(true);
+  await expect(card).toContainText('97 / 100');
+  await expect(card.locator('.index-errors')).toHaveCount(0);
+});
+
+for (const recognitionFailed of [0, 5]) {
+  test(`OCR shows recognition and semantic failures and retries both (${recognitionFailed})`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'dark' });
+    let retried = false;
+    const ocr = { ocr_enabled: 1, ocr_paused: 1, total_photos: 100,
+      ocr_ready: 100 - recognitionFailed, ocr_failed: recognitionFailed, ocr_dense_failed: 2,
+      ocr_nonempty_ready: 20, ocr_dense_ready: 18, ocr_dense_available: true };
+    await page.route('**/api/chats/*/index', async route => {
+      const base = await (await route.fetch()).json();
+      await route.fulfill({ json: { ...base, media: { ...base.media, ...ocr,
+        ...(retried ? { ocr_failed: 0, ocr_dense_failed: 0, ocr_paused: 0 } : {}) } } });
+    });
+    let release!: () => void;
+    await page.route('**/api/chats/*/index/ocr/retry', async route => {
+      const base = await (await page.request.get(route.request().url().replace('/ocr/retry', ''))).json();
+      await new Promise<void>(resolve => { release = resolve; });
+      retried = true;
+      await route.fulfill({ json: { ...base, media: { ...base.media, ...ocr,
+        ocr_failed: 0, ocr_dense_failed: 0, ocr_paused: 0 } } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+    const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+    await expect(card).toContainText('Обработано: 100 / 100');
+    await expect(card).toContainText('Требуется повтор');
+    await expect(card).toContainText('Смысловой OCR с ошибкой: 2');
+    const retry = card.getByRole('button', { name: `Повторить ошибки (${recognitionFailed + 2})`, exact: true });
+    await retry.scrollIntoViewIfNeeded();
+    const box = await retry.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await retry.click();
+    await expect.poll(() => !!release).toBe(true);
+    await expect(retry).toBeDisabled();
+    await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeDisabled();
+    release();
+    await expect(card.locator('.index-errors')).toHaveCount(0);
+    await expect(card).toContainText('OCR по смыслу: 18 / 20 с текстом');
+    await expect(card).toContainText(`Обработано: ${100 - recognitionFailed} / 100`);
+    await expect(card.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
   });
 }
 

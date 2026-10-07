@@ -408,5 +408,11 @@
   "Выполнение поиска": "Search progress",
   "Тёмная тема": "Dark theme",
   "CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.": "CPU and GPU recognize different images simultaneously. Pausing OCR stops both devices.",
-  "Для OCR на CPU + GPU выберите не менее двух CPU-потоков.": "Choose at least two CPU threads for CPU + GPU OCR."
+  "Для OCR на CPU + GPU выберите не менее двух CPU-потоков.": "Choose at least two CPU threads for CPU + GPU OCR.",
+  "Эти задачи не обработаны. Повторите ошибки — готовые результаты сохранятся.": "These tasks were not processed. Retry errors; completed results will be preserved.",
+  "Повторить ошибки ({p0})": "Retry errors ({p0})",
+  "Смысловой OCR с ошибкой: {p0}": "Semantic OCR errors: {p0}",
+  "Успешно распознано: {p0}": "Successfully recognized: {p0}",
+  "Требуется повтор": "Retry required",
+  "Обработка завершена. Ошибки нужно повторить.": "Processing finished. Failed tasks need to be retried."
 }

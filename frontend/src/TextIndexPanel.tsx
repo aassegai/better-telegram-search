@@ -25,11 +25,10 @@ export default function TextIndexPanel({ status, onChange, chatId, onStart, onEn
   return <IndexCard title={t('Текст')} model="E5" ready={status.ready_segments} total={status.total_segments}
     paused={Boolean(status.paused)} enabled={status.enabled === 1}
     preparing={['downloading', 'preparing'].includes(status.preparation_state)}
-    blocked={blocked}
+    blocked={blocked} failed={failed}
     seconds={status.estimated_remaining_seconds} batch={status.batch_size ?? 4} kind="embedding_batch"
     chatId={chatId} busy={op.busy || Boolean(pending)} onPrepare={onModels} onControl={control}
     onSaved={value => onChange((value as { semantic: SemanticStatus }).semantic)} onStart={onStart} onEnd={onEnd}>
-    {failed > 0 && <p className="warning">{t('Задач с ошибкой: {p0}', { p0: failed })}</p>}
     {indexError && <p className="warning" role="alert">{t(indexError)}</p>}
     {op.error && <p className="error" role="alert">{t(op.error)}</p>}
   </IndexCard>;

@@ -392,8 +392,10 @@ def test_ocr_pause_aborts_publication_and_new_version_retries_failure(db, import
     encoder.on_encode = lambda texts: (_ for _ in ()).throw(UserError("synthetic failure"))
     assert media._ocr_embeddings()
     assert not media._ocr_embeddings()
+    assert media.status()["ocr_dense_failed"] == 1
     encoder.on_encode = None
     media.ocr.version = "new-version"
+    assert media.status()["ocr_dense_failed"] == 0
     media._ocr_one()
     assert media._ocr_embeddings()
     assert not media._ocr_embeddings()
@@ -401,6 +403,72 @@ def test_ocr_pause_aborts_publication_and_new_version_retries_failure(db, import
         "поезд", Filters(), kind="ocr", mode="meaning"
     )
     assert hits[0]["ocr_range"]["char_start"] == 0
+
+
+def test_semantic_ocr_error_counts_are_scoped_and_retry_preserves_recognition(
+    db, importer, tmp_path
+):
+    from test_semantic import TestEncoder
+
+    from telegram_search.indexing.chats import ChatIndexing
+
+    first = load(importer, photo_export(tmp_path / "first"))["chat_id"]
+    # Shared content has one cached failure despite belonging to two chats.
+    shared = load(importer, photo_export(tmp_path / "shared", chat_id=200))["chat_id"]
+    stream = io.BytesIO()
+    Image.new("RGB", (64, 32), "blue").save(stream, format="PNG")
+    other = load(
+        importer,
+        photo_export(tmp_path / "other", chat_id=300, photo_data=stream.getvalue()),
+    )["chat_id"]
+    semantic, media = services(db, importer)
+
+    def fail(texts):
+        raise UserError("synthetic inference failure")
+
+    encoder = TestEncoder(on_encode=fail)
+    semantic.activate(encoder)
+    fake_ocr(media)
+    assert media._ocr_one() and media._ocr_one()
+    assert media._ocr_embeddings() and media._ocr_embeddings()
+    assert not media._ocr_embeddings()
+    assert media.status()["ocr_dense_failed"] == 2
+    for chat in (first, shared, other):
+        assert media.status(chat)["ocr_dense_failed"] == 1
+        assert media.status(chat)["ocr_failed"] == 0
+        assert media.status(chat)["ocr_ready"] == 1
+
+    with db.connect() as conn:
+        cache_before = [
+            tuple(row) for row in conn.execute("SELECT * FROM ocr_cache ORDER BY sha256")
+        ]
+        sha = conn.execute("SELECT sha256 FROM media_refs WHERE chat_id=?", (first,)).fetchone()[0]
+        # Failure counters must exclude unrelated embedding spaces.
+        conn.execute("INSERT INTO media_failures VALUES(?, 'old-model', 'stale')", (sha,))
+    assert media.status()["ocr_dense_failed"] == 2
+    indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
+    retried = indexing.control(first, "ocr", "retry")
+    assert retried["media"]["ocr_dense_failed"] == 0
+    assert media.status(shared)["ocr_dense_failed"] == 0
+    assert media.status(other)["ocr_dense_failed"] == 1
+    assert media.status()["ocr_dense_failed"] == 1
+    with db.connect() as conn:
+        assert cache_before == [
+            tuple(row) for row in conn.execute("SELECT * FROM ocr_cache ORDER BY sha256")
+        ]
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM media_failures WHERE space_id='old-model'"
+            ).fetchone()[0]
+            == 1
+        )
+
+    encoder.on_encode = None
+    assert media._ocr_embeddings()
+    assert not media._ocr_embeddings()  # Unrelated chat's failure still needs its own retry.
+    assert media.status(first)["ocr_dense_ready"] == 1
+    assert media.status()["ocr_ready"] == 2
+    assert media.status()["ocr_dense_failed"] == 1
 
 
 def test_failed_model_commit_does_not_activate_in_memory(db, importer, monkeypatch):

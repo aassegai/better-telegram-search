@@ -275,6 +275,19 @@ class MediaService:
                 "AND r.status='ready'" + refs + ")",
                 (self.clip.space_id if self.clip else "", *args),
             ).fetchone()[0]
+            ocr_failure_space = (
+                hashlib.sha256(
+                    serialize(["ocr", self.ocr.version, self.semantic.encoder.space_id]).encode()
+                ).hexdigest()
+                if self.ocr and self.semantic.encoder
+                else None
+            )
+            ocr_dense_failed = conn.execute(
+                "SELECT COUNT(*) FROM media_failures f WHERE f.space_id=? "
+                "AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=f.sha256 "
+                "AND r.kind='photo' AND r.status='ready'" + refs + ")",
+                (ocr_failure_space, *args),
+            ).fetchone()[0]
             if chat_id is not None:
                 chat = conn.execute(
                     "SELECT media_paused,ocr_paused FROM chats WHERE id=?", args
@@ -289,6 +302,7 @@ class MediaService:
             "ocr_ready": ready,
             "ocr_failed": failed,
             "ocr_dense_ready": ocr_dense,
+            "ocr_dense_failed": ocr_dense_failed,
             "ocr_nonempty_ready": nonempty,
             "ocr_dense_available": self.semantic.encoder is not None,
             "ocr_estimated_remaining_seconds": self.semantic.estimates.ocr(
