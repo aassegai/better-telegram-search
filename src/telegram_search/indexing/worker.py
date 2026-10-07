@@ -1,6 +1,8 @@
 import time
 from datetime import UTC, datetime
 
+from telegram_search.indexing.estimates import record_rate
+from telegram_search.inference.resources import memory_exhausted
 from telegram_search.search.chunks import ChunkBuilder, SourceMessage
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
@@ -21,14 +23,17 @@ class SegmentWorker:
         self.vectors = vectors
         self.lock = lifecycle_lock
         self.batch_size = batch_size
+        self.default_batch = batch_size
+        self.oom_limit = None
         self.should_stop = should_stop
         self.builder = ChunkBuilder(encoder.tokenizer)
 
     def _current(self, conn, work) -> bool:
         row = conn.execute(
-            "SELECT s.target_generation,t.active_space_id,t.paused,t.enabled,w.state "
+            "SELECT s.target_generation,t.active_space_id,t.paused,t.enabled,w.state,c.text_paused "
             "FROM index_segments s JOIN index_work w ON w.chat_id=s.chat_id "
-            "AND w.utc_day=s.utc_day JOIN semantic_state t ON t.id=1 WHERE w.id=?",
+            "AND w.utc_day=s.utc_day JOIN chats c ON c.id=w.chat_id "
+            "JOIN semantic_state t ON t.id=1 WHERE w.id=?",
             (work["id"],),
         ).fetchone()
         return bool(
@@ -37,6 +42,7 @@ class SegmentWorker:
             and row["active_space_id"] == self.encoder.space_id
             and row["enabled"]
             and not row["paused"]
+            and not row["text_paused"]
             and row["state"] == "running"
         )
 
@@ -105,6 +111,7 @@ class SegmentWorker:
                 )
 
     def run(self, work_id: str) -> dict:
+        self.oom_limit = None
         with self.lock, self.db.connect() as conn:
             row = conn.execute("SELECT * FROM index_work WHERE id=?", (work_id,)).fetchone()
             if row is None or row["state"] not in {"pending", "failed", "running"}:
@@ -115,7 +122,10 @@ class SegmentWorker:
                 "SELECT target_generation FROM index_segments WHERE chat_id=? AND utc_day=?",
                 (work["chat_id"], work["utc_day"]),
             ).fetchone()
-            if self.should_stop() or not state["enabled"] or state["paused"]:
+            chat = conn.execute(
+                "SELECT text_paused FROM chats WHERE id=?", (work["chat_id"],)
+            ).fetchone()
+            if self.should_stop() or not state["enabled"] or state["paused"] or not chat or chat[0]:
                 return {"state": "paused"}
             if (
                 not target
@@ -158,6 +168,13 @@ class SegmentWorker:
             while True:
                 with self.db.connect() as conn:
                     self._guard(conn, work)
+                    chosen = conn.execute(
+                        "SELECT text_batch FROM chats WHERE id=?", (work["chat_id"],)
+                    ).fetchone()[0]
+                    configured = chosen or self.default_batch
+                    # Explicit constructor limits are useful for CLI/tests. Per-chat
+                    # preferences take effect on the next batch without restarting work.
+                    self.batch_size = min(configured, self.oom_limit or configured)
                     checkpoint = conn.execute(
                         "SELECT chunks_done FROM index_work WHERE id=?", (work_id,)
                     ).fetchone()[0]
@@ -182,16 +199,9 @@ class SegmentWorker:
                 try:
                     embeddings = self.encoder.encode_text([row["text"] for row in rows], "passage")
                 except Exception as exc:
-                    cause = exc
-                    exhausted = False
-                    while cause is not None:
-                        exhausted |= isinstance(cause, MemoryError) or any(
-                            term in str(cause).lower()
-                            for term in ("out of memory", "bad_alloc", "failed to allocate")
-                        )
-                        cause = cause.__cause__
-                    if exhausted and self.batch_size > 1:
+                    if memory_exhausted(exc) and self.batch_size > 1:
                         self.batch_size = max(1, self.batch_size // 2)
+                        self.oom_limit = self.batch_size
                         continue
                     raise
                 with self.lock, self.db.connect() as conn:
@@ -204,6 +214,13 @@ class SegmentWorker:
                         "UPDATE index_work SET chunks_done=?,embedding_seconds=embedding_seconds+? "
                         "WHERE id=?",
                         (rows[-1]["ordinal"], time.perf_counter() - began, work_id),
+                    )
+                    record_rate(
+                        conn,
+                        "e5",
+                        self.encoder,
+                        sum(len(row["text"]) for row in rows),
+                        time.perf_counter() - began,
                     )
             with self.lock, self.db.connect() as conn:
                 self._guard(conn, work)

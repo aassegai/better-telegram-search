@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const update = {
   state: 'ready', error: null, current_version: '0.3.0', available_version: '0.4.0',
-  current_variant: 'cpu', variant: 'cpu', notes: '<img src=x onerror=window.updateInjected=true>',
+  current_variant: 'cpu', variant: 'cpu', notes: '### What\'s new\n\n- **GPU** indexing\n\n[Unsafe](javascript:alert(1))\n\n![image](https://example.invalid/track)\n\n<img src=x onerror=window.updateInjected=true>',
   completed_bytes: 100, total_bytes: 100, install_supported: true, gpu_build_supported: true,
 };
 
@@ -25,18 +25,16 @@ test('GPU indexing and CPU queries are independent and do not request reindexing
       query_execution: { provider: 'CPUExecutionProvider' } } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
-  await page.getByLabel('Устройство индексации', { exact: true }).selectOption('gpu');
-  await expect(page.getByLabel('Устройство поисковых запросов', { exact: true })).toHaveValue('cpu');
-  await page.getByLabel('Память CUDA на модель (МиБ)', { exact: true }).fill('512.5');
-  await expect(page.getByRole('button', { name: 'Применить устройство', exact: true })).toBeDisabled();
-  await page.getByLabel('Память CUDA на модель (МиБ)', { exact: true }).fill('4096');
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByLabel('Устройство для индексации', { exact: true }).selectOption('gpu');
+  await expect(page.getByLabel('Устройство для поиска', { exact: true })).toHaveValue('cpu');
+  await expect(page.locator('.device-panel select')).toHaveCount(2);
+  await expect(page.locator('.device-panel input')).toHaveCount(0);
   await page.getByRole('button', { name: 'Применить устройство', exact: true }).click();
-  await expect(page.getByText(/Готовая часть индекса сохранена/)).toBeVisible();
-  await expect(page.getByText('Runtime запросов: CPUExecutionProvider')).toBeVisible();
+  await expect(page.getByText('Устройства сохранены.')).toBeVisible();
   await page.getByRole('slider').press('End');
   await expect(page.getByLabel('Indexing device', { exact: true })).toHaveValue('gpu');
-  await expect(page.getByLabel('Search query device', { exact: true })).toHaveValue('cpu');
+  await expect(page.getByLabel('Search device', { exact: true })).toHaveValue('cpu');
 });
 
 test('changing update variant requires a new check and release notes remain escaped', async ({ page }) => {
@@ -48,11 +46,14 @@ test('changing update variant requires a new check and release notes remain esca
     return route.fulfill({ json: { ...update, variant } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const install = page.getByRole('button', { name: 'Обновить и перезапустить', exact: true });
   await expect(install).toBeEnabled();
   await page.getByText('Что изменилось', { exact: true }).click();
-  await expect(page.locator('.release-notes')).toContainText('<img src=x');
+  await expect(page.locator('.release-notes h3')).toHaveText("What's new");
+  await expect(page.locator('.release-notes li strong')).toHaveText('GPU');
+  await expect(page.locator('.release-notes img')).toHaveCount(0);
+  await expect(page.locator('.release-notes a[href^=javascript]')).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).updateInjected)).toBeUndefined();
   await page.getByLabel('Вариант сборки', { exact: true }).selectOption('gpu');
   await expect(install).toBeDisabled();
@@ -76,7 +77,7 @@ test('install reconnects even if settings close and an old status response arriv
     return route.fulfill({ json: { ...update, state } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Обновить и перезапустить', exact: true })).toBeEnabled();
   hold = true;
   await expect.poll(() => release.length).toBeGreaterThan(0);

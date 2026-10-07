@@ -38,8 +38,9 @@ def semantic_command(db, args):
                 while True:
                     with db.connect() as conn:
                         work = conn.execute(
-                            "SELECT id FROM index_work WHERE state='pending' "
-                            "ORDER BY created_at,id LIMIT 1"
+                            "SELECT w.id FROM index_work w JOIN chats c ON c.id=w.chat_id "
+                            "WHERE w.state='pending' AND c.text_paused=0 "
+                            "ORDER BY w.created_at,w.id LIMIT 1"
                         ).fetchone()
                     if not work:
                         break

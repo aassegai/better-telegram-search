@@ -167,8 +167,8 @@ class E5Encoder:
             raise UserError("Неизвестное назначение embedding.")
         if not texts:
             return np.empty((0, self.spec.dimension), dtype=np.float32)
-        if len(texts) > 32:
-            raise UserError("Батч модели должен содержать не более 32 текстов.")
+        if len(texts) > 128:
+            raise UserError("Батч модели должен содержать не более 128 текстов.")
         with self.condition:
             if interactive:
                 self.interactive_waiters += 1

@@ -97,7 +97,7 @@ test('late apply response cannot close a newly opened settings dialog', async ({
   await page.getByRole('button', { name: 'Применить изменения' }).click();
   await requestReceived;
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const finished = page.waitForResponse(response => response.url().endsWith('/apply'));
   release(); await finished;
   await expect(page.getByRole('heading', { name: 'Настройки и диагностика' })).toBeVisible();

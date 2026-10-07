@@ -36,6 +36,7 @@ def main():
         "win32-x86_64-gpu",
     }
     builds = {}
+    cores = {}
     for path in Path("build-reports").glob("*.json"):
         report = json.loads(path.read_text())
         name = (
@@ -44,6 +45,9 @@ def main():
             + report["arch"]
             + ("-gpu" if report.get("variant") == "gpu" else "")
         )
+        if "-core." in report["artifact"]:
+            cores[name] = report
+            continue
         builds[name] = {
             "state": "ready",
             "sha256": report["sha256"],
@@ -51,6 +55,8 @@ def main():
             "checks": report["checks"],
             "url": assets[report["artifact"]],
         }
+    for name, core in cores.items():
+        builds[name]["core"] = core
     for name in expected - builds.keys():
         builds[name] = {
             "state": "pending" if os.environ["BTS_BUILD_RESULT"] == "pending" else "failed",

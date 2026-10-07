@@ -74,7 +74,7 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
     {error && <div className="error" role="alert">{t(error)}</div>}
     {!preview ? <form onSubmit={inspect} className="import-form">
       <label>{t("Путь к JSON")}<input required value={jsonPath} placeholder={t("/папка/экспорта/result.json")} onChange={event => setJsonPath(event.target.value)} /></label>
-      <label>{t("Папка экспорта (необязательно)")}<input value={root} placeholder={t("По умолчанию — папка рядом с JSON")} onChange={event => setRoot(event.target.value)} /></label>
+      <label>{t("Папка выгрузки (необязательно)")}<input value={root} placeholder={t("По умолчанию — папка, содержащая result.json")} onChange={event => setRoot(event.target.value)} /></label>
       <label>{t("Область аккаунта")}<input required value={scope} onChange={event => setScope(event.target.value)} /><small>{t("Для разных аккаунтов укажите разные значения.")}</small></label>
       <label>{t("Диалог для обновления")}<select value={target} onChange={event => {
         setTarget(event.target.value); const chat = chats.find(chat => chat.id === event.target.value); if (chat) setScope(chat.scope);

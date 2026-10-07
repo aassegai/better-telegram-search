@@ -128,6 +128,64 @@ def test_gpu_release_requires_new_native_checks(check):
 
 
 @pytest.mark.parametrize(
+    "damage", [None, "blob_digest", "blob_url", "core_check", "library_path", "version"]
+)
+def test_small_gpu_core_requires_verified_library_inventory(tmp_path, damage):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gpu_payload_updates", Path(__file__).parents[1] / "bundle/gpu_payload.py"
+    )
+    payload = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(payload)
+    product = tmp_path / "product"
+    (product / "_internal").mkdir(parents=True)
+    (product / "_internal/libcudart.so.12").write_bytes(b"synthetic CUDA")
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    runtime = payload.split_runtime(product, assets_dir, "0.4.0", "linux")
+    release, report = release_case(variant="gpu")
+    report["checks"]["cuda_libraries"] = True
+    report.update(
+        artifact=report["artifact"].replace("-gpu.", "-gpu-core."),
+        gpu_runtime=runtime,
+        gpu_core_verified=True,
+    )
+    for name, data in (
+        (report["artifact"], b"synthetic archive"),
+        (report["artifact"].replace(".tar.xz", ".json"), json.dumps(report).encode()),
+        (runtime["files"][0]["asset"], (assets_dir / runtime["files"][0]["asset"]).read_bytes()),
+    ):
+        release["assets"].append(
+            {
+                "id": len(release["assets"]) + 1,
+                "name": name,
+                "size": len(data),
+                "state": "uploaded",
+                "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+                "browser_download_url": f"https://github.com/{network.REPOSITORY}/releases/download/v0.4.0/{name}",
+            }
+        )
+    selected = select_release(release, "0.3.1", "linux", "x86_64", "gpu")
+    assert selected["gpu_core"] and "-gpu-core." in selected["archive"]["name"]
+    if damage == "blob_digest":
+        release["assets"][-1]["digest"] = "sha256:" + "0" * 64
+    elif damage == "blob_url":
+        release["assets"][-1]["browser_download_url"] = "https://evil.test/library.gz"
+    elif damage == "core_check":
+        report["gpu_core_verified"] = False
+    elif damage == "library_path":
+        report["gpu_runtime"]["files"][0]["path"] = "_internal/app.py"
+    elif damage == "version":
+        report["gpu_runtime"]["version"] = "0.3.0"
+    if damage:
+        with pytest.raises(UserError):
+            validate_manifest(report, selected)
+    else:
+        assert validate_manifest(report, selected) == report
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "http://github.com/update",

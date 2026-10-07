@@ -24,15 +24,18 @@ export type Hit = {
 };
 
 export type MediaStatus = {
+  batch_size?: number;
   ocr_enabled: number; images_enabled: number; paused: number; running: boolean;
   preparation_state: string; error: string | null; resource_error: string | null;
   total_photos: number; ocr_ready: number; ocr_failed: number; ocr_dense_ready: number;
   images_ready: number; missing_refs: number; ocr_available: boolean; images_available: boolean;
+  images_failed?: number; images_estimated_remaining_seconds?: number | null;
   ocr_runtime_installed: boolean; device: string; backend?: { device: string; provider: string };
   query_backend?: { device: string; provider: string };
 };
 
 export type SemanticStatus = {
+  batch_size?: number;
   runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;
   backend?: { device: string; provider: string; warning?: string | null; query_execution?: { device: string; provider: string } };
   preparation_state: string; profile: string | null; error: string | null;

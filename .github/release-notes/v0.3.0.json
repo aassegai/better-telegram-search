@@ -1,0 +1,8 @@
+{
+  "repository": "aassegai/better-telegram-search",
+  "tag": "v0.3.0",
+  "tag_commit": "99baff068dbccb419cfcb636b16ee5c1cb49f303",
+  "operation": "replace_body",
+  "expected_body_sha256": "9079c49f1248ff16e200459ba713c50bab289b13fa374de9770094954bce79f0",
+  "body": "### What's new\n\n- GPU indexing through ONNX Runtime: NVIDIA CUDA on Windows/Linux x64 and CoreML on macOS. Torch is not required.\n- Independent indexing and search devices: build on GPU and search on CPU in the same index.\n- Resume a partially completed 0.2.0 CPU index on GPU, preserving completed chunks and progress.\n- GPU model sessions unload when indexing pauses or finishes.\n- In-app updates download verified CPU/GPU packages, restart the application, and keep a rollback copy.\n"
+}

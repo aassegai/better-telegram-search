@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from './api';
 import { t } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
@@ -68,7 +70,13 @@ export default function UpdatePanel({ onRestart }: { onRestart: () => void }) {
       {status.available_version && <p>{t('Доступно: {p0} · {p1}', { p0: status.available_version, p1: status.variant.toUpperCase() })}</p>}
       {status.total_bytes > 0 && <div className="update-progress"><progress max={status.total_bytes} value={status.completed_bytes} aria-label={t('Скачивание обновления')} />
         <span>{t('{p0} / {p1} МиБ', { p0: (status.completed_bytes / 1024 ** 2).toFixed(1), p1: (status.total_bytes / 1024 ** 2).toFixed(1) })}</span></div>}
-      {status.notes && <details><summary>{t('Что изменилось')}</summary><pre className="release-notes">{status.notes}</pre></details>}
+      {status.notes && <details><summary>{t('Что изменилось')}</summary><div className="release-notes">
+        <Markdown remarkPlugins={[remarkGfm]} skipHtml disallowedElements={['img']}
+          urlTransform={url => /^https?:\/\//i.test(url) ? url : ''}
+          components={{ a: ({ href, children }) => href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span> }}>
+          {status.notes}
+        </Markdown>
+      </div></details>}
       <div className="job-actions">
         <button disabled={busy} onClick={() => action('check')}>{t('Проверить обновления')}</button>
         <button disabled={busy || variant !== status.variant || !status.available_version || !['available', 'failed'].includes(status.state)} onClick={() => action('download')}>{t('Скачать обновление')}</button>

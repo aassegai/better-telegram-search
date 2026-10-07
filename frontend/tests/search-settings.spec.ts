@@ -5,12 +5,11 @@ test('search display settings persist and control result cards and their message
   const token = (await (await page.request.get('/api/session')).json()).token;
   const original = await (await page.request.get('/api/settings')).json();
   try {
-    await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+    await page.getByText('Выдача поиска', { exact: true }).click();
     await page.getByLabel('Количество результатов', { exact: true }).fill('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('1');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
-    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');
@@ -19,7 +18,7 @@ test('search display settings persist and control result cards and their message
     await expect(page.locator('.result-card .message')).toHaveCount(1);
     await expect(page.locator('.more-note')).toContainText('из лимита 1');
     await page.reload();
-    await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+    await page.getByText('Выдача поиска', { exact: true }).click();
     await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('1');
     await expect(page.getByLabel('Сообщений в одном фрагменте', { exact: true })).toHaveValue('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('101');
@@ -28,7 +27,6 @@ test('search display settings persist and control result cards and their message
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('3');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
-    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');

@@ -30,7 +30,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
-      - name: Remove only the requested section from the published release
+      - name: Apply the explicitly requested release descriptions
         env:
           GH_TOKEN: ${{ github.token }}
           BTS_RELEASE_VERSION: ${{ inputs.version }}

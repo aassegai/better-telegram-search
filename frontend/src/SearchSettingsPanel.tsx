@@ -17,8 +17,6 @@ export default function SearchSettingsPanel() {
   }, []);
   const valid = settings && [settings.search_result_limit, settings.display_chunk_size].every(value => Number.isInteger(value) && value >= 1 && value <= 100);
   return <section className="search-settings-panel">
-    <h3>{t("Выдача поиска")}</h3>
-    <p>{t("Количество результатов задаёт максимум карточек. Размер фрагмента — максимум сообщений в одной карточке, включая совпадение и соседние сообщения. Диапазон: 1–100.")}</p>
     <form onSubmit={event => {
       event.preventDefault();
       if (!valid || !settings) return;

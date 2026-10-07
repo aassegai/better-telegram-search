@@ -271,6 +271,7 @@ class UpdateService:
             raise UserError("Контрольная сумма обновления не совпадает с релизом.")
         self._set(state="verifying")
         product = extract(archive, directory / "extracted", platform=sys.platform)
+        self._hydrate_runtime(product, manifest, selected, completed)
         metadata = build_info(product)
         if (
             metadata.get("version") != selected["version"]
@@ -295,6 +296,39 @@ class UpdateService:
         with self.lock:
             self.product, self.archive, self.manifest = product, archive, manifest
         self._set(state="ready")
+
+    def _hydrate_runtime(self, product, manifest, selected, completed=None):
+        if not selected.get("gpu_core"):
+            return
+        from telegram_search.inference.gpu_cache import RuntimeCache, read_manifest
+
+        runtime = read_manifest(product, sys.platform)
+        if runtime != manifest.get("gpu_runtime"):
+            raise UserError("GPU-библиотеки не соответствуют проверенному релизу.")
+        # Reserve enough space even on a cache miss. Existing immutable objects
+        # are reused by SHA, and changed libraries are always atomically replaced.
+        needed = sum(item["bytes"] + item["compressed_bytes"] for item in runtime["files"])
+        if shutil.disk_usage(self.root).free < needed + 512 * 1024**2:
+            raise UserError("Недостаточно места для скачивания и проверки обновления.")
+        total = selected["archive"]["size"] + sum(
+            {item["asset"]: item["compressed_bytes"] for item in runtime["files"]}.values()
+        )
+
+        def progress(count):
+            nonlocal completed
+            if completed is not None:
+                completed += count
+                self._set(completed_bytes=completed, total_bytes=total)
+
+        RuntimeCache(self.workspace).hydrate(
+            product,
+            seed=application_root(),
+            progress=progress,
+            stopped=self.stop.is_set,
+        )
+        if completed is not None:
+            # Actual network bytes, including only missing/changed libraries.
+            self._set(completed_bytes=completed, total_bytes=completed)
 
     def _cleanup_cache(self):
         """Keep one rollback snapshot; never touch an active copied helper."""
@@ -407,6 +441,7 @@ class UpdateService:
             raise UserError("Недостаточно места рядом с приложением для установки обновления.")
         try:
             product = extract(self.archive, directory / "verified", platform=sys.platform)
+            self._hydrate_runtime(product, self.manifest, self.selected)
             copy_installation(product, stage)
             copy_installation(target, helper)
             plan = {

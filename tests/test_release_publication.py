@@ -16,7 +16,7 @@ publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
 
 
-@pytest.fixture(params=["0.1.0", "0.3.0"])
+@pytest.fixture(params=["0.1.0", "0.3.0", "0.3.1"])
 def release_case(monkeypatch, request):
     release_version = request.param
     request = {
@@ -50,7 +50,7 @@ def release_case(monkeypatch, request):
             "bytes": len(payload),
             "checks": dict.fromkeys(publisher.CHECKS, True),
         }
-        if release_version == "0.3.0":
+        if release_version >= "0.3.0":
             build["checks"].update(dict.fromkeys(publisher.NEW_CHECKS, True))
         if platform.endswith("-gpu"):
             build["checks"]["cuda_libraries"] = True
@@ -70,6 +70,39 @@ def release_case(monkeypatch, request):
         files[archive] = payload
         files[prefix + ".json"] = json.dumps(manifest).encode()
         files[prefix + ".sha256"] = (build["sha256"] + "  " + archive + "\n").encode()
+        if release_version == "0.3.1" and platform.endswith("-gpu"):
+            raw = b"synthetic CUDA library"
+            checksum = hashlib.sha256(raw).hexdigest()
+            asset = f"gpu-runtime-{system}-x86_64-{checksum}.gz"
+            files[asset] = b"synthetic compressed CUDA library"
+            blob = {
+                "path": "_internal/cudart.dll"
+                if system == "win32"
+                else "_internal/libcudart.so.12",
+                "sha256": checksum,
+                "bytes": len(raw),
+                "asset": asset,
+                "compressed_sha256": hashlib.sha256(files[asset]).hexdigest(),
+                "compressed_bytes": len(files[asset]),
+            }
+            core_name = prefix + "-core." + extension
+            files[core_name] = b"synthetic small GPU app"
+            core = {
+                **manifest,
+                "artifact": core_name,
+                "bytes": len(files[core_name]),
+                "sha256": hashlib.sha256(files[core_name]).hexdigest(),
+                "gpu_core_verified": True,
+                "gpu_runtime": {
+                    "schema": 1,
+                    "version": release_version,
+                    "platform": system,
+                    "files": [blob],
+                },
+            }
+            build["core"] = core
+            files[prefix + "-core.json"] = json.dumps(core).encode()
+            files[prefix + "-core.sha256"] = (core["sha256"] + "  " + core_name + "\n").encode()
     for name, payload in files.items():
         release["assets"].append(
             {
@@ -178,10 +211,32 @@ def test_publication_rejects_unverified_assets_without_writing_release(release_c
 def test_archive_without_github_digest_is_downloaded_and_hashed(release_case):
     request, report, release, _, _, _ = release_case
     for item in release["assets"]:
-        item["digest"] = None
-    assert len(publisher.verify_assets(release, report, request)) == 3 * len(
-        publisher.platforms(request)
-    )
+        if not item["name"].startswith("gpu-runtime-") and "-core." not in item["name"]:
+            item["digest"] = None
+    assert len(publisher.verify_assets(release, report, request)) == len(release["assets"])
+
+
+@pytest.mark.parametrize("damage", ["failed", "missing"])
+def test_gpu_core_cannot_reuse_failed_or_incomplete_native_checks(release_case, damage):
+    request, report, release, files, patches, _ = release_case
+    cores = [
+        (target, build["core"]) for target, build in report["builds"].items() if "core" in build
+    ]
+    if not cores:
+        pytest.skip("This release predates GPU core packages")
+    target, core = cores[0]
+    core["checks"] = dict(core["checks"])
+    if damage == "failed":
+        core["checks"]["cuda_libraries"] = False
+    else:
+        core["checks"].pop("cuda_libraries")
+    name = core["artifact"].replace(".tar.xz", ".json").replace(".zip", ".json")
+    files[name] = json.dumps(core).encode()
+    asset = next(item for item in release["assets"] if item["name"] == name)
+    asset.update(size=len(files[name]), digest="sha256:" + hashlib.sha256(files[name]).hexdigest())
+    with pytest.raises(ValueError, match="GPU core checks"):
+        publisher.publish(request)
+    assert not patches
 
 
 def test_concurrent_creation_of_conflicting_tag_does_not_publish(release_case, monkeypatch):

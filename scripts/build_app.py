@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
 
 
 def run(*args, **kwargs):
@@ -142,14 +143,15 @@ def main():
             "zip" if sys.platform == "win32" else ("tar.xz" if args.variant == "gpu" else "tar.gz")
         )
         archive = output / f"{name}.{extension}"
-        if sys.platform == "win32":
-            shutil.make_archive(str(archive.with_suffix("")), "zip", product.parent, product.name)
-        else:
-            compression = {"preset": 1} if args.variant == "gpu" else {"compresslevel": 3}
-            with tarfile.open(
-                archive, "w:xz" if args.variant == "gpu" else "w:gz", **compression
-            ) as out:
-                out.add(product, arcname=product.name)
+        from bundle.gpu_payload import pack, split_runtime
+
+        runtime = (
+            split_runtime(product, output, version, sys.platform) if args.variant == "gpu" else None
+        )
+        pack(product, archive)
+        if runtime:
+            core = output / f"{name}-core.{extension}"
+            pack(product, core, exclude=[item["path"] for item in runtime["files"]])
     if archive.stat().st_size >= 2 * 1024**3:
         raise RuntimeError("Archive exceeds GitHub's per-asset size limit")
     # Smoke-check the artifact after extraction, outside the source tree and environment.
@@ -193,6 +195,29 @@ def main():
                 "Artifact smoke failed:\n" + exc.stderr.decode(errors="replace")
             ) from exc
         smoke = json.loads(result.stdout)
+        if args.variant == "gpu":
+            from telegram_search.inference.gpu_cache import RuntimeCache
+
+            core_extracted = Path(temporary) / "GPU core 中文"
+            shutil.unpack_archive(core, core_extracted)
+            core_product = core_extracted / product.name
+            cache = RuntimeCache(Path(temporary) / "runtime-cache")
+            # Test the deployed cache seed path on each native OS (especially
+            # Windows loaded-library permissions), then hydrate from blobs too.
+            cache.hydrate(core_product, seed=extracted / product.name, local_assets=output)
+            shutil.rmtree(core_extracted)
+            shutil.unpack_archive(core, core_extracted)
+            RuntimeCache(Path(temporary) / "empty-cache").hydrate(core_product, local_assets=output)
+            core_result = run(
+                str(core_product / executable.name),
+                "--self-test",
+                cwd=core_extracted,
+                env=clean_env,
+                capture_output=True,
+                timeout=180,
+            )
+            if json.loads(core_result.stdout) != smoke:
+                raise RuntimeError("GPU core does not match the full package checks")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
     manifest = {
         "artifact": archive.name,
@@ -214,6 +239,21 @@ def main():
     archive.with_name(f"{name}.sha256").write_text(
         f"{manifest['sha256']}  {archive.name}\n", encoding="utf-8"
     )
+    if args.variant == "gpu":
+        core_manifest = {
+            **manifest,
+            "artifact": core.name,
+            "bytes": core.stat().st_size,
+            "sha256": sha256(core),
+            "gpu_runtime": runtime,
+            "gpu_core_verified": True,
+        }
+        core.with_name(f"{name}-core.json").write_text(
+            json.dumps(core_manifest, indent=2), encoding="utf-8"
+        )
+        core.with_name(f"{name}-core.sha256").write_text(
+            f"{core_manifest['sha256']}  {core.name}\n", encoding="utf-8"
+        )
     print(json.dumps({key: manifest[key] for key in ("artifact", "bytes", "sha256", "checks")}))
 
 

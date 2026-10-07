@@ -61,11 +61,15 @@ test('chunk result renders the eighth message and escapes its text', async ({ pa
 
 test('model change requires explicit reindex and late preparation preserves a reopened dialog', async ({ page }) => {
   await page.route('**/api/semantic', route => route.fulfill({ json: status }));
+  await page.route('**/api/chats/*/index', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ json: { ...await response.json(), semantic: status } });
+  });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page.getByLabel('Модель смыслового поиска').selectOption('base');
-  await expect(page.getByRole('button', { name: 'Подготовить модель и индекс' })).toBeDisabled();
-  await page.getByLabel('Разрешить полную переиндексацию').check();
+  await expect(page.getByRole('button', { name: 'Подготовить модель текста' })).toBeDisabled();
+  await page.getByLabel('Разрешить переиндексацию всех диалогов при смене модели').check();
   await page.getByLabel('Использовать только локальный кэш').check();
   let release: () => void = () => {};
   let received: () => void = () => {};
@@ -76,15 +80,15 @@ test('model change requires explicit reindex and late preparation preserves a re
     received(); await waiting;
     await route.fulfill({ json: { ...status, preparation_state: 'downloading' } });
   });
-  await page.getByRole('button', { name: 'Подготовить модель и индекс' }).click();
+  await page.getByRole('button', { name: 'Подготовить модель текста' }).click();
   await started;
-  await expect(page.getByRole('button', { name: 'Пауза индексирования' })).toBeDisabled();
+  await expect(page.getByLabel('Модель смыслового поиска')).toBeDisabled();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const completed = page.waitForResponse(response => response.url().endsWith('/semantic/prepare'));
   release(); await completed;
-  await expect(page.getByRole('heading', { name: 'Настройки и диагностика' })).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByLabel('Модель смыслового поиска')).toHaveValue('small');
   await expect(page.getByLabel('Модель смыслового поиска')).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Подготовить модель и индекс' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Подготовить модель текста' })).toBeEnabled();
 });

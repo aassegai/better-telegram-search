@@ -323,7 +323,7 @@ def apply_plan(plan, *, restart=True):
             child_pid=process.pid,
             child_created=psutil.Process(process.pid).create_time(),
         )
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + 300
         while time.monotonic() < deadline and process.poll() is None:
             if committed(status_path, plan["nonce"]):
                 return

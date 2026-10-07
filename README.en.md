@@ -30,7 +30,7 @@ this browser. Messages and search queries keep their original language.
 
 For NVIDIA on Windows/Linux x64, choose an archive ending in `-gpu`. Torch and a
 separate CUDA installation are unnecessary; a compatible NVIDIA driver is required.
-Set **Indexing device → GPU** and **Search query device → CPU** in settings.
+Set **Indexing device → GPU** and **Search device → CPU** in settings.
 Click **Apply device**, then resume indexing.
 Both devices use one index, preserving completed chunks and progress.
 GPU sessions are unloaded when indexing is paused or finished.
@@ -38,7 +38,7 @@ macOS supports CoreML when the model passes its CPU compatibility check.
 
 From 0.3.0 onwards, use **Settings → Application updates** to check, download,
 and **Update and restart**. Upgrade from 0.2.0 manually the first time: pause text
-and media indexing, fully close the old app, and launch 0.3.0 with the same workspace.
+and media indexing, fully close the old app, and launch the current release with the same workspace.
 Select GPU indexing and resume; completed CPU chunks do not need rebuilding.
 
 ### Run from source
@@ -73,17 +73,21 @@ run the commands without the environment prefix. [Device details](docs/gpu-and-u
 1. Export your conversations from Telegram Desktop as **JSON**. Include photos
    to search images and recognize text inside them.
 2. Click **Import archive**, enter the path to `result.json`, then click
-   **Check export** and **Apply changes**.
+   **Check export** and **Apply changes**. The export folder is the parent folder
+   containing `result.json`; usually you can leave it blank.
 3. Enter a query and click **Search**. **Keywords** search works immediately after
    import. Click **Open context** to see the surrounding messages.
-4. For semantic search, open **Settings and diagnostics** and click
-   **Prepare model and index**. Once ready, select **Meaning** or
-   **Keywords and meaning**, then click **Search**.
-5. For photos, click **Prepare OCR** or **Prepare photo search** in settings.
-   Under **Search in**, select **Text**, **Images**, and/or **OCR**. You can combine
-   them, such as OCR + text or OCR + images. Enter a query and click **Search**.
+4. Open **Settings** and prepare **E5** for semantic search, **CLIP** for photos,
+   or **OCR** for text in images. Then open **⋯** beside a chat and click
+   **Resume indexing** for the required index.
+5. The chat menu contains text and image batch sizes, progress, and an estimate
+   for the whole remaining queue. Larger GPU batches use more memory; the app
+   retries smaller batches if memory runs out.
+6. **Keywords and meaning** is the default mode. Keyword search remains available
+   while the semantic index is being built. Combine **Text**, **Images**, and
+   **OCR** under **Search in**, or select **Exact phrase** when needed.
 
 Preparing E5/CLIP downloads the models; subsequent searches work offline.
-**Search results** settings control the number of results and the number of
+**Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.

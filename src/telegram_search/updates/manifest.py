@@ -49,6 +49,11 @@ def select_release(release, current_version, platform, arch, variant="cpu", curr
     assets = release.get("assets", [])
     if not isinstance(assets, list) or len(assets) > 100:
         raise UserError("Некорректный список файлов обновления.")
+    core = variant == "gpu" and any(
+        isinstance(asset, dict) and asset.get("name") == prefix + "-core.json" for asset in assets
+    )
+    if core:
+        prefix += "-core"
     selected = {}
     for asset in assets:
         if not isinstance(asset, dict):
@@ -84,6 +89,8 @@ def select_release(release, current_version, platform, arch, variant="cpu", curr
         "archive": archive,
         "report": report,
         "notes": str(release.get("body") or "")[:20_000],
+        "gpu_core": core,
+        "assets": assets,
     }
 
 
@@ -105,4 +112,28 @@ def validate_manifest(manifest, selected):
         or any(value is not True for value in checks.values())
     ):
         raise UserError("Сборка не соответствует проверенному отчёту релиза.")
+    if selected.get("gpu_core"):
+        from telegram_search.inference.gpu_cache import validate
+
+        runtime = validate(manifest.get("gpu_runtime"), selected["platform"])
+        if (
+            runtime["version"] != selected["version"]
+            or manifest.get("gpu_core_verified") is not True
+        ):
+            raise UserError("Сборка не соответствует проверенному отчёту релиза.")
+        assets = {asset["name"]: asset for asset in selected["assets"]}
+        if len(assets) != len(selected["assets"]):
+            raise UserError("Некорректный список файлов обновления.")
+        for item in runtime["files"]:
+            asset = assets.get(item["asset"], {})
+            if (
+                asset.get("size") != item["compressed_bytes"]
+                or asset.get("digest") != "sha256:" + item["compressed_sha256"]
+                or asset.get("state") != "uploaded"
+                or asset.get("browser_download_url")
+                != (
+                    f"https://github.com/{REPOSITORY}/releases/download/{selected['tag']}/{item['asset']}"
+                )
+            ):
+                raise UserError("GPU-библиотеки не соответствуют проверенному релизу.")
     return manifest

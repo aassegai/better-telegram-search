@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import secrets
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,8 +16,10 @@ from PIL import Image
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from telegram_search import __version__
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
+from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
@@ -90,6 +93,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         importer = semantic = media = updates = None
+        verification_stop = threading.Event()
+        verification_thread = None
         try:
             updates = UpdateService(db.workspace, getattr(app.state, "update_shutdown", None))
             app.state.updates = updates
@@ -104,11 +109,33 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 db, importer.lifecycle_lock, semantic, start_background=not hold_background
             )
             app.state.media = media
+            app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
             app.state.workspace = WorkspaceService(db, importer, semantic, media)
             app.state.search = UnifiedSearch(
                 HybridSearch(db, semantic, importer.lifecycle_lock),
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
             )
+            app.state.update_database_check = "checking" if verification_nonce else "ok"
+            if verification_nonce:
+
+                def verify_database():
+                    try:
+                        with db.connect() as conn:
+                            conn.set_progress_handler(
+                                lambda: int(verification_stop.is_set()), 10_000
+                            )
+                            result = conn.execute("PRAGMA quick_check").fetchone()[0]
+                        app.state.update_database_check = "ok" if result == "ok" else "failed"
+                    except Exception:
+                        app.state.update_database_check = "failed"
+
+                # Run the integrity scan once. The old 0.3.0 helper polls /doctor
+                # with a 2-second timeout; scanning a large DB on every request
+                # causes a healthy replacement to be rolled back repeatedly.
+                verification_thread = threading.Thread(
+                    target=verify_database, name="update-db-check", daemon=True
+                )
+                verification_thread.start()
             if (
                 frozen()
                 and not verification_nonce
@@ -118,6 +145,9 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 updates.check()
             yield
         finally:
+            verification_stop.set()
+            if verification_thread:
+                verification_thread.join(timeout=10)
             if updates:
                 updates.close()
             if media:
@@ -208,7 +238,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
         exact: bool = False,
-        mode: Literal["words", "meaning", "hybrid"] = "words",
+        mode: Literal["words", "meaning", "hybrid"] = "hybrid",
         tab: Literal["all", "text", "images", "ocr"] = "text",
         modality: Annotated[
             list[Literal["text", "images", "ocr"]] | None, Query(min_length=1, max_length=3)
@@ -241,7 +271,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
 
     @app.post("/api/media-index/prepare", status_code=202)
     def prepare_media_model(body: MediaModelRequest):
-        return app.state.media.prepare(body.kind, offline=body.offline)
+        return app.state.chat_indexing.initialize(body.kind, offline=body.offline)
 
     @app.post("/api/media-index/{action}")
     def media_control(action: Literal["pause", "resume", "retry"]):
@@ -279,6 +309,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     def confirm_update(body: UpdateConfirmation):
         if not verification_nonce or not secrets.compare_digest(body.nonce, verification_nonce):
             raise UserError("Недопустимое подтверждение обновления.")
+        if app.state.update_verifying and app.state.update_database_check != "ok":
+            raise UserError("Проверка базы ещё не завершена или завершилась ошибкой.")
         from telegram_search.updates.installer import commit_update
 
         with app.state.importer.lifecycle_lock:
@@ -325,9 +357,33 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     def semantic_status():
         return app.state.semantic.status()
 
+    @app.get("/api/chats/{chat_id}/index")
+    def chat_index_status(chat_id: str):
+        return app.state.chat_indexing.status(chat_id)
+
+    @app.patch("/api/chats/{chat_id}/index/settings")
+    def chat_index_settings(chat_id: str, body: dict):
+        return app.state.chat_indexing.settings(chat_id, body)
+
+    @app.post("/api/chats/{chat_id}/index/text/prepare", status_code=202)
+    def chat_prepare_text(chat_id: str, body: ModelRequest):
+        return app.state.chat_indexing.prepare(chat_id, "text", **body.model_dump())
+
+    @app.post("/api/chats/{chat_id}/index/media/prepare", status_code=202)
+    def chat_prepare_media(chat_id: str, body: MediaModelRequest):
+        return app.state.chat_indexing.prepare(chat_id, body.kind, offline=body.offline)
+
+    @app.post("/api/chats/{chat_id}/index/{kind}/{action}")
+    def chat_index_control(
+        chat_id: str,
+        kind: Literal["text", "media"],
+        action: Literal["pause", "resume", "retry", "compact"],
+    ):
+        return app.state.chat_indexing.control(chat_id, kind, action)
+
     @app.post("/api/semantic/prepare", status_code=202)
     def prepare_model(body: ModelRequest):
-        return app.state.semantic.prepare(**body.model_dump())
+        return app.state.chat_indexing.initialize("text", **body.model_dump())
 
     @app.post("/api/semantic/{action}")
     def control_semantic(action: Literal["pause", "resume", "retry", "compact"]):
@@ -499,6 +555,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
 
     @app.get("/api/doctor")
     def diagnostics():
+        if verification_nonce and app.state.update_verifying:
+            return {"version": __version__, "database_check": app.state.update_database_check}
         status = app.state.semantic.status()
         media_backend = app.state.media.status().get("backend")
         backend = status["backend"] or media_backend

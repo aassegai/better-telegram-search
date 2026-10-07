@@ -1,0 +1,8 @@
+{
+  "repository": "aassegai/better-telegram-search",
+  "tag": "v0.1.0",
+  "tag_commit": "feae49514ff6ef4340a4be57e50adaab0673d007",
+  "operation": "replace_body",
+  "expected_body_sha256": "65692da3054c72cca86c5ac63fdb8bd0a4aa222b3de0ae28938a414a978bd09e",
+  "body": "### What's new\n\n- Local search in Telegram Desktop archives by words, exact phrase, and meaning.\n- Filters by chat, author, and date, with adjustable result counts and message context.\n- Photo search by description and Russian/English OCR.\n- CPU inference through ONNX Runtime; conversations stay on your computer.\n"
+}

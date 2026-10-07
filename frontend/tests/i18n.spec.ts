@@ -84,36 +84,29 @@ test('keyboard language slider persists and preserves search state and original 
   await expect(page.getByRole('button', { name: 'Import archive' })).toBeVisible();
 });
 
-test('open settings switch languages without losing edits and translate backend errors', async ({ page }) => {
-  // This scenario checks translated model controls independently of installed ML extras.
-  await page.route('**/api/semantic', async route => {
-    const response = await route.fetch();
-    await route.fulfill({ json: { ...await response.json(), runtime_installed: true } });
-  });
+test('search settings preserve edits and translate errors outside the settings dialog', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+  await page.getByText('Выдача поиска', { exact: true }).click();
   await page.getByLabel('Количество результатов', { exact: true }).fill('7');
-  await page.getByRole('slider').focus();
   await page.getByRole('slider').press('End');
+  await expect(page.getByLabel('Result limit', { exact: true })).toHaveValue('7');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAccessibleName('Settings and diagnostics');
-  await expect(page.getByLabel('Result limit', { exact: true })).toHaveValue('7');
-  for (const title of ['Search results', 'Semantic search', 'Photos and OCR', 'Resources', 'Sources', 'Disk usage']) {
+  for (const title of ['Sources', 'Disk usage']) {
     await expect(dialog.getByRole('heading', { name: title, exact: true })).toBeVisible();
   }
-  await expect(page.getByRole('button', { name: 'Prepare model and index', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Prepare OCR', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Prepare photo search', exact: true })).toBeVisible();
+  await expect(dialog.locator('.index-card')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.route('**/api/settings', async route => {
     if (route.request().method() !== 'PATCH') { await route.continue(); return; }
     await route.fulfill({ status: 400, json: { detail: 'Недопустимое значение настройки search_result_limit.' } });
   });
   await page.getByRole('button', { name: 'Save search settings' }).click();
-  await expect(dialog.getByRole('alert')).toContainText('Invalid value for setting search_result_limit.');
-  await page.getByRole('slider').focus();
+  await expect(page.getByRole('alert')).toContainText('Invalid value for setting search_result_limit.');
   await page.getByRole('slider').press('Home');
   await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('7');
-  await expect(dialog.getByRole('alert')).toContainText('Недопустимое значение настройки search_result_limit.');
+  await expect(page.getByRole('alert')).toContainText('Недопустимое значение настройки search_result_limit.');
 });
 
 test('English import, preview, apply and conflict resolution keep original export content', async ({ page }) => {

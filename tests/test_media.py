@@ -114,7 +114,7 @@ def test_settings_reject_invalid_values_and_write_atomic_config(db, importer):
     for body in (
         {"cpu_threads": True},
         {"device": "cuda"},
-        {"image_batch": 9},
+        {"image_batch": 33},
         {"ocr_max_edge": 0},
     ):
         with pytest.raises(UserError):

@@ -2,6 +2,7 @@
   "repository": "aassegai/better-telegram-search",
   "tag": "v0.1.1",
   "tag_commit": "7de492a8f0e889da0731645b82df13f41c08c907",
-  "operation": "remove_section",
-  "heading": "### Проверки и ограничения"
+  "operation": "replace_body",
+  "expected_body_sha256": "b4d4a6b5fec7df454ecc2245727f80aeb7f5391274241a3521d123e39a915e47",
+  "body": "### What's new\n\n- Combine Text, Images, and OCR in one search, including OCR + Text and OCR + Images.\n- Merged results keep match explanations and OCR evidence without duplicate messages.\n- Available search types continue working when another model is unavailable.\n- The import action is now labeled “Import archive”; quickstart instructions are updated.\n"
 }

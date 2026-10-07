@@ -214,8 +214,8 @@ class ClipEncoder:
         return result
 
     def encode_images(self, images):
-        if not 1 <= len(images) <= 8:
-            raise UserError("Батч изображений должен содержать от 1 до 8 файлов.")
+        if not 1 <= len(images) <= 32:
+            raise UserError("Батч изображений должен содержать от 1 до 32 файлов.")
         pixels = np.stack([image_tensor(data, self.preprocessor) for data in images])
         with compute_lock:
             result = normalize(

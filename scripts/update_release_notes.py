@@ -1,4 +1,4 @@
-"""Remove an explicitly requested section from an existing release body only."""
+"""Edit explicitly requested published release bodies, preserving tags and assets."""
 
 import hashlib
 import json
@@ -21,8 +21,13 @@ def load_request():
         files = publisher.git(
             "diff", "--name-only", event["before"], event["after"], "--", ".github/release-notes"
         ).splitlines()
-        publisher.require(len(files) == 1, "Exactly one notes request required")
-        path = Path(files[0])
+        publisher.require(1 <= len(files) <= 20, "Notes requests required")
+        requests = [read_request(Path(name)) for name in files]
+        return requests[0] if len(requests) == 1 else requests
+    return read_request(path)
+
+
+def read_request(path):
     publisher.require(
         re.fullmatch(r"\.github/release-notes/v\d+\.\d+\.\d+\.json", path.as_posix()),
         "Invalid request path",
@@ -39,8 +44,18 @@ def load_request():
     publisher.require(
         re.fullmatch(r"[0-9a-f]{40}", request["tag_commit"]), "Full commit SHA required"
     )
-    publisher.require(request["operation"] == "remove_section", "Unsupported operation")
-    publisher.require(re.fullmatch(r"#{1,6} [^\r\n]+", request["heading"]), "Invalid heading")
+    publisher.require(
+        request["operation"] in {"remove_section", "replace_body"}, "Unsupported operation"
+    )
+    if request["operation"] == "remove_section":
+        publisher.require(re.fullmatch(r"#{1,6} [^\r\n]+", request["heading"]), "Invalid heading")
+    else:
+        publisher.require(
+            re.fullmatch(r"[a-f0-9]{64}", request["expected_body_sha256"]), "Body checksum required"
+        )
+        publisher.require(
+            isinstance(request["body"], str) and 0 < len(request["body"]) <= 20_000, "Invalid body"
+        )
     return request
 
 
@@ -85,7 +100,15 @@ def update_notes(request):
     )
     endpoint = f"repos/{repository}/releases/{release['id']}"
     original = release.get("body") or ""
-    updated = remove_section(original, request["heading"])
+    if request["operation"] == "replace_body":
+        updated = request["body"]
+        publisher.require(
+            original == updated
+            or hashlib.sha256(original.encode()).hexdigest() == request["expected_body_sha256"],
+            "Published notes changed since this request was prepared",
+        )
+    else:
+        updated = remove_section(original, request["heading"])
     if updated != original:
         fresh = publisher.api(endpoint)
         publisher.require(
@@ -109,7 +132,7 @@ def update_notes(request):
         "state": "updated",
         "tag": tag,
         "url": confirmed["html_url"],
-        "heading_removed": remove_section(updated, request["heading"]) == updated,
+        "operation": request["operation"],
         "body_sha256": hashlib.sha256(updated.encode()).hexdigest(),
         "run_id": os.environ["GITHUB_RUN_ID"],
     }
@@ -117,6 +140,15 @@ def update_notes(request):
 
 def main():
     request = load_request()
+    if isinstance(request, list):
+        results = [update_notes(item) for item in request]
+        report = {"state": "updated", "releases": results}
+        try:
+            publisher.write_report(request[0]["repository"], "release-notes.json", report)
+        except Exception as error:
+            report["report_warning"] = str(error)
+        print(json.dumps(report))
+        return
     try:
         result = update_notes(request)
     except Exception as error:

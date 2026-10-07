@@ -50,3 +50,23 @@ class CpuGate:
 
 
 compute_lock = CpuGate()
+
+
+def memory_exhausted(exc):
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, MemoryError) or any(
+            term in str(exc).lower()
+            for term in (
+                "out of memory",
+                "bad_alloc",
+                "failed to allocate",
+                "cublas_status_alloc_failed",
+                "cudnn_status_alloc_failed",
+                "cuda_error_out_of_memory",
+            )
+        ):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False

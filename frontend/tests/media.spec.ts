@@ -33,8 +33,13 @@ test('OCR evidence stays escaped and modality changes clear the previous result'
 
 test('resource settings persist and closing the panel ignores late media preparation', async ({ page }) => {
   await page.route('**/api/media-index', route => route.fulfill({ json: media }));
+  await page.route('**/api/chats/*/index', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ json: { ...await response.json(), media } });
+  });
   await page.goto('/');
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByText('Общие ресурсы индексации', { exact: true }).first().click();
   await page.getByLabel('Потоков CPU', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Сохранить ресурсы' }).click();
   await expect(page.getByText(/Настройки сохранены/)).toBeVisible();
@@ -46,7 +51,8 @@ test('resource settings persist and closing the panel ignores late media prepara
   await page.getByRole('button', { name: 'Подготовить OCR', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByText('Общие ресурсы индексации', { exact: true }).first().click();
   const response = page.waitForResponse('**/api/media-index/prepare');
   release();
   await response;

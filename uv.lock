@@ -4,23 +4,23 @@ requires-python = ">=3.11, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "(python_full_version >= '3.13' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
-    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
 ]
@@ -71,7 +71,7 @@ wheels = [
 
 [[package]]
 name = "better-telegram-search"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -559,14 +559,14 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "(python_full_version >= '3.13' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
-    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version < '3.12' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version < '3.12' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
 ]
@@ -681,12 +681,12 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "(python_full_version >= '3.13' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
-    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "python_full_version >= '3.13' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
+    "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform == 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
     "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version == '3.12.*' and sys_platform == 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
 ]
@@ -1380,16 +1380,16 @@ version = "2.11.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "(python_full_version >= '3.13' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
-    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version >= '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version >= '3.13' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "(python_full_version == '3.12.*' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version == '3.12.*' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
+    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform != 'win32' and extra == 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version >= '3.13' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
-    "python_full_version == '3.12.*' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
     "python_full_version < '3.12' and sys_platform != 'win32' and extra != 'extra-22-better-telegram-search-gpu' and extra != 'extra-22-better-telegram-search-semantic'",
 ]
 dependencies = [

@@ -10,9 +10,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from telegram_search.inference.gpu_manifest import validate as validate_gpu_manifest  # noqa: E402
 
 CHECKS = {
     "sqlite_fts5",
@@ -243,12 +247,44 @@ def verify_assets(release, report, request):
         for key, name in prefixes.items()
         for suffix in ("." + targets[key], ".json", ".sha256")
     }
+    cores = {}
+    if tuple(int(part) for part in version.split(".")) >= (0, 3, 1):
+        for target, prefix in prefixes.items():
+            if not target.endswith("-gpu"):
+                continue
+            core = report["builds"][target].get("core", {})
+            require(core.get("gpu_core_verified") is True, "GPU core verification missing")
+            require(
+                core.get("checks") == report["builds"][target]["checks"],
+                "GPU core checks must match the verified full package",
+            )
+            runtime = validate_gpu_manifest(core.get("gpu_runtime"), target.split("-", 1)[0])
+            require(runtime["version"] == version, "GPU runtime version mismatch")
+            cores[target] = core
+            expected.update(
+                prefix + "-core" + suffix
+                for suffix in (
+                    "." + targets[target],
+                    ".json",
+                    ".sha256",
+                )
+            )
+            expected.update(item["asset"] for item in runtime["files"])
     assets = {item["name"]: item for item in release["assets"]}
     require(
-        set(assets) == expected and len(release["assets"]) == len(targets) * 3,
+        set(assets) == expected and len(release["assets"]) == len(expected) <= 100,
         "Release must contain exactly the required archives with reports and checksums",
     )
     require(all(item["state"] == "uploaded" for item in assets.values()), "Upload incomplete")
+    require(
+        all(
+            0 < assets[prefixes[target] + "-core.json"]["size"] <= 100_000
+            and 0 < assets[prefixes[target] + "-core.sha256"]["size"] <= 300
+            and 0 < core["bytes"] < 2 * 1024**3
+            for target, core in cores.items()
+        ),
+        "Unexpected GPU core metadata size",
+    )
     require(
         all(
             0 < assets[name]["size"] <= maximum
@@ -307,6 +343,29 @@ def verify_assets(release, report, request):
                 with (root / archive).open("rb") as incoming:
                     digest = "sha256:" + hashlib.file_digest(incoming, "sha256").hexdigest()
             require(digest == "sha256:" + build["sha256"], "Uploaded archive SHA-256 mismatch")
+        for target, core in cores.items():
+            prefix = prefixes[target] + "-core"
+            archive = prefix + "." + targets[target]
+            manifest = json.loads((root / (prefix + ".json")).read_text())
+            verify_manifest(manifest, request, target, core, archive)
+            require(manifest == core, "GPU core report mismatch")
+            require(
+                assets[archive]["size"] == core["bytes"]
+                and assets[archive].get("digest") == "sha256:" + core["sha256"],
+                "GPU core archive mismatch",
+            )
+            require(
+                (root / (prefix + ".sha256")).read_text().strip()
+                == core["sha256"] + "  " + archive,
+                "GPU core checksum mismatch",
+            )
+            for item in core["gpu_runtime"]["files"]:
+                asset = assets[item["asset"]]
+                require(
+                    asset["size"] == item["compressed_bytes"]
+                    and asset.get("digest") == "sha256:" + item["compressed_sha256"],
+                    "GPU library checksum or size mismatch",
+                )
     return assets
 
 

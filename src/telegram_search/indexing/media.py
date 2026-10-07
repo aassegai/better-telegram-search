@@ -5,7 +5,8 @@ import time
 
 import psutil
 
-from telegram_search.inference.resources import compute_lock
+from telegram_search.indexing.estimates import record_rate
+from telegram_search.inference.resources import compute_lock, memory_exhausted
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text, serialize
@@ -20,6 +21,7 @@ class MediaService:
         self.clip = None
         self.running = False
         self.resource_error = None
+        self.image_limits = {}
         self.ocr_staging_ids = set()
         self.stop = threading.Event()
         self.wake = threading.Event()
@@ -169,12 +171,16 @@ class MediaService:
         self.wake.set()
         return self.status()
 
-    def status(self):
+    def status(self, chat_id=None):
         with self.lock, self.db.connect() as conn:
+            args = (chat_id,) if chat_id is not None else ()
+            refs = " AND r.chat_id=?" if chat_id is not None else ""
+            clause = " AND chat_id=?" if chat_id is not None else ""
             state = dict(conn.execute("SELECT * FROM media_state WHERE id=1").fetchone())
             total = conn.execute(
                 "SELECT COUNT(DISTINCT sha256) FROM media_refs "
-                "WHERE kind='photo' AND status='ready'"
+                "WHERE kind='photo' AND status='ready'" + clause,
+                args,
             ).fetchone()[0]
             ready = failed = images = 0
             if self.ocr:
@@ -183,35 +189,49 @@ class MediaService:
                     for row in conn.execute(
                         "SELECT o.state,COUNT(*) FROM ocr_cache o WHERE o.version=? AND EXISTS "
                         "(SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 AND r.status='ready' "
-                        "AND r.kind='photo') GROUP BY o.state",
-                        (self.ocr.version,),
+                        "AND r.kind='photo'" + refs + ") GROUP BY o.state",
+                        (self.ocr.version, *args),
                     )
                 }
                 ready, failed = counts.get("ready", 0), counts.get("failed", 0)
             nonempty = conn.execute(
                 "SELECT COUNT(*) FROM ocr_cache o WHERE version=? AND state='ready' "
                 "AND text<>'' AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 "
-                "AND r.status='ready' AND r.kind='photo')",
-                (self.ocr.version if self.ocr else "",),
+                "AND r.status='ready' AND r.kind='photo'" + refs + ")",
+                (self.ocr.version if self.ocr else "", *args),
             ).fetchone()[0]
             if self.clip:
                 images = conn.execute(
                     "SELECT COUNT(*) FROM media_embeddings e WHERE kind='image' "
                     "AND space_id=? AND EXISTS (SELECT 1 FROM media_refs r "
-                    "WHERE r.sha256=e.sha256 AND r.status='ready' AND r.kind='photo')",
-                    (self.clip.space_id,),
+                    "WHERE r.sha256=e.sha256 AND r.status='ready' AND r.kind='photo'" + refs + ")",
+                    (self.clip.space_id, *args),
                 ).fetchone()[0]
             missing = conn.execute(
-                "SELECT COUNT(*) FROM media_refs WHERE kind='photo' AND status<>'ready'"
+                "SELECT COUNT(*) FROM media_refs WHERE kind='photo' AND status<>'ready'" + clause,
+                args,
             ).fetchone()[0]
             ocr_dense = conn.execute(
-                "SELECT COUNT(DISTINCT sha256) FROM media_embeddings "
-                "WHERE kind='ocr' AND space_id=? AND ocr_version=?",
+                "SELECT COUNT(DISTINCT e.sha256) FROM media_embeddings e "
+                "WHERE kind='ocr' AND space_id=? AND ocr_version=? AND EXISTS "
+                "(SELECT 1 FROM media_refs r WHERE r.sha256=e.sha256" + refs + ")",
                 (
                     self.semantic.encoder.space_id if self.semantic.encoder else "",
                     self.ocr.version if self.ocr else "",
+                    *args,
                 ),
             ).fetchone()[0]
+            images_failed = conn.execute(
+                "SELECT COUNT(*) FROM media_failures f WHERE f.space_id=? AND EXISTS "
+                "(SELECT 1 FROM media_refs r WHERE r.sha256=f.sha256 AND r.kind='photo' "
+                "AND r.status='ready'" + refs + ")",
+                (self.clip.space_id if self.clip else "", *args),
+            ).fetchone()[0]
+            if chat_id is not None:
+                chat = conn.execute("SELECT media_paused FROM chats WHERE id=?", args).fetchone()
+                if chat is None:
+                    raise UserError("Диалог не найден.")
+                state["paused"] = bool(state["paused"] or chat[0])
         return {
             **state,
             "total_photos": total,
@@ -220,6 +240,10 @@ class MediaService:
             "ocr_dense_ready": ocr_dense,
             "ocr_nonempty_ready": nonempty,
             "images_ready": images,
+            "images_failed": images_failed,
+            "images_estimated_remaining_seconds": self.semantic.estimates.images(
+                self.clip, total - images - images_failed
+            ),
             "missing_refs": missing,
             "ocr_available": self.ocr is not None,
             "images_available": self.clip is not None,
@@ -260,8 +284,8 @@ class MediaService:
             not self.stop.is_set()
             and not state[0]
             and conn.execute(
-                "SELECT 1 FROM media_refs WHERE sha256=? "
-                "AND status='ready' AND kind='photo' LIMIT 1",
+                "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id WHERE r.sha256=? "
+                "AND c.media_paused=0 AND r.status='ready' AND r.kind='photo' LIMIT 1",
                 (sha,),
             ).fetchone()
             is not None
@@ -273,7 +297,8 @@ class MediaService:
         engine = self.ocr
         with self.db.connect() as conn:
             row = conn.execute(
-                "SELECT r.sha256 FROM media_refs r WHERE r.kind='photo' "
+                "SELECT r.sha256 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
+                "WHERE c.media_paused=0 AND r.kind='photo' "
                 "AND r.status='ready' AND NOT EXISTS (SELECT 1 FROM ocr_cache o "
                 "WHERE o.sha256=r.sha256 AND o.version=?) LIMIT 1",
                 (engine.version,),
@@ -357,13 +382,31 @@ class MediaService:
             return False
         encoder = self.clip
         with self.db.connect() as conn:
+            if conn.execute("SELECT paused FROM media_state WHERE id=1").fetchone()[0]:
+                return False
+            pending = (
+                "r.kind='photo' AND r.status='ready' AND NOT EXISTS "
+                "(SELECT 1 FROM media_embeddings e WHERE e.sha256=r.sha256 "
+                "AND e.space_id=? AND e.kind='image') AND NOT EXISTS "
+                "(SELECT 1 FROM media_failures f WHERE f.sha256=r.sha256 AND f.space_id=?)"
+            )
+            chat = conn.execute(
+                "SELECT c.id,c.image_batch FROM chats c WHERE c.media_paused=0 "
+                "AND EXISTS (SELECT 1 FROM media_refs r WHERE r.chat_id=c.id AND "
+                + pending
+                + ") ORDER BY c.id LIMIT 1",
+                (encoder.space_id, encoder.space_id),
+            ).fetchone()
+            if chat is None:
+                return False
+            configured = chat["image_batch"] or self.db.settings.image_batch
+            limit_key = (id(encoder), chat["id"], configured)
+            limit = min(configured, self.image_limits.get(limit_key, configured))
             photos = conn.execute(
-                "SELECT DISTINCT r.sha256 FROM media_refs r WHERE r.kind='photo' "
-                "AND r.status='ready' AND NOT EXISTS (SELECT 1 FROM media_embeddings e "
-                "WHERE e.sha256=r.sha256 AND e.space_id=? AND e.kind='image') "
-                "AND NOT EXISTS (SELECT 1 FROM media_failures f WHERE f.sha256=r.sha256 "
-                "AND f.space_id=?) LIMIT ?",
-                (encoder.space_id, encoder.space_id, self.db.settings.image_batch),
+                "SELECT DISTINCT r.sha256 FROM media_refs r WHERE r.chat_id=? AND "
+                + pending
+                + " ORDER BY r.sha256 LIMIT ?",
+                (chat["id"], encoder.space_id, encoder.space_id, limit),
             ).fetchall()
         if not photos:
             return False
@@ -376,22 +419,39 @@ class MediaService:
                 self._failure(row[0], encoder.space_id, str(exc))
         if not good:
             return True
-        try:
-            embeddings = encoder.encode_images(data)
-        except Exception:
-            # Retry independently to isolate a malformed image from the rest of its batch.
-            if len(good) > 1:
-                for sha, value in zip(good, data, strict=True):
-                    try:
-                        self._publish(
-                            encoder.space_id, 512, "image", [sha], encoder.encode_images([value])
-                        )
-                    except Exception:
-                        self._failure(sha, encoder.space_id, "CLIP не смог обработать фотографию.")
+
+        def encode(hashes, values):
+            with self.lock, self.db.connect() as conn:
+                if self.clip is not encoder or not any(self._current(conn, sha) for sha in hashes):
+                    return
+            began = time.perf_counter()
+            try:
+                embeddings = encoder.encode_images(values)
+            except Exception as exc:
+                if len(hashes) == 1:
+                    self._failure(
+                        hashes[0], encoder.space_id, "CLIP не смог обработать фотографию."
+                    )
+                    return
+                middle = len(hashes) // 2
+                if memory_exhausted(exc):
+                    self.image_limits[limit_key] = max(1, middle)
+                # Halving also isolates corrupt images without discarding successful parts.
+                encode(hashes[:middle], values[:middle])
+                encode(hashes[middle:], values[middle:])
             else:
-                self._failure(good[0], encoder.space_id, "CLIP не смог обработать фотографию.")
-        else:
-            self._publish(encoder.space_id, 512, "image", good, embeddings)
+                with self.lock:
+                    if self.clip is encoder:
+                        self._publish(
+                            encoder.space_id,
+                            512,
+                            "image",
+                            hashes,
+                            embeddings,
+                            seconds=time.perf_counter() - began,
+                        )
+
+        encode(good, data)
         self.last_used = time.monotonic()
         return True
 
@@ -407,9 +467,15 @@ class MediaService:
             if conn.execute("SELECT paused FROM semantic_state WHERE id=1").fetchone()[0]:
                 return False
             row = conn.execute(
-                "SELECT o.sha256,o.text FROM ocr_cache o WHERE o.version=? AND o.state='ready' "
+                "SELECT o.sha256,o.text,(SELECT c.text_batch FROM media_refs r JOIN chats c "
+                "ON c.id=r.chat_id WHERE r.sha256=o.sha256 AND r.status='ready' "
+                "AND r.kind='photo' AND c.media_paused=0 AND c.text_paused=0 "
+                "ORDER BY c.id LIMIT 1) AS text_batch "
+                "FROM ocr_cache o WHERE o.version=? AND o.state='ready' "
                 "AND o.text<>'' AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 "
-                "AND r.kind='photo' AND r.status='ready') AND NOT EXISTS "
+                "AND r.kind='photo' AND r.status='ready' AND EXISTS "
+                "(SELECT 1 FROM chats c WHERE c.id=r.chat_id AND c.media_paused=0 "
+                "AND c.text_paused=0)) AND NOT EXISTS "
                 "(SELECT 1 FROM media_embeddings e WHERE e.sha256=o.sha256 AND e.kind='ocr' "
                 "AND e.space_id=? AND e.ocr_version=?) AND NOT EXISTS "
                 "(SELECT 1 FROM media_failures f WHERE f.sha256=o.sha256 AND f.space_id=?) LIMIT 1",
@@ -432,12 +498,20 @@ class MediaService:
         with self.lock:
             self.ocr_staging_ids.update(ids.values())
         try:
-            for start in range(0, len(chunks), self.db.settings.embedding_batch):
-                batch = chunks[start : start + self.db.settings.embedding_batch]
+            start = 0
+            batch_size = row["text_batch"] or self.db.settings.embedding_batch
+            while start < len(chunks):
+                batch = chunks[start : start + batch_size]
                 with self.lock, self.db.connect() as conn:
                     if not self._ocr_guard(conn, row["sha256"], encoder, engine):
                         return True
-                embeddings = encoder.encode_text([chunk.text for chunk in batch], "passage")
+                try:
+                    embeddings = encoder.encode_text([chunk.text for chunk in batch], "passage")
+                except Exception as exc:
+                    if memory_exhausted(exc) and batch_size > 1:
+                        batch_size = max(1, batch_size // 2)
+                        continue
+                    raise
                 # Publish all parts together: no searchable partial OCR on a failed batch.
                 with self.lock, self.db.connect() as conn:
                     if not self._ocr_guard(conn, row["sha256"], encoder, engine):
@@ -456,6 +530,7 @@ class MediaService:
                         ],
                         embeddings,
                     )
+                start += len(batch)
             with self.lock, self.db.connect() as conn:
                 if self._ocr_guard(conn, row["sha256"], encoder, engine):
                     conn.execute(
@@ -503,6 +578,13 @@ class MediaService:
             and state["enabled"]
             and not state["paused"]
             and state["active_space_id"] == encoder.space_id
+            and conn.execute(
+                "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
+                "WHERE r.sha256=? AND r.kind='photo' AND r.status='ready' "
+                "AND c.media_paused=0 AND c.text_paused=0 LIMIT 1",
+                (sha,),
+            ).fetchone()
+            is not None
         )
 
     def _failure(self, sha, space, error):
@@ -513,7 +595,7 @@ class MediaService:
                     (sha, space, error),
                 )
 
-    def _publish(self, space, dimension, kind, hashes, embeddings):
+    def _publish(self, space, dimension, kind, hashes, embeddings, *, seconds=None):
         self._register_space(space, dimension, kind)
         with self.lock, self.db.connect() as conn:
             chosen = [i for i, sha in enumerate(hashes) if self._current(conn, sha)]
@@ -536,6 +618,8 @@ class MediaService:
                 "INSERT OR IGNORE INTO media_embeddings(id,sha256,space_id,kind) VALUES(?,?,?,?)",
                 [(row["id"], row["chat_id"], space, kind) for row in rows],
             )
+            if seconds is not None and self.clip:
+                record_rate(conn, "clip", self.clip, len(rows), seconds)
 
     def cleanup(self, *, compact=False):
         with self.lock, self.db.connect() as conn:

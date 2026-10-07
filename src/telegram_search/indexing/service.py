@@ -1,9 +1,11 @@
 import importlib.util
+import json
 import threading
 import time
 from collections import OrderedDict
 
 from telegram_search.config.model_registry import model_spec, registry
+from telegram_search.indexing.estimates import Estimates
 from telegram_search.indexing.worker import SegmentWorker
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -24,6 +26,7 @@ class SemanticService:
         self.preparation = None
         self.background = None
         self.last_used = time.monotonic()
+        self.estimates = Estimates(db)
         self.query_cache = OrderedDict()
         self.available = all(
             importlib.util.find_spec(name)
@@ -100,7 +103,18 @@ class SemanticService:
                     "SELECT active_space_id FROM semantic_state WHERE id=1"
                 ).fetchone()[0]
                 if current and current != encoder.space_id and not reindex:
-                    raise UserError("Смена embedding space требует явной переиндексации.")
+                    from telegram_search.inference.compatibility import compatible_manifest
+
+                    reference = conn.execute(
+                        "SELECT manifest_json FROM embedding_spaces WHERE id=?", (current,)
+                    ).fetchone()
+                    if not reference or not compatible_manifest(
+                        encoder.space_manifest, json.loads(reference[0])
+                    ):
+                        raise UserError("Смена embedding space требует явной переиндексации.")
+                    encoder.adopt_space(reference[0])
+                    if encoder.space_id != current:
+                        raise UserError("Manifest embedding space не совпадает с базой.")
                 existing = conn.execute(
                     "SELECT manifest_json FROM embedding_spaces WHERE id=?", (encoder.space_id,)
                 ).fetchone()
@@ -253,18 +267,22 @@ class SemanticService:
                     self.query_cache.popitem(last=False)
         return encoder, value
 
-    def status(self):
+    def status(self, chat_id=None):
         with self.lock:
-            return self._status_locked()
+            return self._status_locked(chat_id)
 
-    def _status_locked(self):
+    def _status_locked(self, chat_id=None):
         with self.db.connect() as conn:
             state = dict(conn.execute("SELECT * FROM semantic_state WHERE id=1").fetchone())
-            total = conn.execute("SELECT COUNT(*) FROM index_segments").fetchone()[0]
+            clause = " AND chat_id=?" if chat_id is not None else ""
+            args = (chat_id,) if chat_id is not None else ()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM index_segments WHERE 1=1" + clause, args
+            ).fetchone()[0]
             ready = conn.execute(
                 "SELECT COUNT(*) FROM index_segments WHERE dense_generation=target_generation "
-                "AND chunk_generation=target_generation AND embedding_space_id=?",
-                (state["active_space_id"],),
+                "AND chunk_generation=target_generation AND embedding_space_id=?" + clause,
+                (state["active_space_id"], *args),
             ).fetchone()[0]
             active = conn.execute(
                 "SELECT profile,dimension FROM embedding_spaces WHERE id=?",
@@ -275,16 +293,17 @@ class SemanticService:
                 for row in conn.execute(
                     "SELECT state,COUNT(*) AS count,"
                     "SUM(chunks_total) AS chunks_total,SUM(chunks_done) AS chunks_done "
-                    "FROM index_work WHERE state IN ('pending','running','failed') GROUP BY state"
+                    "FROM index_work WHERE state IN ('pending','running','failed')"
+                    + clause
+                    + " GROUP BY state",
+                    args,
                 )
             ]
-            throughput = conn.execute(
-                "SELECT SUM(w.embedding_seconds),SUM(w.chunks_done),"
-                "SUM(w.chunks_total-w.chunks_done) FROM index_work w JOIN index_segments s "
-                "ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
-                "AND s.target_generation=w.generation WHERE w.embedding_space_id=?",
-                (state["active_space_id"],),
-            ).fetchone()
+            if chat_id is not None:
+                chat = conn.execute("SELECT text_paused FROM chats WHERE id=?", args).fetchone()
+                if chat is None:
+                    raise UserError("Диалог не найден.")
+                state["paused"] = bool(state["paused"] or chat[0])
         return {
             **state,
             "runtime_installed": self.available,
@@ -296,11 +315,9 @@ class SemanticService:
             "ready_segments": ready,
             "pending_segments": total - ready,
             "works": works,
-            "estimated_remaining_seconds": (
-                round(throughput[0] / throughput[1] * throughput[2], 1)
-                if throughput[0] and throughput[1] and throughput[2]
-                else None
-            ),
+            "estimated_remaining_seconds": 0.0
+            if ready == total
+            else self.estimates.text(self.encoder, chat_id),
             "backend": self.encoder.backend_info() if self.encoder else None,
             "profiles": [
                 {
@@ -350,8 +367,9 @@ class SemanticService:
                                 "SELECT enabled,paused FROM semantic_state WHERE id=1"
                             ).fetchone()
                             work = conn.execute(
-                                "SELECT id FROM index_work WHERE state='pending' "
-                                "ORDER BY created_at,id LIMIT 1"
+                                "SELECT w.id FROM index_work w JOIN chats c ON c.id=w.chat_id "
+                                "WHERE w.state='pending' AND c.text_paused=0 "
+                                "ORDER BY w.created_at,w.id LIMIT 1"
                             ).fetchone()
                         if (
                             state[0]

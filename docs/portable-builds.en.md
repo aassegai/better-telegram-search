@@ -38,7 +38,7 @@ Application data is stored separately:
 
 To open an existing workspace: `telegram-search --workspace /path/to/workspace run`.
 For the first upgrade from 0.2.0, pause text and media indexing, stop the old app,
-and extract 0.3.0 into a new folder. With the same workspace and model, indexing
+and extract the current release into a new folder. With the same workspace and model, indexing
 resumes without rebuilding completed CPU chunks, including when switching to GPU.
 Indexing and query devices are selected independently. For later updates, use
 the updates section in settings to check, download, install, and restart.
@@ -90,3 +90,12 @@ verifies uploaded JSON reports and archive checksums before publishing the draft
 Application code must match the verified builds; existing tags are never replaced.
 
 [GPU, index compatibility, and update recovery](gpu-and-updates.en.md).
+
+From 0.3.1, full GPU archives are accompanied by `-gpu-core` packages for the in-app
+updater. Core packages require the GPU libraries; download the full `-gpu` archive
+for a manual installation. Libraries are cached by SHA-256 in
+`workspace/cache/gpu-runtime/objects` and reused across versions. The updater
+fetches only missing or changed files, verifies compressed and raw contents, and
+replaces files atomically. Cleaning temporary updates preserves the GPU cache.
+Native builds test the full package, seeding from an installed copy, and restoring
+core packages from individual libraries. The first upgrade from 0.3.0 uses the full package.

@@ -4,6 +4,7 @@ import type { FormEvent } from 'react';
 import { api, initializeSession } from './api';
 import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
+import ChatIndexDialog from './ChatIndexDialog';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
 import DevicePanel from './DevicePanel';
@@ -66,7 +67,7 @@ export default function App() {
   const [to, setTo] = useState('');
   const [contentType, setContentType] = useState('all');
   const [exact, setExact] = useState(false);
-  const [mode, setMode] = useState('words');
+  const [mode, setMode] = useState('hybrid');
   const [effectiveMode, setEffectiveMode] = useState('words');
   const [warnings, setWarnings] = useState<string[]>([]);
   const [semantic, setSemantic] = useState<SemanticStatus | null>(null);
@@ -81,6 +82,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'import' | 'settings' | null>(null);
+  const [indexChat, setIndexChat] = useState<Chat | null>(null);
   const [conflictJob, setConflictJob] = useState<Job | null>(null);
   const [context, setContext] = useState<{ hit: Hit; messages: Message[] } | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
@@ -146,7 +148,7 @@ export default function App() {
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setModal(null); setConflictJob(null); closeContext(); }
+      if (event.key === 'Escape') { setModal(null); setIndexChat(null); setConflictJob(null); closeContext(); }
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
@@ -232,6 +234,7 @@ export default function App() {
         {chats.map(chat => <div className="chat-item" key={chat.id}>
           <label><input type="checkbox" checked={selected === null || selected.includes(chat.id)} onChange={() => toggleChat(chat.id)} />
             <span><strong>{chat.name}</strong><small>{chat.messages.toLocaleString(uiLocale())}{t(" сообщений · ")}{chat.photos}{t(" фото")}</small></span></label>
+          <button className="chat-settings-button" aria-label={t('Настройки индексации {p0}', { p0: chat.name })} title={t('Настройки индексации')} onClick={() => setIndexChat(chat)}>⋯</button>
           <button className="delete-button" disabled={deleting} aria-label={t("Удалить {p0}", { p0: chat.name })} onClick={() => void deleteChat(chat)}>×</button>
         </div>)}
         {!chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
@@ -256,7 +259,7 @@ export default function App() {
           </div>
         </div>)}
       </div>}
-      <div className="sidebar-footer"><button onClick={() => void settings()}>{t("⚙ Настройки и диагностика")}</button><span><i className="dot" />{t("Локально на этом компьютере")}</span></div>
+      <div className="sidebar-footer"><button className="settings-button" onClick={() => void settings()}><span aria-hidden="true">⚙</span>{t('Настройки')}</button><span><i className="dot" />{t("Локально на этом компьютере")}</span></div>
     </aside>
 
     <main className="main">
@@ -298,6 +301,7 @@ export default function App() {
             {!modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
+        <details className="search-display-options"><summary>{t('Выдача поиска')}</summary><SearchSettingsPanel /></details>
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}
@@ -307,7 +311,7 @@ export default function App() {
           <div className="archive-symbol" aria-hidden="true">▤</div><h2>{t("Разговоры остаются рядом.")}</h2>
           <p>{chats.length ? t('Введите слово или фразу. Откройте результат, чтобы увидеть сообщения до и после совпадения.') : t('Начните с JSON-экспорта Telegram Desktop. Мы прочитаем сообщения и свяжем фотографии с вашей папкой.')}</p>
           <div className="stats"><div><strong>{messageCount.toLocaleString(uiLocale())}</strong><span>{t("сообщений")}</span></div><div><strong>{chats.length}</strong><span>{t("диалогов")}</span></div><div><strong>{photoCount}</strong><span>{t("фотографий")}</span></div></div>
-          <div className="baseline-note">{t("Поиск по словам доступен сразу. Для поиска по смыслу подготовьте модель в настройках.")}</div>
+          <div className="baseline-note">{t('Слова и смысл — базовый режим. Подготовьте модели в общих настройках.')}</div>
         </section> : <section className="results" aria-live="polite">
           <div className="results-heading"><h2>{hits.length ? t("Найдено фрагментов: {p0}{p1}", { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{onlyImages ? t('По описанию · CLIP') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · E5') : t('По словам · BM25')}</span></div>
           {!hits.length && <div className="no-results">{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</div>}
@@ -326,13 +330,13 @@ export default function App() {
 
     {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
+    {indexChat && <div className="overlay"><ChatIndexDialog onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} /></div>}
     {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button className="close" aria-label={t("Закрыть")} onClick={() => setModal(null)}>×</button>
       <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
       {diagnostics ? <dl className="diagnostics"><dt>{t("Устройство")}</dt><dd>{String(diagnostics.device ?? 'cpu').toUpperCase()}</dd><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
       <DevicePanel onChange={() => { void refresh().catch(reportError); void api<Record<string, unknown>>('/api/doctor').then(setDiagnostics).catch(reportError); }} />
-      <SearchSettingsPanel />
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
       <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />

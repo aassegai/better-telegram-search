@@ -1,0 +1,8 @@
+{
+  "repository": "aassegai/better-telegram-search",
+  "tag": "v0.2.0",
+  "tag_commit": "9872e5627b0d3e376d2d6c2a23695a4d9d52e6b9",
+  "operation": "replace_body",
+  "expected_body_sha256": "80bae79298afa937b7406a962c9f42d38baf861bc4b3daa1f2702f6d4eb40fbb",
+  "body": "### What's new\n\n- Switch the interface between Russian and English with the RU / EN slider; your choice is saved.\n- Search, settings, import previews, conflict resolution, warnings, and dates follow the selected language.\n- Conversation text, names, entered paths, and queries keep their original language.\n- English quickstart and standalone build guides accompany the Russian documentation.\n"
+}
