@@ -116,10 +116,20 @@ def main():
         if vectors.exact("a" * 64, 2, values[0], ["test"], 1)[0]["id"] != "test":
             raise RuntimeError("LanceDB prefiltered search")
         ocr = OcrEngine(db.workspace, threads=1)
-        ocr.prepare(offline=True)
-        recognized = ocr.recognize((bundled_directory("smoke") / "ocr-smoke.png").read_bytes())
-        if not all(word in recognized["text"] for word in ("12345", "67890", "ПОИСК")):
-            raise RuntimeError("Native Russian/English OCR smoke")
+        try:
+            ocr.prepare(offline=True)
+            image = (bundled_directory("smoke") / "ocr-smoke.png").read_bytes()
+            recognized = ocr.recognize(image)
+            if not all(word in recognized["text"] for word in ("12345", "67890", "ПОИСК")):
+                raise RuntimeError("Native Russian/English OCR smoke")
+            process = ocr.worker.process
+            repeated = ocr.recognize(image)
+            if repeated != recognized or ocr.worker.process is not process:
+                raise RuntimeError("Native OCR worker reuse")
+        finally:
+            ocr.unload()
+        if process.poll() is None:
+            raise RuntimeError("Native OCR worker did not stop")
         # Free Lance handles before temporary-directory cleanup (important on Windows).
         del vectors
         _update_check(db.workspace, root)
@@ -133,6 +143,7 @@ def main():
                 "tokenizers": True,
                 "safetensors": True,
                 "ocr_rus_eng": True,
+                "ocr_worker_reuse": True,
                 "frontend_http": True,
                 "csrf": True,
                 "torch_absent": True,

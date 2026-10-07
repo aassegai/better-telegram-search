@@ -139,7 +139,10 @@ class MediaService:
                         "UPDATE media_state SET preparation_state='ready',error=NULL WHERE id=1"
                     )
                 if kind == "ocr":
+                    old = self.ocr
                     self.ocr = engine
+                    if old and hasattr(old, "unload"):
+                        old.unload()
                 else:
                     old = self.clip
                     self.clip = engine
@@ -310,6 +313,8 @@ class MediaService:
                 (engine.version,),
             ).fetchone()
         if not row:
+            if hasattr(engine, "unload"):
+                engine.unload()
             return False
         sha = row[0]
         try:
@@ -399,6 +404,8 @@ class MediaService:
                 self.running = False
             if self.clip and paused and hasattr(self.clip, "unload_index"):
                 self.clip.unload_index()
+            if self.ocr and (paused or self.resource_error) and hasattr(self.ocr, "unload"):
+                self.ocr.unload()
             if (
                 self.clip
                 and time.monotonic() - self.last_used > self.db.settings.idle_unload_seconds
@@ -717,3 +724,5 @@ class MediaService:
             self.preparation.join()
         if self.clip:
             self.clip.unload()
+        if self.ocr and hasattr(self.ocr, "unload"):
+            self.ocr.unload()

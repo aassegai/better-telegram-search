@@ -1,6 +1,7 @@
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -13,12 +14,13 @@ from filelock import FileLock
 
 from telegram_search.config.runtime import bundled_directory, ocr_command
 from telegram_search.inference.bundles import checksum
+from telegram_search.inference.ocr_process import OcrProcess
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
 
 class OcrEngine:
-    """CPU Tesseract in a time-limited child process; cache identity includes dictionaries."""
+    """CPU Tesseract in a reusable child; each image has an independent timeout."""
 
     def __init__(self, workspace: Path, *, threads=4, max_edge=2400, timeout=45):
         self.root = workspace.resolve() / "models" / "ocr"
@@ -44,6 +46,11 @@ class OcrEngine:
                 "Установите CPU OCR: uv sync --locked --extra semantic --extra ocr."
             ) from exc
         self.threads, self.max_edge, self.timeout = threads, max_edge, timeout
+        self.worker = OcrProcess(
+            ocr_command(str(self.root), str(self.max_edge), "--server"),
+            threads=threads,
+            timeout=timeout,
+        )
         self.version = hashlib.sha256(
             serialize(
                 {
@@ -116,23 +123,20 @@ class OcrEngine:
                 raise UserError("Размер словаря OCR не совпадает с manifest.")
 
     def recognize(self, data: bytes) -> dict:
-        environment = {
-            **os.environ,
-            "OMP_THREAD_LIMIT": str(self.threads),
-            "OMP_NUM_THREADS": str(self.threads),
-        }
         try:
-            result = subprocess.run(
-                ocr_command(str(self.root), str(self.max_edge)),
-                input=data,
-                capture_output=True,
-                timeout=self.timeout,
-                env=environment,
-                check=True,
-            )
-            value = json.loads(result.stdout)
-            if not isinstance(value["text"], str) or len(value["text"]) > 65536:
+            value = json.loads(self.worker.recognize(data))
+            if (
+                not isinstance(value["text"], str)
+                or len(value["text"]) > 65536
+                or type(value["confidence"]) not in {int, float}
+                or not math.isfinite(value["confidence"])
+                or not 0 <= value["confidence"] <= 100
+            ):
                 raise ValueError("OCR output")
             return value
-        except (subprocess.SubprocessError, ValueError, KeyError) as exc:
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            self.worker.unload()
             raise UserError("OCR не смог обработать изображение за заданное время.") from exc
+
+    def unload(self):
+        self.worker.unload()

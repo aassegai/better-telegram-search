@@ -173,6 +173,8 @@ class WorkspaceService:
                     self.media.clip.unload()
                     self.media.clip.threads = candidate.cpu_threads
             if self.media.ocr:
+                if hasattr(self.media.ocr, "unload"):
+                    self.media.ocr.unload()
                 self.media.ocr = new_ocr
         self.media.wake.set()
         return self.settings()

@@ -88,21 +88,43 @@ def test_frozen_ocr_subprocess_never_runs_python_switches(monkeypatch, tmp_path)
         )
 
     monkeypatch.setattr("telegram_search.inference.ocr.subprocess.run", run)
+
+    class Process:
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            self.stdin = io.BytesIO()
+            self.stdout = io.BytesIO(b'{"text": "synthetic", "confidence": 99}\n')
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -1
+
+        def wait(self, **kwargs):
+            return self.returncode
+
+    monkeypatch.setattr("telegram_search.inference.ocr_process.subprocess.Popen", Process)
     monkeypatch.setattr("telegram_search.inference.ocr.importlib.metadata.version", lambda x: "1")
     engine = OcrEngine(tmp_path)
     assert engine.recognize(b"synthetic")["text"] == "synthetic"
+    engine.unload()
     assert all(command[1] == "--internal-ocr" for command in commands)
 
 
-def test_ocr_worker_json_supports_windows_stdout_encoding(monkeypatch):
+@pytest.mark.parametrize("server", [False, True])
+def test_ocr_worker_json_supports_windows_stdout_encoding(monkeypatch, server):
     from telegram_search.inference.ocr_worker import main
 
     image = io.BytesIO()
     Image.new("RGB", (10, 10), "white").save(image, format="PNG")
 
+    instances, resets = [], []
+
     class Api:
         def __init__(self, **kwargs):
-            pass
+            instances.append(self)
 
         def __enter__(self):
             return self
@@ -113,6 +135,12 @@ def test_ocr_worker_json_supports_windows_stdout_encoding(monkeypatch):
         def SetImage(self, image):
             pass
 
+        def Clear(self):
+            pass
+
+        def ClearAdaptiveClassifier(self):
+            resets.append(1)
+
         def GetUTF8Text(self):
             return "Проверка архива"
 
@@ -122,13 +150,20 @@ def test_ocr_worker_json_supports_windows_stdout_encoding(monkeypatch):
     monkeypatch.setitem(
         sys.modules, "tesserocr", SimpleNamespace(PyTessBaseAPI=Api, PSM=SimpleNamespace(AUTO=3))
     )
-    monkeypatch.setattr(sys, "stdin", SimpleNamespace(buffer=io.BytesIO(image.getvalue())))
+    data = image.getvalue()
+    frame = str(len(data)).encode() + b"\n" + data
+    monkeypatch.setattr(
+        sys, "stdin", SimpleNamespace(buffer=io.BytesIO(frame * 2 if server else data))
+    )
     output = io.BytesIO()
     stdout = io.TextIOWrapper(output, encoding="cp1252")
     monkeypatch.setattr(sys, "stdout", stdout)
-    main(["synthetic", "512"])
+    main(["synthetic", "512", "--server"] if server else ["synthetic", "512"])
     stdout.flush()
-    assert json.loads(output.getvalue())["text"] == "Проверка архива"
+    values = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert len(instances) == 1
+    assert len(values) == len(resets) == (2 if server else 1)
+    assert all(value["text"] == "Проверка архива" for value in values)
 
 
 def test_browser_launcher_preserves_parent_native_environment(monkeypatch):
