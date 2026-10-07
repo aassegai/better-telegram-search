@@ -1608,5 +1608,6 @@
     }
   ],
   "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/37595201220",
-  "failures": {}
+  "failures": {},
+  "diagnostics_complete": true
 }
