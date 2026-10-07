@@ -1,6 +1,7 @@
 import os
 from dataclasses import asdict, replace
 from pathlib import Path
+from threading import Lock
 
 from telegram_search.inference.bundles import checksum
 from telegram_search.security.paths import safe_media_path
@@ -12,6 +13,9 @@ class WorkspaceService:
     def __init__(self, db, importer, semantic, media):
         self.db, self.importer, self.semantic, self.media = db, importer, semantic, media
         self.lock = importer.lifecycle_lock
+        # Configuration writes serialize independently of lengthy archive/index work.
+        # Operations that need both locks always acquire lifecycle before settings.
+        self.settings_lock = Lock()
 
     def sources(self, chat_id=None):
         with self.db.connect() as conn:
@@ -173,13 +177,15 @@ class WorkspaceService:
         } | display_keys
         if set(values) - allowed:
             raise UserError("Неизвестные или недоступные настройки.")
-        with self.lock:
-            candidate = replace(self.db.settings, **values)
-            candidate.validate()
-            if set(values) <= display_keys:
+        if set(values) <= display_keys:
+            with self.settings_lock:
+                candidate = replace(self.db.settings, **values)
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
                 return asdict(candidate)
+        with self.lock, self.settings_lock:
+            candidate = replace(self.db.settings, **values)
+            candidate.validate()
             if (self.semantic.preparation and self.semantic.preparation.is_alive()) or (
                 self.media.preparation and self.media.preparation.is_alive()
             ):
@@ -272,7 +278,7 @@ class WorkspaceService:
         """Validate the new device before saving; publish each new space explicitly."""
         from telegram_search.inference.providers import Execution
 
-        with self.lock:
+        with self.lock, self.settings_lock:
             previous = self.db.settings
             if model not in {None, "e5", "clip", "ocr"}:
                 raise UserError("Неизвестная модель.")

@@ -81,6 +81,7 @@ export default function App() {
   const [hasMore, setHasMore] = useState(false);
   const [submittedLimit, setSubmittedLimit] = useState(20);
   const [busy, setBusy] = useState(false);
+  const [showSearchSettings, setShowSearchSettings] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'import' | 'settings' | null>(null);
@@ -102,16 +103,29 @@ export default function App() {
   const updateObserverRevision = useRef(0);
   const reportError = (error: unknown) => { if (!restarting.current) setError(error instanceof Error ? error.message : t('Ошибка соединения.')); };
   const refresh = async () => {
-    const [chats, jobs, previews, semantic, media] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews'), api<SemanticStatus>('/api/semantic'), api<MediaStatus>('/api/media-index')]);
-    setChats(chats); setJobs(jobs); setPreviews(previews); setSemantic(semantic); setMedia(media);
+    const [chats, jobs, previews, semantic, media] = await Promise.allSettled([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews'), api<SemanticStatus>('/api/semantic'), api<MediaStatus>('/api/media-index')]);
+    if (chats.status === 'rejected') throw chats.reason;
+    if (jobs.status === 'rejected') throw jobs.reason;
+    if (previews.status === 'rejected') throw previews.reason;
+    if (semantic.status === 'rejected') throw semantic.reason;
+    if (media.status === 'rejected') throw media.reason;
+    setChats(chats.value); setJobs(jobs.value); setPreviews(previews.value); setSemantic(semantic.value); setMedia(media.value);
   };
 
   useEffect(() => {
     let alive = true;
+    let pending = false;
+    const poll = async () => {
+      if (!alive || pending) return;
+      pending = true;
+      try { await refresh(); }
+      catch (error) { if (alive) reportError(error); }
+      finally { pending = false; }
+    };
     initializeSession().then(() => {
-      if (alive) { setConnected(true); void refresh().catch(reportError); }
+      if (alive) { setConnected(true); void poll(); }
     }).catch(reportError);
-    const timer = window.setInterval(() => { if (alive) void refresh().catch(reportError); }, 2000);
+    const timer = window.setInterval(() => void poll(), 2000);
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
@@ -235,6 +249,7 @@ export default function App() {
     <aside className="sidebar">
       <a href="/" className="brand"><span className="brand-icon" aria-hidden="true">↗</span>
         <span>{t("Архив")}<small>TELEGRAM SEARCH</small></span></a>
+      <div className="sidebar-content">
       <div className="sidebar-title"><span>{t("Диалоги")}</span><button className="text-button" onClick={() => setSelected(null)}>{t("Все")}</button></div>
       <div className="chat-list">
         {chats.map(chat => <div className="chat-item" key={chat.id}>
@@ -265,11 +280,13 @@ export default function App() {
           </div>
         </div>)}
       </div>}
+      </div>
       <div className="sidebar-footer"><button className="settings-button" onClick={() => void settings()}><span aria-hidden="true">⚙</span>{t('Настройки')}</button><span><i className="dot" />{t("Локально на этом компьютере")}</span></div>
     </aside>
 
     <main className="main">
       <header className="topbar"><span>{t("Ваша переписка. Под рукой.")}</span><div className="topbar-actions">
+        <button className="theme-toggle mobile-settings-button" type="button" aria-label={t('Настройки')} title={t('Настройки')} onClick={() => void settings()}><span aria-hidden="true">⚙</span></button>
         <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span></button>
         <label className="language-switch"><span className={language === 'ru' ? 'active' : ''}>RU</span>
           <input type="range" min="0" max="1" step="1" value={language === 'en' ? 1 : 0}
@@ -294,7 +311,10 @@ export default function App() {
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
           </div>
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />{t("Точная фраза")}</label>
-            <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setSelected(null); }}>{t("Сбросить фильтры")}</button></div>
+            <div className="search-option-actions">
+              <button type="button" className="text-button" aria-expanded={showSearchSettings} aria-controls="search-display-settings" onClick={() => setShowSearchSettings(value => !value)}><span aria-hidden="true">{showSearchSettings ? '▾' : '▸'}</span> <span>{t('Выдача поиска')}</span></button>
+              <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
+            </div></div>
           <fieldset className="search-modalities" disabled={busy} aria-describedby="search-modality-help">
             <legend>{t("Искать в")}</legend>
             <div className="modality-options">
@@ -308,8 +328,8 @@ export default function App() {
             {!modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
+        <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача поиска')} hidden={!showSearchSettings}><SearchSettingsPanel /></section>
         {busy && <div className="search-progress" role="status"><span>{t('Ищем…')}</span><progress aria-label={t('Выполнение поиска')} /></div>}
-        <details className="search-display-options"><summary>{t('Выдача поиска')}</summary><SearchSettingsPanel /></details>
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}

@@ -120,6 +120,55 @@ def test_saved_search_options_and_request_overrides(client, tmp_path):
     assert client.get("/api/settings").json()["display_chunk_size"] == 1
 
 
+def test_search_settings_save_while_archive_work_holds_lifecycle_lock(client):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from telegram_search.config.settings import Settings
+
+    # Use one controlled archive worker rather than racing the empty background loop.
+    client.app.state.media.shutdown()
+    client.app.state.semantic.shutdown()
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    locked, release = Event(), Event()
+
+    def archive_work():
+        with client.app.state.importer.lifecycle_lock:
+            locked.set()
+            assert release.wait(10)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        archive = pool.submit(archive_work)
+        try:
+            assert locked.wait(5)
+            # Resource changes must still wait for lifecycle protection. The display
+            # update must finish first without losing either change afterwards.
+            resources = pool.submit(
+                client.patch, "/api/settings", json={"cpu_threads": 2}, headers=headers
+            )
+            display = pool.submit(
+                client.patch,
+                "/api/settings",
+                json={"search_result_limit": 5, "display_chunk_size": 5},
+                headers=headers,
+            )
+            response = display.result(timeout=3)
+            assert response.status_code == 200
+            assert response.json()["search_result_limit"] == 5
+            assert response.json()["display_chunk_size"] == 5
+            saved = Settings.load(client.app.state.db.workspace)
+            assert (saved.search_result_limit, saved.display_chunk_size) == (5, 5)
+            assert not resources.done()
+        finally:
+            release.set()
+        archive.result(timeout=5)
+        resource_response = resources.result(timeout=5)
+        assert resource_response.status_code == 200, resource_response.json()
+    saved = Settings.load(client.app.state.db.workspace)
+    assert (saved.search_result_limit, saved.display_chunk_size, saved.cpu_threads) == (5, 5, 2)
+    assert client.get("/api/settings").json() == client.app.state.workspace.settings()
+
+
 def test_multimodal_api_merges_evidence_and_preserves_filters(client, tmp_path, monkeypatch):
     root = tmp_path / "synthetic"
     root.mkdir()

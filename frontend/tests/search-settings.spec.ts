@@ -1,15 +1,27 @@
 import { test, expect } from '@playwright/test';
 
 test('search display settings persist and control result cards and their message windows', async ({ page }) => {
+  let searches = 0;
+  await page.route('**/api/search?**', route => { searches++; return route.continue(); });
   await page.goto('/');
   const token = (await (await page.request.get('/api/session')).json()).token;
   const original = await (await page.request.get('/api/settings')).json();
   try {
-    await page.getByText('Выдача поиска', { exact: true }).click();
+    const displayButton = page.getByRole('button', { name: 'Выдача поиска', exact: true });
+    await expect(page.locator('.search-options')).toContainText('Выдача поиска');
+    await expect(displayButton).toHaveAttribute('aria-expanded', 'false');
+    await page.getByLabel('Поисковый запрос').fill('велосипед');
+    await displayButton.click();
+    await expect(displayButton).toHaveAttribute('aria-expanded', 'true');
     await page.getByLabel('Количество результатов', { exact: true }).fill('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('1');
+    await displayButton.click();
+    await expect(page.getByLabel('Количество результатов', { exact: true })).toBeHidden();
+    await displayButton.click();
+    await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('1');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
+    expect(searches).toBe(0);
     await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');
@@ -27,6 +39,7 @@ test('search display settings persist and control result cards and their message
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('3');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
+    expect(searches).toBe(1);
     await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
     await page.getByLabel('Поисковый запрос').fill('велосипед');
@@ -69,3 +82,60 @@ test('expanded context includes a large displayed card using its result snapshot
   await page.getByRole('button', { name: 'Открыть контекст' }).click();
   await expect(page.locator('.context-modal .message')).toHaveCount(100);
 });
+
+for (const otherFails of [false, true]) {
+test(`slow index status${otherFails ? ' with another failed endpoint' : ''} does not stack refreshes or block saving 5/5 and sending a search`, async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-07T00:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T00:00:00Z'));
+  let release!: () => void;
+  let statuses = 0;
+  let searches = 0;
+  if (otherFails) {
+    let imports = 0;
+    await page.route('**/api/imports', route => ++imports === 1
+      ? route.fulfill({ status: 500, json: { detail: 'Синтетическая ошибка статуса' } })
+      : route.continue());
+  }
+  await page.route('**/api/semantic', async route => {
+    statuses++;
+    if (statuses === 1) await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: { enabled: 0, runtime_installed: true } });
+  });
+  await page.route('**/api/search?**', route => {
+    searches++;
+    return route.fulfill({ json: { results: [], warnings: [], effective_mode: 'words', has_more: false, limit: 5 } });
+  });
+  await page.goto('/');
+  const token = (await (await page.request.get('/api/session')).json()).token;
+  const original = await (await page.request.get('/api/settings')).json();
+  try {
+    await expect.poll(() => !!release).toBe(true);
+    await page.clock.runFor(12_000);
+    expect(statuses).toBe(1);
+    await page.getByRole('button', { name: 'Выдача поиска', exact: true }).click();
+    await page.getByLabel('Количество результатов', { exact: true }).fill('5');
+    await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('5');
+    await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
+    await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Сохранить настройки поиска' })).toBeEnabled();
+    const saved = await (await page.request.get('/api/settings')).json();
+    expect([saved.search_result_limit, saved.display_chunk_size]).toEqual([5, 5]);
+    await page.getByLabel('Поисковый запрос').fill('проверка');
+    await page.getByRole('button', { name: 'Найти', exact: true }).click();
+    await expect(page.getByText('Совпадений пока нет', { exact: true })).toBeVisible();
+    expect(searches).toBe(1);
+    release();
+    if (otherFails) await expect(page.getByRole('alert')).toContainText('Синтетическая ошибка статуса');
+    else await expect(page.locator('.chat-item')).not.toHaveCount(0);
+    await page.clock.runFor(2000);
+    await expect.poll(() => statuses).toBe(2);
+    await expect(page.locator('.chat-item')).not.toHaveCount(0);
+  } finally {
+    release?.();
+    const response = await page.request.patch('/api/settings', { headers: { 'X-Session-Token': token }, data: {
+      search_result_limit: original.search_result_limit, display_chunk_size: original.display_chunk_size,
+    } });
+    expect(response.ok()).toBe(true);
+  }
+});
+}
