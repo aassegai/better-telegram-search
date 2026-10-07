@@ -125,7 +125,10 @@ def test_linux_aliases_share_one_verified_cached_object(tmp_path):
     (source / "_internal/nvidia").mkdir(parents=True)
     library = source / "_internal/nvidia/libcudart.so.12"
     library.write_bytes(b"Linux synthetic library")
-    (source / "_internal/libcudart.so.12").symlink_to("nvidia/libcudart.so.12")
+    try:
+        (source / "_internal/libcudart.so.12").symlink_to(Path("nvidia") / "libcudart.so.12")
+    except OSError:
+        pytest.skip("Symlinks require Windows privilege")
     assets = tmp_path / "assets"
     assets.mkdir()
     manifest = split_runtime(source, assets, "0.3.1", "linux")

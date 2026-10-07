@@ -54,6 +54,7 @@ PUBLICATION_FILES = {
     "scripts/publish_release.py",
     ".github/workflows/publish-release.yml",
     "tests/test_release_publication.py",
+    "tests/test_gpu_cache.py",
 }
 
 
