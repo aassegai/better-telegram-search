@@ -42,6 +42,7 @@ export type SemanticStatus = {
   runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;
   backend?: { device: string; provider: string; warning?: string | null; query_execution?: { device: string; provider: string } };
   preparation_state: string; profile: string | null; error: string | null;
+  index_error?: string | null;
   download_completed_bytes: number; download_total_bytes: number;
   total_segments: number; ready_segments: number; pending_segments: number;
   estimated_remaining_seconds?: number | null;

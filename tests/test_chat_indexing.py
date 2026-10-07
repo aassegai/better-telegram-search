@@ -185,6 +185,7 @@ def test_repeat_prepare_adopts_legacy_space_and_resumes_partial_cpu_index(
     assert not service.preparation.is_alive()
     assert service.status()["preparation_state"] == "ready"
     assert service.encoder is candidate and candidate.space_id == old.space_id
+    preparation_calls = len(candidate.calls)
     with db.connect() as conn:
         assert snapshot == [
             tuple(row) for row in conn.execute("SELECT id,generation FROM chunks ORDER BY id")
@@ -196,7 +197,9 @@ def test_repeat_prepare_adopts_legacy_space_and_resumes_partial_cpu_index(
     service.control("resume")
     resumed = SegmentWorker(db, candidate, worker.vectors, importer.lifecycle_lock).run(work)
     assert resumed["state"] == "done"
-    assert sum(candidate.calls[1:]) == partial["chunks_total"] - partial["chunks_done"]
+    assert (
+        sum(candidate.calls[preparation_calls:]) == partial["chunks_total"] - partial["chunks_done"]
+    )
 
 
 def test_cached_update_health_is_fast_and_cannot_confirm_before_scan(tmp_path, monkeypatch):

@@ -43,7 +43,10 @@ For GPU OCR, select **Settings → OCR → PaddleOCR**, choose **GPU**, apply th
 device, and prepare the model (about 10 MiB). PaddleOCR supports Russian and English
 and shares its recognition cache between CPU/GPU. Switching from Tesseract starts
 recognition with the new model while retaining the previous cache. To resume your
-existing recognition queue unchanged, keep **Tesseract · CPU**. Each model's card
+existing recognition queue unchanged, keep **Tesseract · CPU**. Select **CPU + GPU**
+for simultaneous recognition: two processes take different images from the shared
+queue. Pausing OCR stops both; completed PaddleOCR recognition survives device changes.
+This mode needs at least two CPU threads in shared resources. Each model's card
 shows where its files are downloaded.
 
 From 0.3.0 onwards, use **Settings → Application updates** to check, download,

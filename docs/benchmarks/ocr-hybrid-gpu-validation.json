@@ -1,0 +1,65 @@
+{
+  "synthetic_only": true,
+  "hardware": "RTX 4060 Laptop 8GB",
+  "ocr": {
+    "providers": [
+      "CUDAExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "shared_cache_version": true,
+    "equal_transcription": true,
+    "overlap_seconds": 0.318,
+    "worker_seconds": [
+      0.318,
+      2.423
+    ],
+    "separate_child_processes": true,
+    "children_stopped": true
+  },
+  "e5": {
+    "provider": "CUDAExecutionProvider",
+    "attempts": [
+      {
+        "batch": 128,
+        "success": false,
+        "oom": true
+      },
+      {
+        "batch": 64,
+        "success": true,
+        "seconds": 0.581
+      },
+      {
+        "batch": 64,
+        "success": true,
+        "seconds": 0.426
+      }
+    ],
+    "completed_rows": 128,
+    "remembered_limit": 64,
+    "cuda_arena_limit_mib": 4096,
+    "warmup_batches": [
+      1,
+      16,
+      32,
+      64
+    ]
+  },
+  "runtime": "ONNX Runtime 1.23.2, FP32",
+  "ocr_batching": {
+    "sparse": {
+      "warm_samples": 3,
+      "before_median_seconds": 0.1203,
+      "after_median_seconds": 0.1036,
+      "speedup": 1.16,
+      "transcription_unchanged": true
+    },
+    "dense": {
+      "warm_samples": 3,
+      "before_median_seconds": 1.0998,
+      "after_median_seconds": 0.5055,
+      "speedup": 2.18,
+      "transcription_unchanged": true
+    }
+  }
+}

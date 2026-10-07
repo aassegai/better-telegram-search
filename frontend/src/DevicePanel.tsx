@@ -3,7 +3,7 @@ import { api } from './api';
 import { t } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
 
-type Device = 'cpu' | 'auto' | 'gpu';
+type Device = 'cpu' | 'auto' | 'gpu' | 'hybrid';
 type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string> };
 type Execution = { warning: string | null };
 
@@ -46,6 +46,7 @@ export default function DevicePanel({ model, profile, onChange }: {
             device: event.target.value as Device,
             ...(model === 'ocr' && event.target.value !== 'cpu' ? { engine: 'paddle' as const } : {}) })}>
           <option value="cpu">CPU</option><option value="auto">{t('Авто')}</option><option value="gpu">GPU</option>
+          {model === 'ocr' && <option value="hybrid">CPU + GPU</option>}
         </select></label>
         {model !== 'ocr' && <label>{t('Устройство для поиска')}<select aria-label={t('Устройство для поиска')}
           disabled={op.busy} value={settings.search_device ?? 'cpu'}
@@ -55,6 +56,7 @@ export default function DevicePanel({ model, profile, onChange }: {
       </div>
       {model !== 'ocr' ? <p className="baseline-note">{t('Вы можете продолжить индексацию и поиск на другом устройстве.')}</p>
         : <p className="baseline-note">{t('PaddleOCR использует общий кэш на CPU и GPU. При смене OCR-модели распознавание выполняется заново; прежний кэш сохраняется.')}</p>}
+      {model === 'ocr' && settings.device === 'hybrid' && <p className="baseline-note">{t('CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.')}</p>}
       <button className="primary" disabled={op.busy} onClick={save}>{op.busy ? t('Проверяем устройство…') : t('Применить устройство')}</button>
       <div className="model-paths"><span>{t('Папка загрузки модели')}</span>{paths?.map(path => <code key={path}>{path}</code>)}</div>
     </>}

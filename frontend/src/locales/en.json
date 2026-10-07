@@ -192,6 +192,8 @@
   "Оценка появится после первых батчей.": "An estimate will appear after the first batches.",
   "Ошибка": "Failed",
   "Ошибка операции.": "The operation failed.",
+  "Ошибка индексации": "Indexing error",
+  "Задач с ошибкой: {p0}": "Failed tasks: {p0}",
   "Ошибка проверки.": "The check failed.",
   "Ошибка соединения.": "Connection failed.",
   "Ошибка списка.": "The list could not be loaded.",
@@ -404,5 +406,7 @@
   "Модель изображений · CLIP": "Image model · CLIP",
   "Модель распознавания · OCR": "Recognition model · OCR",
   "Выполнение поиска": "Search progress",
-  "Тёмная тема": "Dark theme"
+  "Тёмная тема": "Dark theme",
+  "CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.": "CPU and GPU recognize different images simultaneously. Pausing OCR stops both devices.",
+  "Для OCR на CPU + GPU выберите не менее двух CPU-потоков.": "Choose at least two CPU threads for CPU + GPU OCR."
 }

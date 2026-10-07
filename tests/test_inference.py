@@ -58,6 +58,35 @@ def test_rejected_last_interactive_request_notifies_background_waiter():
     assert notified == [True] and encoder.interactive_waiters == 0
 
 
+@pytest.mark.parametrize(
+    "index_age,query_age,encoding,paused,release_index,release_query",
+    [
+        (1, 1000, False, False, False, False),
+        (1000, 1000, True, False, False, False),
+        (1, 1, False, True, True, False),
+        (6, 1, False, False, True, False),
+        (1000, 1000, False, False, True, True),
+    ],
+)
+def test_idle_cleanup_respects_ocr_passages_and_inflight_batches(
+    monkeypatch, index_age, query_age, encoding, paused, release_index, release_query
+):
+    monkeypatch.setattr("telegram_search.inference.e5.time.monotonic", lambda: 2000)
+    encoder = E5Encoder.__new__(E5Encoder)
+    encoder.condition = threading.Condition()
+    encoder.encoding = encoding
+    encoder.last_index_used = 2000 - index_age
+    encoder.session = object()
+    encoder.query_session = object()
+    index_session, query_session = encoder.session, encoder.query_session
+    assert (
+        encoder.unload_idle(query_last_used=2000 - query_age, idle_seconds=300, index_paused=paused)
+        is release_query
+    )
+    assert encoder.session is (None if release_index else index_session)
+    assert encoder.query_session is (None if release_query else query_session)
+
+
 def test_masked_pooling_ignores_padding_and_normalizes_float32():
     hidden = np.array([[[3, 4], [900, -900]], [[3, 4], [3, 4]]], dtype=np.float32)
     values = masked_mean_normalize(hidden, np.array([[1, 0], [1, 1]]))
@@ -159,3 +188,46 @@ def test_exact_prefilter_finds_tail_and_idempotent_vectors_compact(tmp_path):
     store.delete_chat([{"id": "a" * 64, "dimension": 2}], "a")
     store.compact([{"id": "a" * 64, "dimension": 2}])
     assert store.table("a" * 64, 2).count_rows() == 0
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Available memory of 978165760 is smaller than requested bytes of 1007769600",
+        "cudaErrorMemoryAllocation",
+        "CUBLAS_STATUS_ALLOC_FAILED",
+    ],
+)
+def test_ort_allocation_errors_are_recognized_through_generic_wrappers(message):
+    from telegram_search.inference.resources import memory_exhausted
+
+    cause = RuntimeError(message)
+    wrapped = UserError("Ошибка ONNX-инференса.")
+    wrapped.__cause__ = cause
+    assert memory_exhausted(wrapped)
+    assert not memory_exhausted(UserError("synthetic unsupported operator"))
+
+
+def test_auto_fallback_keeps_cpu_and_gpu_reserved_until_inference_finishes():
+    from types import SimpleNamespace
+
+    from telegram_search.inference.resources import compute_gate, compute_lock
+
+    execution = SimpleNamespace(device="auto", provider="CUDAExecutionProvider", device_id=15)
+    cpu_entered = threading.Event()
+    cpu_waiting = threading.Event()
+
+    def cpu_job():
+        cpu_waiting.set()
+        with compute_lock:
+            cpu_entered.set()
+
+    with compute_gate(execution):
+        execution.provider = "CPUExecutionProvider"  # Session/child falls back.
+        thread = threading.Thread(target=cpu_job)
+        thread.start()
+        assert cpu_waiting.wait(2)
+        assert compute_lock.owner == threading.get_ident()
+        assert not cpu_entered.is_set()
+    thread.join(timeout=2)
+    assert cpu_entered.is_set() and not thread.is_alive()

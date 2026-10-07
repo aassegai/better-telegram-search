@@ -212,7 +212,9 @@ class SemanticService:
                     previous.suspend()
                 self.query_cache.clear()
             encoder = self._new_encoder(spec.profile)
+            encoder.encode_text(["Проверка локальной индексации"], "passage")
             encoder.encode_text(["Проверка локального поиска"], "query", interactive=True)
+            encoder.unload_index()
             if self.stop.is_set():
                 raise UserError("Подготовка модели остановлена.")
             self.activate(encoder, reindex=reindex)
@@ -303,6 +305,12 @@ class SemanticService:
                     args,
                 )
             ]
+            failed = conn.execute(
+                "SELECT error FROM index_work WHERE state='failed' AND error IS NOT NULL"
+                + clause
+                + " ORDER BY created_at DESC,id DESC LIMIT 1",
+                args,
+            ).fetchone()
             if chat_id is not None:
                 chat = conn.execute("SELECT text_paused FROM chats WHERE id=?", args).fetchone()
                 if chat is None:
@@ -319,8 +327,11 @@ class SemanticService:
             "ready_segments": ready,
             "pending_segments": total - ready,
             "works": works,
+            "index_error": failed[0] if failed else None,
             "estimated_remaining_seconds": 0.0
             if ready == total
+            else None
+            if works and not any(work["state"] in {"pending", "running"} for work in works)
             else self.estimates.text(self.encoder, chat_id),
             "backend": self.encoder.backend_info() if self.encoder else None,
             "profiles": [
@@ -384,17 +395,37 @@ class SemanticService:
                             worker = self._worker(encoder)
                 if encoder:
                     if worker:
-                        worker.run(work[0])
+                        result = worker.run(work[0])
+                        if result["state"] == "failed":
+                            # A broken model/device must not fail every remaining
+                            # day before the user can see and retry the first error.
+                            with self.lock, self.db.connect() as conn:
+                                current = conn.execute(
+                                    "SELECT 1 FROM index_work w JOIN index_segments s "
+                                    "ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
+                                    "JOIN chats c ON c.id=w.chat_id WHERE w.id=? "
+                                    "AND w.state='failed' AND w.attempts=? "
+                                    "AND w.generation=? AND s.target_generation=w.generation "
+                                    "AND w.embedding_space_id=? AND c.text_paused=0",
+                                    (
+                                        result["id"],
+                                        result["attempts"],
+                                        result["generation"],
+                                        encoder.space_id,
+                                    ),
+                                ).fetchone()
+                                if self.encoder is encoder and current:
+                                    conn.execute(
+                                        "UPDATE semantic_state SET paused=1,error=? WHERE id=1",
+                                        (result["error"],),
+                                    )
                         continue
-                    if (
-                        hasattr(encoder, "unload_index")
-                        and encoder.session is not None
-                        and (state[1] or time.monotonic() - encoder.last_index_used > 5)
-                    ):
-                        encoder.unload_index()
-                    if time.monotonic() - self.last_used > self.db.settings.idle_unload_seconds:
-                        with self.lock:
-                            encoder.unload()
+                    with self.lock:
+                        if self.encoder is encoder and encoder.unload_idle(
+                            query_last_used=self.last_used,
+                            idle_seconds=self.db.settings.idle_unload_seconds,
+                            index_paused=bool(state[1]),
+                        ):
                             self.query_cache.clear()
             except Exception:
                 with self.db.connect() as conn:

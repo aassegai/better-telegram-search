@@ -2,7 +2,11 @@ import time
 from datetime import UTC, datetime
 
 from telegram_search.indexing.estimates import record_rate
-from telegram_search.inference.resources import memory_exhausted
+from telegram_search.inference.resources import (
+    backoff_indexing_batch,
+    indexing_batch_size,
+    memory_exhausted,
+)
 from telegram_search.search.chunks import ChunkBuilder, SourceMessage
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
@@ -24,7 +28,6 @@ class SegmentWorker:
         self.lock = lifecycle_lock
         self.batch_size = batch_size
         self.default_batch = batch_size
-        self.oom_limit = None
         self.should_stop = should_stop
         self.builder = ChunkBuilder(encoder.tokenizer)
 
@@ -111,7 +114,6 @@ class SegmentWorker:
                 )
 
     def run(self, work_id: str) -> dict:
-        self.oom_limit = None
         with self.lock, self.db.connect() as conn:
             row = conn.execute("SELECT * FROM index_work WHERE id=?", (work_id,)).fetchone()
             if row is None or row["state"] not in {"pending", "failed", "running"}:
@@ -174,7 +176,7 @@ class SegmentWorker:
                     configured = chosen or self.default_batch
                     # Explicit constructor limits are useful for CLI/tests. Per-chat
                     # preferences take effect on the next batch without restarting work.
-                    self.batch_size = min(configured, self.oom_limit or configured)
+                    self.batch_size = indexing_batch_size(self.encoder, configured)
                     checkpoint = conn.execute(
                         "SELECT chunks_done FROM index_work WHERE id=?", (work_id,)
                     ).fetchone()[0]
@@ -199,9 +201,8 @@ class SegmentWorker:
                 try:
                     embeddings = self.encoder.encode_text([row["text"] for row in rows], "passage")
                 except Exception as exc:
-                    if memory_exhausted(exc) and self.batch_size > 1:
-                        self.batch_size = max(1, self.batch_size // 2)
-                        self.oom_limit = self.batch_size
+                    if memory_exhausted(exc) and len(rows) > 1:
+                        self.batch_size = backoff_indexing_batch(self.encoder, len(rows))
                         continue
                     raise
                 with self.lock, self.db.connect() as conn:

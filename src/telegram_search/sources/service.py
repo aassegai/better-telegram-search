@@ -190,7 +190,7 @@ class WorkspaceService:
                 self.media.preparation and self.media.preparation.is_alive()
             ):
                 raise UserError("Дождитесь завершения подготовки моделей.")
-            if self.media.running:
+            if self.media.running or self.media.ocr_cpu_running:
                 raise UserError("Приостановите медиа и дождитесь завершения текущей фотографии.")
             with self.db.connect() as conn:
                 if conn.execute(
@@ -205,12 +205,13 @@ class WorkspaceService:
             if self.semantic.encoder:
                 self.semantic.encoder.suspend()
                 self.semantic.encoder.threads = candidate.cpu_threads
+                self.semantic.encoder.index_batch_limit = None
                 self.semantic.encoder.resume()
             self.semantic.query_cache.clear()
             if self.media.clip:
-                from telegram_search.inference.resources import compute_lock
-
-                with compute_lock:
+                if hasattr(self.media.clip, "update_threads"):
+                    self.media.clip.update_threads(candidate.cpu_threads)
+                else:
                     self.media.clip.unload()
                     self.media.clip.threads = candidate.cpu_threads
             if self.media.ocr:
@@ -329,6 +330,7 @@ class WorkspaceService:
                 ).fetchone()
                 if (
                     self.media.running
+                    or self.media.ocr_cpu_running
                     or conn.execute(
                         "SELECT 1 FROM index_work WHERE state='running' LIMIT 1"
                     ).fetchone()
@@ -338,7 +340,7 @@ class WorkspaceService:
                     )
             try:
                 execution = Execution(
-                    device,
+                    "gpu" if device == "hybrid" else device,
                     device_id=gpu_device_id,
                     memory_limit_mib=gpu_memory_limit_mib,
                     threads=candidate.cpu_threads,

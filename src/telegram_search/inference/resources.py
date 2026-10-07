@@ -1,8 +1,10 @@
-from contextlib import contextmanager
-from threading import Condition, get_ident, local
+import sys
+from contextlib import ExitStack, contextmanager, nullcontext
+from threading import Condition, Lock, get_ident, local
 
 
-# All ONNX/OCR jobs share the same CPU budget in this application process.
+# CPU jobs share a queue. Each GPU has a separate queue so CPU OCR can overlap
+# GPU inference without launching competing GPU jobs on the same device.
 class CpuGate:
     def __init__(self):
         self.condition = Condition()
@@ -49,24 +51,73 @@ class CpuGate:
         return self.local.stack.pop().__exit__(*args)
 
 
+class CombinedGate(CpuGate):
+    """Auto may fall back in a child: reserve CPU then GPU in a stable order."""
+
+    def __init__(self, cpu, gpu):
+        super().__init__()
+        self.gates = (cpu, gpu)
+
+    @contextmanager
+    def slot(self, *, interactive=False):
+        with ExitStack() as stack:
+            for gate in self.gates:
+                stack.enter_context(gate.slot(interactive=interactive))
+            yield
+
+
 compute_lock = CpuGate()
+_gpu_gates = {}
+_gates_lock = Lock()
+
+
+def compute_gate(execution=None):
+    automatic = getattr(execution, "device", None) == "auto"
+    provider = getattr(execution, "provider", "CPUExecutionProvider")
+    if automatic:
+        provider = (
+            "CoreMLExecutionProvider" if sys.platform == "darwin" else "CUDAExecutionProvider"
+        )
+    if provider == "CPUExecutionProvider":
+        return compute_lock
+    key = (provider, getattr(execution, "device_id", 0))
+    with _gates_lock:
+        gpu = _gpu_gates.setdefault(key, CpuGate())
+    return CombinedGate(compute_lock, gpu) if automatic else gpu
 
 
 def memory_exhausted(exc):
     seen = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
-        if isinstance(exc, MemoryError) or any(
-            term in str(exc).lower()
-            for term in (
-                "out of memory",
-                "bad_alloc",
-                "failed to allocate",
-                "cublas_status_alloc_failed",
-                "cudnn_status_alloc_failed",
-                "cuda_error_out_of_memory",
+        message = str(exc).lower()
+        if (
+            isinstance(exc, MemoryError)
+            or any(
+                term in message
+                for term in (
+                    "out of memory",
+                    "bad_alloc",
+                    "failed to allocate",
+                    "cublas_status_alloc_failed",
+                    "cudnn_status_alloc_failed",
+                    "cuda_error_out_of_memory",
+                    "cudaerrormemoryallocation",
+                )
             )
+            or ("available memory of" in message and "smaller than requested" in message)
         ):
             return True
         exc = exc.__cause__ or exc.__context__
     return False
+
+
+def indexing_batch_size(encoder, requested):
+    return min(requested, getattr(encoder, "index_batch_limit", None) or requested)
+
+
+def backoff_indexing_batch(encoder, batch_size):
+    with getattr(encoder, "condition", nullcontext()):
+        limit = indexing_batch_size(encoder, max(1, batch_size // 2))
+        encoder.index_batch_limit = limit
+    return limit

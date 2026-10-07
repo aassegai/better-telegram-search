@@ -3,6 +3,7 @@ import hashlib
 import importlib.metadata
 import io
 import json
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +13,7 @@ from telegram_search.config.model_registry import media_registry
 from telegram_search.inference.bundles import BundleStore
 from telegram_search.inference.compatibility import RUNTIME_VERSIONS, check_vectors
 from telegram_search.inference.providers import CPU, Execution, runtime_version
-from telegram_search.inference.resources import compute_lock
+from telegram_search.inference.resources import compute_gate
 from telegram_search.inference.tokenization import ModelTokenizer
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -77,6 +78,7 @@ class ClipEncoder:
             threads=threads,
             probe=False,
         )
+        self.lock = threading.RLock()
         self.query_execution = Execution(
             search_device or device,
             device_id=gpu_device_id,
@@ -192,16 +194,18 @@ class ClipEncoder:
             check_vectors(encode(reference), encode(candidate))
 
     def check_contract(self):
-        with compute_lock:
-            self._session("image")
-            self._session("text")
+        with self.lock:
+            with compute_gate(self.execution):
+                self._session("image")
+            with compute_gate(self.query_execution):
+                self._session("text")
         self.unload()
 
     def encode_text(self, texts):
         if not 1 <= len(texts) <= 32:
             raise UserError("Батч CLIP должен содержать от 1 до 32 текстов.")
         inputs = self.tokenizer.batch(texts, limit=128)
-        with compute_lock.slot(interactive=True):
+        with self.lock, compute_gate(self.query_execution).slot(interactive=True):
             session = self._session("text")
             hidden = session.run(
                 ["last_hidden_state"], {key: inputs[key] for key in ("input_ids", "attention_mask")}
@@ -217,7 +221,7 @@ class ClipEncoder:
         if not 1 <= len(images) <= 32:
             raise UserError("Батч изображений должен содержать от 1 до 32 файлов.")
         pixels = np.stack([image_tensor(data, self.preprocessor) for data in images])
-        with compute_lock:
+        with self.lock, compute_gate(self.execution):
             result = normalize(
                 self._session("image").run(["image_embeds"], {"pixel_values": pixels})[0]
             )
@@ -226,11 +230,17 @@ class ClipEncoder:
         return result
 
     def unload(self):
-        with compute_lock:
+        with self.lock:
             self.sessions.clear()
         gc.collect()
 
     def unload_index(self):
-        with compute_lock:
+        with self.lock:
             self.sessions.pop("image", None)
+        gc.collect()
+
+    def update_threads(self, threads):
+        with self.lock:
+            self.sessions.clear()
+            self.threads = threads
         gc.collect()

@@ -7,7 +7,8 @@ def provider(encoder):
     execution = getattr(encoder, "execution", None)
     if execution is None:
         return "cpu"
-    return getattr(execution, "provider", None) or execution.info().get("provider", "cpu")
+    selected = getattr(execution, "provider", None) or execution.info().get("provider", "cpu")
+    return "CPU+" + selected if getattr(encoder, "cpu_peer", None) else selected
 
 
 def rate_space(encoder):

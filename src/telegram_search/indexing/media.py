@@ -6,7 +6,12 @@ import time
 import psutil
 
 from telegram_search.indexing.estimates import record_rate
-from telegram_search.inference.resources import compute_lock, memory_exhausted
+from telegram_search.inference.resources import (
+    backoff_indexing_batch,
+    compute_gate,
+    indexing_batch_size,
+    memory_exhausted,
+)
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text, serialize
@@ -20,10 +25,13 @@ class MediaService:
         self.ocr = None
         self.clip = None
         self.running = False
+        self.ocr_cpu_running = False
         self.resource_error = None
         self.image_limits = {}
         self.ocr_staging_ids = set()
+        self.ocr_claims = set()
         self.ocr_completed = 0
+        self.ocr_timings = {}
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.preparation = None
@@ -35,6 +43,7 @@ class MediaService:
             )
         self._load_existing()
         self.background = None
+        self.ocr_background = None
         if start_background:
             self.start_background()
 
@@ -42,6 +51,10 @@ class MediaService:
         if self.background is None:
             self.background = threading.Thread(target=self._loop, name="media-index", daemon=True)
             self.background.start()
+            self.ocr_background = threading.Thread(
+                target=self._cpu_ocr_loop, name="ocr-cpu-index", daemon=True
+            )
+            self.ocr_background.start()
 
     def _new_ocr(self, settings=None):
         from telegram_search.inference.ocr import OcrEngine
@@ -153,7 +166,12 @@ class MediaService:
                     if old:
                         old.unload()
         except Exception:
-            if kind == "images" and engine and engine is not self.clip:
+            if (
+                engine
+                and engine is not self.clip
+                and engine is not self.ocr
+                and hasattr(engine, "unload")
+            ):
                 engine.unload()
             with self.db.connect() as conn:
                 conn.execute(
@@ -293,10 +311,13 @@ class MediaService:
                 )
             ),
             "ocr_engine": self.db.settings.ocr_engine,
-            "ocr_backend": self.ocr.execution.info()
+            "ocr_backend": self.ocr.backend_info()
+            if self.ocr and hasattr(self.ocr, "backend_info")
+            else self.ocr.execution.info()
             if self.ocr and hasattr(self.ocr, "execution")
             else {"device": "cpu", "provider": "tesseract"},
-            "running": self.running,
+            "ocr_timings": self.ocr_timings,
+            "running": self.running or self.ocr_cpu_running,
             "resource_error": self.resource_error,
             "device": self.clip.execution.info()["device"]
             if self.clip
@@ -342,67 +363,144 @@ class MediaService:
             is not None
         )
 
-    def _ocr_one(self):
-        if not self.ocr:
-            return False
-        engine = self.ocr
-        with self.db.connect() as conn:
-            if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
-                if hasattr(engine, "unload"):
-                    engine.unload()
-                return False
-            row = conn.execute(
-                "SELECT r.sha256 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
-                "WHERE c.ocr_paused=0 AND r.kind='photo' "
-                "AND r.status='ready' AND NOT EXISTS (SELECT 1 FROM ocr_cache o "
-                "WHERE o.sha256=r.sha256 AND o.version=?) LIMIT 1",
-                (engine.version,),
-            ).fetchone()
-        if not row:
-            if hasattr(engine, "unload"):
-                engine.unload()
-            return False
-        sha = row[0]
-        try:
-            data = self._read_photo(sha)
-            with compute_lock:
-                result = engine.recognize(data)
-            state, error = "ready", None
-        except UserError as exc:
-            result = {"text": "", "confidence": None}
-            state, error = "failed", str(exc)
-        published = False
+    @staticmethod
+    def _unload_ocr_lane(engine):
+        if engine:
+            unload = getattr(engine, "unload_worker", None) or getattr(engine, "unload", None)
+            if unload:
+                unload()
+
+    def _ocr_one(self, engine=None):
         with self.lock, self.db.connect() as conn:
-            if self.ocr is engine and self._current(conn, sha, kind="ocr"):
-                conn.execute(
-                    "INSERT INTO ocr_cache(sha256,version,state,text,"
-                    "text_normalized,confidence,error) VALUES(?,?,?,?,?,?,?) "
-                    "ON CONFLICT(sha256,version) DO UPDATE SET state=excluded.state,"
-                    "text=excluded.text,text_normalized=excluded.text_normalized,"
-                    "confidence=excluded.confidence,error=excluded.error",
-                    (
-                        sha,
-                        engine.version,
-                        state,
-                        result["text"],
-                        normalize_text(result["text"]),
-                        result["confidence"],
-                        error,
-                    ),
+            owner = self.ocr
+            engine = engine or owner
+            if not owner or engine not in (owner, getattr(owner, "cpu_peer", None)):
+                return False
+            paused = conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]
+            claimed = tuple(self.ocr_claims)
+            row = (
+                None
+                if paused or self.stop.is_set()
+                else conn.execute(
+                    "SELECT r.sha256 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
+                    "WHERE c.ocr_paused=0 AND r.kind='photo' "
+                    "AND r.status='ready' AND NOT EXISTS (SELECT 1 FROM ocr_cache o "
+                    "WHERE o.sha256=r.sha256 AND o.version=?) "
+                    + (
+                        "AND r.sha256 NOT IN (" + ",".join("?" for _ in claimed) + ") "
+                        if claimed
+                        else ""
+                    )
+                    + "LIMIT 1",
+                    (engine.version, *claimed),
+                ).fetchone()
+            )
+            if row:
+                sha = row[0]
+                self.ocr_claims.add(sha)
+        if not row:
+            self._unload_ocr_lane(engine)
+            return False
+        began = time.monotonic()
+        read_finished = compute_started = compute_finished = began
+        try:
+            try:
+                data = self._read_photo(sha)
+                read_finished = time.monotonic()
+                with compute_gate(getattr(engine, "execution", None)):
+                    # A lane may have waited for another model. Recheck pause and
+                    # ownership before starting a potentially expensive inference.
+                    with self.db.connect() as conn:
+                        if self.ocr is not owner or not self._current(conn, sha, kind="ocr"):
+                            return False
+                    compute_started = time.monotonic()
+                    result = engine.recognize(data)
+                    compute_finished = time.monotonic()
+                state, error = "ready", None
+            except UserError as exc:
+                result = {"text": "", "confidence": None}
+                state, error = "failed", str(exc)
+            with self.lock:
+                published = False
+                with self.db.connect() as conn:
+                    if self.ocr is owner and self._current(conn, sha, kind="ocr"):
+                        conn.execute(
+                            "INSERT INTO ocr_cache(sha256,version,state,text,"
+                            "text_normalized,confidence,error) VALUES(?,?,?,?,?,?,?) "
+                            "ON CONFLICT(sha256,version) DO UPDATE SET state=excluded.state,"
+                            "text=excluded.text,text_normalized=excluded.text_normalized,"
+                            "confidence=excluded.confidence,error=excluded.error",
+                            (
+                                sha,
+                                engine.version,
+                                state,
+                                result["text"],
+                                normalize_text(result["text"]),
+                                result["confidence"],
+                                error,
+                            ),
+                        )
+                        published = True
+                if published:
+                    self.ocr_completed += 1
+                    self.ocr_timings = (
+                        {
+                            "read_seconds": read_finished - began,
+                            "compute_wait_seconds": compute_started - read_finished,
+                            "inference_seconds": compute_finished - compute_started,
+                            "publish_seconds": time.monotonic() - compute_finished,
+                            "pipeline": dict(getattr(engine, "last_timings", {})),
+                        }
+                        if state == "ready"
+                        else {}
+                    )
+            return True
+        finally:
+            with self.lock:
+                self.ocr_claims.discard(sha)
+                abandoned = self.ocr is not owner or self.stop.is_set()
+            if abandoned:
+                self._unload_ocr_lane(engine)
+
+    def _cpu_ocr_loop(self):
+        while not self.stop.is_set():
+            peer = None
+            try:
+                with self.lock:
+                    peer = getattr(self.ocr, "cpu_peer", None)
+                    busy = self.preparation and self.preparation.is_alive()
+                    self.ocr_cpu_running = bool(peer and not busy)
+                if self.ocr_cpu_running:
+                    if (
+                        psutil.Process().memory_info().rss
+                        <= self.db.settings.memory_limit_mib * 1024**2
+                    ):
+                        if self._ocr_one(peer):
+                            continue
+                    else:
+                        self._unload_ocr_lane(peer)
+            except Exception:
+                self.resource_error = (
+                    "Медиа-индекс остановился на ошибке. Проверьте источник и повторите."
                 )
-                published = True
-        if published:
-            self.ocr_completed += 1
-        return True
+            finally:
+                with self.lock:
+                    self.ocr_cpu_running = False
+            self.stop.wait(1)
 
     def _index_cycle(self):
         started = time.monotonic()
         engine, completed = self.ocr, self.ocr_completed
+        clip_seconds = semantic_seconds = 0.0
         try:
             worked = self._ocr_one()
+            clip_started = time.monotonic()
             images_worked = self._image_batch()
+            clip_seconds = time.monotonic() - clip_started
             worked |= images_worked
+            semantic_started = time.monotonic()
             worked |= self._ocr_embeddings()
+            semantic_seconds = time.monotonic() - semantic_started
             if not images_worked and self.clip and hasattr(self.clip, "unload_index"):
                 self.clip.unload_index()
             return worked
@@ -411,6 +509,12 @@ class MediaService:
             # so its ETA includes that work and time spent waiting for compute.
             with self.lock:
                 if self.ocr is engine and self.ocr_completed > completed:
+                    self.ocr_timings = {
+                        **self.ocr_timings,
+                        "clip_seconds": clip_seconds,
+                        "semantic_seconds": semantic_seconds,
+                        "cycle_seconds": time.monotonic() - started,
+                    }
                     with self.db.connect() as conn:
                         record_rate(
                             conn,
@@ -453,7 +557,7 @@ class MediaService:
             if self.clip and paused and hasattr(self.clip, "unload_index"):
                 self.clip.unload_index()
             if self.ocr and (ocr_paused or self.resource_error) and hasattr(self.ocr, "unload"):
-                self.ocr.unload()
+                self._unload_ocr_lane(self.ocr)
             if (
                 self.clip
                 and time.monotonic() - self.last_used > self.db.settings.idle_unload_seconds
@@ -586,7 +690,9 @@ class MediaService:
             self.ocr_staging_ids.update(ids.values())
         try:
             start = 0
-            batch_size = row["text_batch"] or self.db.settings.embedding_batch
+            batch_size = indexing_batch_size(
+                encoder, row["text_batch"] or self.db.settings.embedding_batch
+            )
             while start < len(chunks):
                 batch = chunks[start : start + batch_size]
                 with self.lock, self.db.connect() as conn:
@@ -595,8 +701,8 @@ class MediaService:
                 try:
                     embeddings = encoder.encode_text([chunk.text for chunk in batch], "passage")
                 except Exception as exc:
-                    if memory_exhausted(exc) and batch_size > 1:
-                        batch_size = max(1, batch_size // 2)
+                    if memory_exhausted(exc) and len(batch) > 1:
+                        batch_size = backoff_indexing_batch(encoder, len(batch))
                         continue
                     raise
                 # Publish all parts together: no searchable partial OCR on a failed batch.
@@ -773,6 +879,8 @@ class MediaService:
         self.wake.set()
         if self.background:
             self.background.join()
+        if self.ocr_background:
+            self.ocr_background.join()
         if self.preparation:
             self.preparation.join()
         if self.clip:

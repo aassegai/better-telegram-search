@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ class TestEncoder:
         self.tokenizer = SimpleNamespace(count=lambda text: len(text.split()) + 2)
         self.on_encode = on_encode
         self.calls = []
+        self.purposes = []
         self.suspended = False
         self.execution = SimpleNamespace(
             info=lambda: {"device": "cpu", "provider": "synthetic-CPU"}
@@ -37,6 +39,7 @@ class TestEncoder:
 
     def encode_text(self, texts, purpose, **kwargs):
         self.calls.append(len(texts))
+        self.purposes.append(purpose)
         if self.on_encode:
             self.on_encode(texts)
         values = np.array(
@@ -50,6 +53,9 @@ class TestEncoder:
 
     def unload_index(self):
         pass
+
+    def unload_idle(self, **kwargs):
+        return False
 
     def suspend(self):
         self.suspended = True
@@ -87,6 +93,27 @@ def setup_index(db, importer, tmp_path, texts=None):
         work = conn.execute("SELECT id FROM index_work WHERE state='pending'").fetchone()[0]
     worker = SegmentWorker(db, encoder, vectors, importer.lifecycle_lock)
     return result["chat_id"], service, worker, work
+
+
+def test_idle_service_keeps_encoder_used_by_ocr_without_search_queries(db, importer, monkeypatch):
+    from telegram_search.inference.e5 import E5Encoder
+
+    service = SemanticService(db, importer.lifecycle_lock, start_background=False)
+    encoder = E5Encoder.__new__(E5Encoder)
+    encoder.condition = threading.Condition()
+    encoder.encoding = False
+    encoder.last_index_used = time.monotonic()
+    encoder.session = object()
+    encoder.query_session = object()
+    service.encoder = encoder
+    service.last_used = time.monotonic() - db.settings.idle_unload_seconds - 10
+    service.query_cache["synthetic query"] = [1]
+    monkeypatch.setattr(service.wake, "wait", lambda seconds: service.stop.set())
+    service._loop()
+    assert encoder.session is not None and encoder.query_session is not None
+    assert service.query_cache
+    with db.connect() as conn:
+        assert conn.execute("SELECT error FROM semantic_state WHERE id=1").fetchone()[0] is None
 
 
 def test_pause_resume_reuses_staged_chunks(db, importer, tmp_path):
@@ -363,6 +390,51 @@ def test_failed_new_model_restores_old_encoder_and_user_pause(db, importer, tmp_
     assert service.status()["paused"] == 1
 
 
+def test_preparation_checks_indexing_and_query_devices(db, importer, tmp_path, monkeypatch):
+    from telegram_search.inference.bundles import BundleStore
+
+    service = SemanticService(db, importer.lifecycle_lock, start_background=False)
+    encoder = TestEncoder()
+    monkeypatch.setattr(BundleStore, "prepare", lambda *args, **kwargs: tmp_path)
+    monkeypatch.setattr(service, "_new_encoder", lambda profile: encoder)
+    service._prepare(SimpleNamespace(profile="small"), False, True, False, None)
+    assert encoder.purposes == ["passage", "query"]
+    assert service.encoder is encoder
+    assert service.status()["preparation_state"] == "ready"
+
+
+def test_failed_queue_has_no_eta_and_exposes_error_until_explicit_retry(db, importer, tmp_path):
+    _, service, worker, work = setup_index(db, importer, tmp_path)
+    worker.encoder.on_encode = lambda texts: (_ for _ in ()).throw(
+        UserError("Синтетическая ошибка GPU.")
+    )
+    assert worker.run(work)["state"] == "failed"
+    service.activate(worker.encoder)
+    status = service.status()
+    assert status["index_error"] == "Синтетическая ошибка GPU."
+    assert status["estimated_remaining_seconds"] is None
+    assert status["works"][0]["state"] == "failed"
+    service.control("retry")
+    assert service.status()["index_error"] is None
+    worker.encoder.on_encode = None
+    assert worker.run(work)["state"] == "done"
+
+
+def test_first_failed_batch_pauses_queue_without_failing_other_days(
+    db, importer, tmp_path, monkeypatch
+):
+    path = export(tmp_path / "export", [message(1, date=1750000000), message(2, date=1750086400)])
+    load(importer, path)
+    service = SemanticService(db, importer.lifecycle_lock, start_background=False)
+    encoder = TestEncoder(on_encode=lambda texts: (_ for _ in ()).throw(UserError("Сбой GPU.")))
+    service.activate(encoder)
+    monkeypatch.setattr(service.wake, "wait", lambda seconds: service.stop.set())
+    service._loop()
+    status = service.status()
+    assert status["paused"] == 1 and status["error"] == "Сбой GPU."
+    assert {work["state"]: work["count"] for work in status["works"]} == {"failed": 1, "pending": 1}
+
+
 def test_model_preparation_interruption_requeues_worker(db, importer, tmp_path):
     _, service, worker, work = setup_index(db, importer, tmp_path)
     worker.should_stop = service.preparing_encoder.is_set
@@ -401,3 +473,69 @@ def test_activation_commit_failure_keeps_original_encoder(db, importer, tmp_path
             conn.execute("SELECT active_space_id FROM semantic_state").fetchone()[0] == old.space_id
         )
         assert not conn.execute("SELECT 1 FROM embedding_spaces WHERE id='other'").fetchone()
+
+
+def test_oom_backoff_survives_new_day_worker_and_explicit_batch_resets_it(db, importer, tmp_path):
+    from telegram_search.indexing.chats import ChatIndexing
+    from telegram_search.indexing.media import MediaService
+
+    path = export(
+        tmp_path / "export",
+        [message(i, "long synthetic text " * 1000, date=1750000000 + i * 86400) for i in (1, 2)],
+    )
+    chat = load(importer, path)["chat_id"]
+    service = SemanticService(db, importer.lifecycle_lock, start_background=False)
+
+    def limited(texts):
+        if len(texts) > 2:
+            raise RuntimeError("Available memory of 10 is smaller than requested bytes of 20")
+
+    encoder = TestEncoder(on_encode=limited)
+    service.activate(encoder)
+    with db.connect() as conn:
+        work = [
+            row[0]
+            for row in conn.execute(
+                "SELECT id FROM index_work WHERE state='pending' ORDER BY utc_day"
+            )
+        ]
+    assert service._worker(encoder).run(work[0])["state"] == "done"
+    assert encoder.index_batch_limit == 2
+    encoder.calls.clear()
+    assert service._worker(encoder).run(work[1])["state"] == "done"
+    assert max(encoder.calls) <= 2
+    media = MediaService(db, importer.lifecycle_lock, service, start_background=False)
+    ChatIndexing(db, service, media, importer.lifecycle_lock).settings(chat, {"embedding_batch": 8})
+    assert encoder.index_batch_limit is None
+
+
+@pytest.mark.parametrize("mutation", ["retry", "delete", "reimport"])
+def test_stale_failed_result_cannot_pause_changed_queue(
+    db, importer, tmp_path, monkeypatch, mutation
+):
+    path, service, worker, _ = setup_index(db, importer, tmp_path)
+    original = worker.run
+    worker.encoder.on_encode = lambda texts: (_ for _ in ()).throw(UserError("Старый сбой."))
+
+    def run(work):
+        result = original(work)
+        assert result["state"] == "failed"
+        if mutation == "retry":
+            service.control("retry")
+        elif mutation == "delete":
+            with importer.lifecycle_lock, db.connect() as conn:
+                conn.execute("DELETE FROM chats")
+        else:
+            with db.connect() as conn:
+                chat = conn.execute("SELECT id FROM chats LIMIT 1").fetchone()[0]
+            with importer.lifecycle_lock, db.connect() as conn:
+                invalidate_segments(conn, chat, {result["utc_day"]}, "synthetic_reimport")
+        service.stop.set()
+        return result
+
+    worker.run = run
+    monkeypatch.setattr(service, "_worker", lambda encoder: worker)
+    monkeypatch.setattr(service.wake, "wait", lambda seconds: service.stop.set())
+    service._loop()
+    assert not service.status()["paused"]
+    assert service.status()["error"] is None

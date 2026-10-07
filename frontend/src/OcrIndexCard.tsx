@@ -15,7 +15,7 @@ export default function OcrIndexCard({ media, busy, preparing, onModels, onContr
   const status = preparing ? t('Подготавливаем…') : !enabled ? t('Не подготовлен') : done ?
     media.ocr_failed ? t('Завершено с ошибками') : t('Готово') : paused ? t('На паузе') : t('Распознавание');
   return <section className="index-card" aria-label={t('Текст на изображениях · OCR')}>
-    <header className="index-card-heading"><h3>{t('Текст на изображениях')}</h3><span className="index-model">OCR · {(media.ocr_backend?.device ?? 'cpu').toUpperCase()}</span></header>
+    <header className="index-card-heading"><h3>{t('Текст на изображениях')}</h3><span className="index-model">OCR · {(media.ocr_backend?.device ?? 'cpu').toUpperCase().split('+').join(' + ')}</span></header>
     <div className="index-progress-label"><span>{t('Обработано: {p0} / {p1}', { p0: completed, p1: media.total_photos })}</span><span>{status}</span></div>
     <progress aria-label={t('Прогресс распознавания OCR')} value={completed} max={Math.max(1, media.total_photos)} />
     {enabled && <p className="index-eta" role="status">{done ? t('Распознавание завершено.') : estimatedTime(media.ocr_estimated_remaining_seconds, t('Оценка появится после первых изображений.'))}</p>}

@@ -4,12 +4,14 @@ import hashlib
 import importlib.util
 import json
 import math
+from dataclasses import replace
 
 from telegram_search.config.model_registry import ocr_spec
 from telegram_search.config.runtime import ocr_command
 from telegram_search.inference.bundles import BundleStore
 from telegram_search.inference.ocr_process import OcrProcess
 from telegram_search.inference.providers import COREML, CPU, CUDA, Execution
+from telegram_search.inference.resources import compute_gate
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
@@ -23,9 +25,13 @@ class OnnxOcrEngine:
         self.spec = ocr_spec()
         self.store = BundleStore(workspace)
         self.root = self.store.path(self.spec)
-        self.threads = settings.cpu_threads
+        hybrid = settings.ocr_device == "hybrid"
+        device = "gpu" if hybrid else settings.ocr_device
+        self.threads = max(1, settings.cpu_threads // 2) if hybrid else settings.cpu_threads
+        self.cpu_peer = None
+        self.last_timings = {}
         self.execution = Execution(
-            settings.ocr_device,
+            device,
             device_id=settings.gpu_device_id,
             memory_limit_mib=settings.gpu_memory_limit_mib,
             threads=self.threads,
@@ -51,7 +57,7 @@ class OnnxOcrEngine:
                 "--onnx",
                 str(self.root),
                 str(settings.ocr_max_edge),
-                settings.ocr_device,
+                device,
                 str(settings.gpu_device_id),
                 str(settings.gpu_memory_limit_mib),
                 str(self.threads),
@@ -60,6 +66,27 @@ class OnnxOcrEngine:
             threads=self.threads,
             timeout=settings.ocr_timeout_seconds,
         )
+
+        if hybrid:
+            self.cpu_peer = OnnxOcrEngine(
+                workspace,
+                replace(
+                    settings,
+                    ocr_device="cpu",
+                    cpu_threads=max(1, settings.cpu_threads - self.threads),
+                ),
+            )
+
+    def backend_info(self):
+        info = self.execution.info()
+        if self.cpu_peer:
+            info = {
+                **info,
+                "requested_device": "hybrid",
+                "device": "cpu+gpu",
+                "workers": [info, self.cpu_peer.execution.info()],
+            }
+        return info
 
     def verify(self):
         self.store.verify(self.spec)
@@ -77,24 +104,52 @@ class OnnxOcrEngine:
         data = io.BytesIO()
         Image.new("RGB", (64, 64), "white").save(data, format="PNG")
         try:
-            self.recognize(data.getvalue())
+            with compute_gate(self.execution):
+                self.recognize(data.getvalue())
+            if self.cpu_peer:
+                self.cpu_peer.check_contract()
         finally:
             self.unload()
 
     def recognize(self, data):
+        self.last_timings = {}
         try:
             value = json.loads(self.worker.recognize(data))
             if (
                 not isinstance(value["text"], str)
                 or len(value["text"]) > 65536
                 or type(value["confidence"]) not in {int, float}
-                or not math.isfinite(value["confidence"])
                 or not 0 <= value["confidence"] <= 100
+                or not math.isfinite(value["confidence"])
                 or value["provider"] not in {CPU, CUDA, COREML}
                 or (self.execution.device == "cpu" and value["provider"] != CPU)
                 or (self.execution.device == "gpu" and value["provider"] != self.execution.provider)
             ):
                 raise ValueError("OCR output")
+            timings = value.get("timings", {})
+            durations = {
+                "preprocess_seconds",
+                "detection_seconds",
+                "boxes_seconds",
+                "recognition_seconds",
+            }
+            if (
+                not isinstance(timings, dict)
+                or set(timings) - durations - {"regions"}
+                or any(
+                    type(seconds) not in {int, float}
+                    or not 0 <= seconds <= 3600
+                    or not math.isfinite(seconds)
+                    for key, seconds in timings.items()
+                    if key in durations
+                )
+                or (
+                    "regions" in timings
+                    and (type(timings["regions"]) is not int or not 0 <= timings["regions"] <= 1000)
+                )
+            ):
+                raise ValueError("OCR timings")
+            self.last_timings = timings
             self.execution.provider = value["provider"]
             if self.execution.device == "auto" and value["provider"] == CPU:
                 self.execution.warning = "GPU недоступен: режим Авто использует CPU."
@@ -103,5 +158,10 @@ class OnnxOcrEngine:
             self.worker.unload()
             raise UserError("OCR не смог обработать изображение за заданное время.") from exc
 
-    def unload(self):
+    def unload_worker(self):
         self.worker.unload()
+
+    def unload(self):
+        self.unload_worker()
+        if self.cpu_peer:
+            self.cpu_peer.unload()

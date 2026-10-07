@@ -37,6 +37,8 @@ def serve(api, max_edge, *, onnx=False):
             raise ValueError("truncated image")
         try:
             value = api.recognize(data) if onnx else recognize(data, max_edge, api)
+            if onnx:
+                value["timings"] = api.last_timings
         except Exception:
             # Never emit file names, recognized content, or native tracebacks.
             value = {"error": True}

@@ -68,12 +68,18 @@ class Settings:
                 raise UserError("Недопустимый профиль устройства или версия настроек.")
         if (
             type(settings.ocr_device) is not str
-            or settings.ocr_device not in {"cpu", "auto", "gpu"}
+            or settings.ocr_device not in {"cpu", "auto", "gpu", "hybrid"}
             or type(settings.ocr_engine) is not str
             or settings.ocr_engine not in {"tesseract", "paddle"}
             or (settings.ocr_engine == "tesseract" and settings.ocr_device != "cpu")
         ):
             raise UserError("Tesseract работает на CPU. Для GPU выберите PaddleOCR.")
+        if (
+            settings.ocr_device == "hybrid"
+            and type(settings.cpu_threads) is int
+            and settings.cpu_threads < 2
+        ):
+            raise UserError("Для OCR на CPU + GPU выберите не менее двух CPU-потоков.")
         if (
             type(settings.version) is not int
             or settings.version != 1

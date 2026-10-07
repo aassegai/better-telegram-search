@@ -6,6 +6,7 @@ No training framework, automatic model downloads or external code execution.
 
 import io
 import math
+import time
 
 import cv2
 import numpy as np
@@ -94,9 +95,19 @@ def detected_boxes(scores, width, height):
     return boxes
 
 
-def crop_box(image, box):
+def crop_dimensions(box):
     width = max(1, round(max(np.linalg.norm(box[0] - box[1]), np.linalg.norm(box[2] - box[3]))))
     height = max(1, round(max(np.linalg.norm(box[0] - box[3]), np.linalg.norm(box[1] - box[2]))))
+    return width, height
+
+
+def recognition_dimensions(width, height):
+    resized = max(1, min(2048, math.ceil(48 * width / height)))
+    return resized, min(2048, math.ceil(resized / 320) * 320)
+
+
+def crop_box(image, box):
+    width, height = crop_dimensions(box)
     transform = cv2.getPerspectiveTransform(
         box,
         np.array(
@@ -118,6 +129,7 @@ class OnnxOcrPipeline:
             threads=threads,
             probe=False,
         )
+        self.recognition_limits = {}
         self.alphabet = (
             [""]
             + (root / "languages/eslav/dict.txt").read_text(encoding="utf-8").splitlines()
@@ -147,6 +159,7 @@ class OnnxOcrPipeline:
         return scores[0, 0]
 
     def recognize(self, data):
+        began = time.perf_counter()
         with Image.open(io.BytesIO(data)) as original:
             if original.width * original.height > Image.MAX_IMAGE_PIXELS:
                 raise ValueError("pixel budget")
@@ -161,29 +174,81 @@ class OnnxOcrPipeline:
             [0.229, 0.224, 0.225], dtype=np.float32
         )
         tensor = tensor.transpose(2, 0, 1)[None].copy()
-        boxes = detected_boxes(self._detect(tensor), w, h)
+        prepared = time.perf_counter()
+        scores = self._detect(tensor)
+        detected = time.perf_counter()
+        boxes = detected_boxes(scores, w, h)
+        postprocessed = time.perf_counter()
         texts, confidences = [], []
-        for start in range(0, len(boxes), 8):
-            crops = [crop_box(image, box) for box in boxes[start : start + 8]]
-            for text, confidence in self._recognize_crops(crops):
-                if text and confidence >= 0.5:
-                    texts.append(text)
-                    confidences.append(confidence)
-                if sum(map(len, texts)) + len(texts) > 65536:
-                    raise ValueError("text budget")
+        text_size = 0
+        for text, confidence in self._recognize_boxes(image, boxes):
+            if text and confidence >= 0.5:
+                texts.append(text)
+                confidences.append(confidence)
+                text_size += len(text) + 1
+            if text_size > 65536:
+                raise ValueError("text budget")
+        self.last_timings = {
+            "preprocess_seconds": prepared - began,
+            "detection_seconds": detected - prepared,
+            "boxes_seconds": postprocessed - detected,
+            "recognition_seconds": time.perf_counter() - postprocessed,
+            "regions": len(boxes),
+        }
         return {
             "text": "\n".join(texts),
             "confidence": float(np.mean(confidences)) * 100 if confidences else 0.0,
             "provider": self.execution.provider,
         }
 
+    def _recognize_boxes(self, image, boxes):
+        if self.execution.provider == CPU:
+            # Keep the smaller original CPU batches; larger homogeneous batches
+            # help CUDA but regress this recognizer's CPU throughput.
+            results = []
+            for start in range(0, len(boxes), 8):
+                crops = [crop_box(image, box) for box in boxes[start : start + 8]]
+                results.extend(self._recognize_crops(crops))
+            return results
+        # Group the entire image before batching: neighbouring lines often have
+        # different widths and split a batch of eight into several tiny GPU runs.
+        # Keep fixed padding and restore detector order, preserving cache identity.
+        groups = {}
+        pixels = {}
+        for index, box in enumerate(boxes):
+            width, height = crop_dimensions(box)
+            pixels[index] = width * height
+            if height / width >= 1.5:
+                width, height = height, width
+            _, bucket = recognition_dimensions(width, height)
+            groups.setdefault(bucket, []).append(index)
+        results = [None] * len(boxes)
+        limit = 32
+        for bucket, indices in groups.items():
+            start = 0
+            while start < len(indices):
+                batch_limit = min(limit, self.recognition_limits.get(bucket, limit))
+                end, crop_pixels = start, 0
+                while end < len(indices) and end - start < batch_limit:
+                    next_pixels = pixels[indices[end]]
+                    if end > start and crop_pixels + next_pixels > 8_000_000:
+                        break
+                    crop_pixels += next_pixels
+                    end += 1
+                selected = indices[start:end]
+                crops = [crop_box(image, boxes[index]) for index in selected]
+                values = self._recognize_crops(crops)
+                for index, value in zip(selected, values, strict=True):
+                    results[index] = value
+                start = end
+        return results
+
     def _recognize_crops(self, crops):
-        widths = [
-            max(1, min(2048, math.ceil(48 * crop.shape[1] / crop.shape[0]))) for crop in crops
-        ]
+        dimensions = [recognition_dimensions(crop.shape[1], crop.shape[0]) for crop in crops]
+        widths = [size[0] for size in dimensions]
         # A line's padding must not depend on its neighbours or on OOM splitting:
         # the bidirectional recognizer can otherwise return a different transcription.
-        buckets = [min(2048, math.ceil(width / 320) * 320) for width in widths]
+        buckets = [size[1] for size in dimensions]
         if len(set(buckets)) > 1:
             results = [None] * len(crops)
             for bucket in sorted(set(buckets)):
@@ -204,6 +269,9 @@ class OnnxOcrPipeline:
         except Exception as exc:
             if len(crops) <= 1 or not memory_exhausted(exc):
                 raise
+            limits = getattr(self, "recognition_limits", {})
+            limits[buckets[0]] = min(limits.get(buckets[0], len(crops)), len(crops) // 2)
+            self.recognition_limits = limits
             retry = True
         if retry:
             del padded

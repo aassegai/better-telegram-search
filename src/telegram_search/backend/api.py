@@ -75,7 +75,7 @@ class DeviceRequest(BaseModel):
 
 
 class ModelDeviceRequest(BaseModel):
-    device: Literal["cpu", "auto", "gpu"]
+    device: Literal["cpu", "auto", "gpu", "hybrid"]
     search_device: Literal["cpu", "auto", "gpu"] = "cpu"
     ocr_engine: Literal["tesseract", "paddle"] | None = None
 
@@ -580,7 +580,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         if verification_nonce and app.state.update_verifying:
             return {"version": __version__, "database_check": app.state.update_database_check}
         status = app.state.semantic.status()
-        media_backend = app.state.media.status().get("backend")
+        media_status = app.state.media.status()
+        media_backend = media_status.get("backend")
         backend = status["backend"] or media_backend
         result = doctor(db)
         result["hardware"]["selected_provider"] = backend.get("provider") if backend else None
@@ -588,6 +589,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             **result,
             "device": backend.get("device", db.settings.device) if backend else db.settings.device,
             "semantic": status,
+            "media": media_status,
             "dense_available": status["dense_available"],
             "models_loaded": int(bool(status["backend"] and status["backend"]["loaded"])),
         }

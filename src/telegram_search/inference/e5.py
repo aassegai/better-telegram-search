@@ -13,7 +13,7 @@ import numpy as np
 from telegram_search.config.model_registry import ModelSpec
 from telegram_search.inference.compatibility import check_vectors, compatible_manifest
 from telegram_search.inference.providers import CPU, Execution, runtime_version
-from telegram_search.inference.resources import compute_lock
+from telegram_search.inference.resources import compute_gate
 from telegram_search.inference.tokenization import ModelTokenizer
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -69,6 +69,7 @@ class E5Encoder:
         self.query_session = None
         self.validated_providers = {CPU}
         self.last_index_used = 0.0
+        self.index_batch_limit = None
         self.condition = threading.Condition()
         self.encoding = False
         self.suspended = False
@@ -192,10 +193,15 @@ class E5Encoder:
             limit = self.spec.manifest["chunk_max_tokens"] if purpose == "passage" else 512
             inputs = self.tokenizer.batch(prepared, limit)
             try:
-                with compute_lock.slot(interactive=interactive):
+                execution = self.query_execution if purpose == "query" else self.execution
+                with compute_gate(execution).slot(interactive=interactive):
                     session = self._load(query=purpose == "query")
                     feed = {item.name: inputs[item.name] for item in session.get_inputs()}
                     hidden = session.run([self.spec.manifest["output_name"]], feed)[0]
+            except UserError:
+                # Preserve actionable device/precision errors; native exceptions
+                # remain behind the content-free generic inference message.
+                raise
             except Exception as exc:
                 raise UserError("Ошибка ONNX-инференса. Уменьшите batch или выберите CPU.") from exc
             embeddings = masked_mean_normalize(hidden, inputs["attention_mask"])
@@ -221,6 +227,7 @@ class E5Encoder:
             "query_execution": self.query_execution.info(),
             "query_loaded": self.query_session is not None,
             "threads": self.threads,
+            "index_batch_limit": self.index_batch_limit,
         }
 
     def unload(self) -> None:
@@ -252,3 +259,23 @@ class E5Encoder:
                 self.condition.wait()
             self.session = None
         gc.collect()
+
+    def unload_idle(self, *, query_last_used, idle_seconds, index_paused=False):
+        """Release idle sessions without waiting for, then evicting, an active batch."""
+        with self.condition:
+            if self.encoding:
+                return False
+            now = time.monotonic()
+            all_idle = now - max(query_last_used, self.last_index_used) > idle_seconds
+            release_index = all_idle or index_paused or now - self.last_index_used > 5
+            changed = bool(
+                (release_index and self.session is not None)
+                or (all_idle and self.query_session is not None)
+            )
+            if release_index:
+                self.session = None
+            if all_idle:
+                self.query_session = None
+        if changed:
+            gc.collect()
+        return all_idle

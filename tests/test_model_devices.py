@@ -111,10 +111,15 @@ def test_ocr_cache_identity_is_shared_by_cpu_gpu_and_auto(tmp_path, monkeypatch)
     )
     engines = [
         OnnxOcrEngine(tmp_path, Settings(ocr_engine="paddle", ocr_device=device))
-        for device in ("cpu", "gpu", "auto")
+        for device in ("cpu", "gpu", "auto", "hybrid")
     ]
     assert len({engine.version for engine in engines}) == 1
     assert all(not engine.execution.probe and engine.worker.process is None for engine in engines)
+    hybrid = engines[-1]
+    assert hybrid.cpu_peer.version == hybrid.version
+    assert hybrid.execution.device == "gpu" and hybrid.cpu_peer.execution.device == "cpu"
+    assert hybrid.threads + hybrid.cpu_peer.threads == Settings().cpu_threads
+    assert hybrid.backend_info()["device"] == "cpu+gpu"
     resized = OnnxOcrEngine(tmp_path, Settings(ocr_engine="paddle", ocr_max_edge=1200))
     assert resized.version != engines[0].version
     gpu = engines[1]

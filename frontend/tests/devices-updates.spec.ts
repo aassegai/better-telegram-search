@@ -95,3 +95,36 @@ test('install reconnects even if settings close and an old status response arriv
   await expect(page.getByLabel('Поисковый запрос')).toBeVisible();
   await expect(page.getByText('Old response', { exact: true })).toHaveCount(0);
 });
+
+
+test('OCR hybrid selects Paddle, preserves progress and shares a single pause', async ({ page }) => {
+  await page.route('**/api/semantic', route => route.fulfill({ json: { profiles: [], backend: { device: 'cpu' } } }));
+  await page.route('**/api/media-index', route => route.fulfill({ json: {
+    ocr_runtime_installed: true, ocr_enabled: 1, ocr_ready: 234, ocr_failed: 0, total_photos: 45451, ocr_paused: 0,
+    ocr_backend: { device: 'cpu+gpu', provider: 'CUDAExecutionProvider' },
+  } }));
+  await page.route('**/api/models/ocr/device', async route => {
+    expect(route.request().postDataJSON()).toEqual({ device: 'hybrid', ocr_engine: 'paddle' });
+    const models = await (await page.request.get('/api/models')).json();
+    await route.fulfill({ json: { model: { ...models.ocr, device: 'hybrid', engine: 'paddle' },
+      execution: { warning: null }, query_execution: { warning: null } } });
+  });
+  await page.goto('/');
+  await expect(page.locator('.pill')).toContainText('Индекс: CPU + GPU');
+  await expect(page.locator('.pill')).not.toContainText('CPU+GPU');
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  const ocr = page.getByRole('region', { name: 'Устройства OCR', exact: true });
+  await ocr.getByLabel('Устройство распознавания', { exact: true }).selectOption('hybrid');
+  await expect(ocr.getByLabel('Модель OCR', { exact: true })).toHaveValue('paddle');
+  await expect(ocr.getByText('CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.')).toBeVisible();
+  for (const model of ['E5', 'CLIP']) {
+    await expect(page.getByRole('region', { name: `Устройства ${model}`, exact: true }).locator('option[value=hybrid]')).toHaveCount(0);
+  }
+  await ocr.getByRole('button', { name: 'Применить устройство', exact: true }).click();
+  await expect(ocr.getByLabel('Устройство распознавания', { exact: true })).toHaveValue('hybrid');
+  await page.getByRole('slider').press('End');
+  await expect(page.getByText('CPU and GPU recognize different images simultaneously. Pausing OCR stops both devices.')).toBeVisible();
+  const english = page.getByRole('region', { name: 'OCR devices', exact: true });
+  await english.getByLabel('OCR model', { exact: true }).selectOption('tesseract');
+  await expect(english.getByLabel('Recognition device', { exact: true })).toHaveValue('cpu');
+});

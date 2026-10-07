@@ -94,7 +94,7 @@ export default function App() {
   const contextVersion = useRef(0);
   const [searchFilters, setSearchFilters] = useState('');
   const closeContext = () => { contextVersion.current++; setContext(null); setLoadingContext(false); };
-  const devices = (values: (string | undefined)[]) => [...new Set(values.filter(Boolean).map(value => value!.toUpperCase()))].join(' + ') || 'CPU';
+  const devices = (values: (string | undefined)[]) => [...new Set(values.filter(Boolean).flatMap(value => value!.toUpperCase().split('+').map(device => device.trim())))].join(' + ') || 'CPU';
   const indexingDevices = devices([semantic?.backend?.device, media?.backend?.device,
     media?.ocr_enabled ? media.ocr_backend?.device : undefined]);
   const searchDevices = devices([semantic?.backend?.query_execution?.device, media?.query_backend?.device]);

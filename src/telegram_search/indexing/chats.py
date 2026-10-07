@@ -37,6 +37,8 @@ class ChatIndexing:
                 raise UserError("Диалог не найден.")
             for key, value in values.items():
                 conn.execute(f"UPDATE chats SET {fields[key][0]}=? WHERE id=?", (value, chat_id))
+        if "embedding_batch" in values and self.semantic.encoder:
+            self.semantic.encoder.index_batch_limit = None
         if "image_batch" in values:
             with self.lock:
                 self.media.image_limits = {
@@ -77,6 +79,7 @@ class ChatIndexing:
                     )
                 if action == "retry":
                     if kind == "text":
+                        conn.execute("UPDATE semantic_state SET error=NULL WHERE id=1")
                         conn.execute(
                             "UPDATE index_work SET state='pending',error=NULL "
                             "WHERE chat_id=? AND state='failed'",

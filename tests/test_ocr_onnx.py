@@ -106,6 +106,111 @@ def test_line_padding_is_stable_across_mixed_batches_and_oom():
     assert pipeline._recognize_crops(crops) == individually
 
 
+@pytest.mark.parametrize("provider,expected", [(CUDA, [32, 8, 32, 8]), (CPU, [4] * 20)])
+def test_whole_image_width_groups_batch_efficiently_and_restore_line_order(
+    monkeypatch, provider, expected
+):
+    import telegram_search.inference.ocr_pipeline as module
+
+    pipeline = OnnxOcrPipeline.__new__(OnnxOcrPipeline)
+    pipeline.execution = SimpleNamespace(provider=provider)
+    pipeline.recognition_limits = {}
+    pipeline.alphabet = [""] + [str(i) for i in range(80)]
+    calls = []
+
+    class Recognizer:
+        def get_inputs(self):
+            return [SimpleNamespace(name="x")]
+
+        def run(self, names, inputs):
+            tensor = inputs["x"]
+            calls.append(len(tensor))
+            indices = np.rint((tensor[:, 0, 0, 0] + 1) * 127.5).astype(int)
+            return [np.eye(81, dtype=np.float32)[indices][:, None, :]]
+
+    pipeline.recognizer = Recognizer()
+    boxes = []
+    for index in range(80):
+        x, width = index * 10, 200 if index % 2 == 0 else 500
+        boxes.append(np.array([[x, 0], [x + width, 0], [x + width, 48], [x, 48]], np.float32))
+
+    def crop(image, box):
+        index = round(box[0, 0] / 10)
+        width = round(box[1, 0] - box[0, 0])
+        return np.full((48, width, 3), index + 1, np.uint8)
+
+    monkeypatch.setattr(module, "crop_box", crop)
+    values = pipeline._recognize_boxes(None, boxes)
+    assert values == [(str(i), 1.0) for i in range(80)]
+    assert calls == expected
+
+
+def test_crop_batches_bound_memory_and_remember_oom_limits(monkeypatch):
+    import telegram_search.inference.ocr_pipeline as module
+
+    pipeline = OnnxOcrPipeline.__new__(OnnxOcrPipeline)
+    pipeline.execution = SimpleNamespace(provider=CUDA)
+    pipeline.recognition_limits = {}
+    pipeline.alphabet = ["", "А"]
+    calls = []
+
+    class Recognizer:
+        def get_inputs(self):
+            return [SimpleNamespace(name="x")]
+
+        def run(self, names, inputs):
+            batch = len(inputs["x"])
+            calls.append(batch)
+            if batch > 2:
+                raise MemoryError("synthetic out of memory")
+            return [np.ones((batch, 1, 2), dtype=np.float32)]
+
+    pipeline.recognizer = Recognizer()
+    monkeypatch.setattr(module, "crop_box", lambda image, box: np.zeros((48, 200, 3), np.uint8))
+    box = np.array([[0, 0], [200, 0], [200, 48], [0, 48]], np.float32)
+    first = pipeline._recognize_boxes(None, [box] * 40)
+    assert max(calls) == 32 and pipeline.recognition_limits[320] == 2
+    calls.clear()
+    assert pipeline._recognize_boxes(None, [box] * 40) == first
+    assert max(calls) == 2
+    calls.clear()
+    pipeline.recognition_limits.clear()
+    large = np.array([[0, 0], [2400, 0], [2400, 2400], [0, 2400]], np.float32)
+    pipeline._recognize_boxes(None, [large] * 5)
+    assert calls == [1] * 5
+
+
+@pytest.mark.parametrize(
+    "timings",
+    [
+        {"private_text": "secret"},
+        {"detection_seconds": float("nan")},
+        {"detection_seconds": 10**400},
+        {"detection_seconds": -1},
+        {"recognition_seconds": True},
+        {"regions": 1001},
+        "invalid",
+    ],
+)
+def test_child_timings_are_bounded_numeric_metadata_only(timings):
+    import json
+
+    from telegram_search.inference.ocr_onnx import OnnxOcrEngine
+
+    engine = OnnxOcrEngine.__new__(OnnxOcrEngine)
+    engine.execution = SimpleNamespace(device="cpu", provider=CPU)
+    unloaded = []
+    engine.worker = SimpleNamespace(
+        recognize=lambda data: json.dumps(
+            {"text": "synthetic", "confidence": 90, "provider": CPU, "timings": timings}
+        ),
+        unload=lambda: unloaded.append(True),
+    )
+    with pytest.raises(UserError):
+        engine.recognize(b"synthetic")
+    assert engine.last_timings == {} and unloaded == [True]
+
+
 @pytest.mark.parametrize("device", ["cpu", "gpu", "auto"])
 def test_both_ocr_models_use_selected_provider_and_only_auto_can_fall_back(
     tmp_path,

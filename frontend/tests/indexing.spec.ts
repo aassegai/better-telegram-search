@@ -1,5 +1,48 @@
 import { expect, test } from '@playwright/test';
 
+for (const paused of [false, true]) {
+  test(`failed E5 queue shows its error and retries instead of displaying a stale ETA (${paused})`, async ({ page }) => {
+    let retried = false;
+    const semantic = {
+      runtime_installed: true, enabled: 1, dense_available: true, profile: 'small',
+      preparation_state: 'ready', paused: Number(paused), batch_size: 16,
+      ready_segments: 1317, total_segments: 2040, pending_segments: 723,
+      error: null, index_error: '<img src=x onerror=window.indexInjected=true> GPU error',
+      estimated_remaining_seconds: 97719.2,
+      works: [{ state: 'failed', count: paused ? 1 : 723, chunks_total: 128, chunks_done: 0 },
+        ...(paused ? [{ state: 'pending', count: 722, chunks_total: 128, chunks_done: 0 }] : [])],
+    };
+    await page.route('**/api/chats/*/index', async route => {
+      const value = await (await route.fetch()).json();
+      await route.fulfill({ json: { ...value, semantic: retried ? { ...semantic,
+        paused: 0, index_error: null, works: [{ state: 'pending', count: 723, chunks_total: 128, chunks_done: 0 }],
+      } : semantic } });
+    });
+    await page.route('**/api/chats/*/index/text/retry', async route => {
+      retried = true;
+      const value = await (await page.request.get(route.request().url().replace('/text/retry', ''))).json();
+      await route.fulfill({ json: { ...value, semantic: { ...semantic, paused: 0, index_error: null,
+        works: [{ state: 'pending', count: 723, chunks_total: 128, chunks_done: 0 }],
+      } } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+    const card = page.getByRole('region', { name: 'Текст · E5' });
+    await expect(card).toContainText('Ошибка индексации');
+    await expect(card).toContainText(`Задач с ошибкой: ${paused ? 1 : 723}`);
+    await expect(card.getByRole('alert')).toContainText('GPU error');
+    await expect(card.locator('.index-eta')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).indexInjected)).toBeUndefined();
+    await page.getByRole('slider').press('End');
+    const english = page.getByRole('region', { name: 'Text · E5' });
+    await expect(english).toContainText('Indexing error');
+    await english.getByRole('button', { name: 'Retry errors', exact: true }).click();
+    await expect.poll(() => retried).toBe(true);
+    await expect(english).toContainText('1317 / 2040');
+    await expect(english.getByRole('button', { name: 'Pause indexing', exact: true })).toBeVisible();
+  });
+}
+
 async function mockIndex(page: import('@playwright/test').Page, ocrOnly = false) {
   await page.route('**/api/chats/*/index', async route => {
     const response = await route.fetch();
