@@ -1,5 +1,3 @@
-import heapq
-
 from telegram_search.search.lexical import ContextService, fts_query
 from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
@@ -14,26 +12,37 @@ class MediaSearch:
     def _dense(self, space, dimension, vector, kind, filters, version=None):
         where, params = filters.sql("m")
         extra, arguments = ("AND e.ocr_version=?", [version]) if kind == "ocr" else ("", [])
-        best = []
         maximum = self.db.settings.retrieval_candidates
         with self.db.connect() as conn:
-            rows = conn.execute(
-                "SELECT e.id FROM media_embeddings e WHERE e.space_id=? AND e.kind=? "
+            conn.execute("BEGIN")
+            predicate = (
+                "e.space_id=? AND e.kind=? "
                 f"{extra} AND EXISTS (SELECT 1 FROM media_refs r JOIN messages m "
-                "ON m.chat_id=r.chat_id AND m.message_id=r.message_id WHERE r.sha256=e.sha256 "
-                f"AND r.status='ready' AND r.kind='photo' AND {where})",
-                (space, kind, *arguments, *params),
+                "ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
+                "WHERE r.sha256=e.sha256 "
+                f"AND r.status='ready' AND r.kind='photo' AND {where})"
             )
-            while batch := rows.fetchmany(512):
-                for hit in self.semantic._vector_store().exact(
-                    space, dimension, vector, [row[0] for row in batch], maximum
-                ):
-                    candidate = (-hit["_distance"], hit["id"])
-                    if len(best) < maximum:
-                        heapq.heappush(best, candidate)
-                    elif candidate > best[0]:
-                        heapq.heapreplace(best, candidate)
-        return [key for _, key in sorted(best, reverse=True)]
+            parameters = (space, kind, *arguments, *params)
+            if not conn.execute(
+                f"SELECT 1 FROM media_embeddings e WHERE {predicate} LIMIT 1", parameters
+            ).fetchone():
+                return []
+
+            def eligible(ids):
+                placeholders = ",".join("?" for _ in ids)
+                return [
+                    row[0]
+                    for row in conn.execute(
+                        f"SELECT e.id FROM media_embeddings e WHERE e.id IN ({placeholders}) "
+                        f"AND {predicate}",
+                        (*ids, *parameters),
+                    )
+                ]
+
+            found = self.semantic._vector_store().exact_filtered(
+                space, dimension, vector, eligible, maximum, predicate="utc_day = 'media'"
+            )
+        return [item["id"] for item in found]
 
     def search(
         self, query, filters, *, kind, exact=False, mode="words", limit=100, chunk_size=None

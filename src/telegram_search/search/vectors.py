@@ -1,3 +1,4 @@
+import heapq
 import threading
 from datetime import timedelta
 from pathlib import Path
@@ -83,6 +84,71 @@ class VectorStore:
                 .limit(limit)
                 .to_list()
             )
+
+    def exact_filtered(self, space_id, dimension, query, eligible, limit, *, predicate=None):
+        """One bounded scan; canonical eligibility is checked before global top-k.
+
+        ``eligible(ids)`` returns the IDs published in the caller's SQLite snapshot.
+        Only one Arrow batch and ``limit`` candidates are kept, even for large archives.
+        """
+        import numpy as np
+
+        if limit <= 0:
+            return []
+        query = np.asarray(query, dtype=np.float32)
+        if query.shape != (dimension,) or not np.isfinite(query).all():
+            raise UserError("Модель вернула недопустимый embedding.")
+        query_norm = np.linalg.norm(query)
+        if not np.isfinite(query_norm) or query_norm <= 0:
+            raise UserError("Модель вернула недопустимый embedding.")
+        best = []
+        with self.lock:
+            table = self.table(space_id, dimension)
+            if table is None:
+                raise UserError("Векторная таблица отсутствует. Перестройте semantic index.")
+            scan = table.search().select(["id", "vector"]).limit(None)
+            if predicate:
+                scan = scan.where(predicate)
+            with scan.to_batches(batch_size=512) as batches:
+                for batch in batches:
+                    # Some readers may return a larger batch than requested.
+                    for start in range(0, len(batch), 512):
+                        part = batch.slice(start, 512)
+                        ids = part.column("id").to_pylist()
+                        allowed = set(eligible(ids))
+                        selected = [i for i, key in enumerate(ids) if key in allowed]
+                        if not selected:
+                            continue
+                        column = part.column("vector")
+                        values = column.values.slice(
+                            column.offset * dimension, len(part) * dimension
+                        )
+                        matrix = values.to_numpy(zero_copy_only=False).reshape(-1, dimension)[
+                            selected
+                        ]
+                        # einsum avoids starting a large BLAS thread pool for each small batch.
+                        norms = np.sqrt(np.einsum("ij,ij->i", matrix, matrix))
+                        valid = (
+                            column.is_valid().to_numpy(zero_copy_only=False)[selected]
+                            & np.isfinite(matrix).all(axis=1)
+                            & np.isfinite(norms)
+                            & (norms > 0)
+                        )
+                        distances = np.ones(len(matrix), dtype=np.float32)
+                        np.divide(
+                            np.einsum("ij,j->i", matrix, query),
+                            norms * query_norm,
+                            out=distances,
+                            where=valid,
+                        )
+                        distances = 1 - distances
+                        for offset in np.flatnonzero(valid):
+                            candidate = (-float(distances[offset]), ids[selected[offset]])
+                            if len(best) < limit:
+                                heapq.heappush(best, candidate)
+                            elif candidate > best[0]:
+                                heapq.heapreplace(best, candidate)
+        return [{"id": key, "_distance": -score} for score, key in sorted(best, reverse=True)]
 
     def prune_segment(
         self, spaces: list[dict], chat_id: str, day: str, keep_space: str, generation: int

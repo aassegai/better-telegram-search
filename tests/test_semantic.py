@@ -253,6 +253,27 @@ def test_filters_use_one_witness_and_context_keeps_original(db, importer, tmp_pa
     assert set(hit["matched_by"]) == {"words", "meaning"}
 
 
+def test_single_scan_rejects_unpublished_nearest_vectors_before_top_k(db, importer, tmp_path):
+    chat, service, worker, work = setup_index(db, importer, tmp_path)
+    assert worker.run(work)["state"] == "done"
+    with db.connect() as conn:
+        published = [
+            dict(row) for row in conn.execute("SELECT id,chat_id,utc_day,generation FROM chunks")
+        ]
+    store = service._vector_store()
+    store.upsert("synthetic", 4, published, np.tile([0.0, 0.0, 1.0, 0.0], (len(published), 1)))
+    ghosts = [
+        {"id": f"ghost-{i}", "chat_id": chat, "utc_day": "2025-06-15", "generation": 99}
+        for i in range(1100)
+    ]
+    store.upsert("synthetic", 4, ghosts, np.tile([1.0, 0.0, 0.0, 0.0], (len(ghosts), 1)))
+    search = HybridSearch(db, service, importer.lifecycle_lock)
+    response = search.search("unmatched", Filters([chat]), mode="meaning", limit=1)
+    assert len(response["results"]) == 1
+    assert response["results"][0]["chunk_id"] in {row["id"] for row in published}
+    assert not search.search("unmatched", Filters(["absent"]), mode="meaning")["results"]
+
+
 def test_model_switch_is_explicit_and_only_current_generation_is_eligible(db, importer, tmp_path):
     chat, service, worker, work = setup_index(db, importer, tmp_path)
     assert worker.run(work)["state"] == "done"

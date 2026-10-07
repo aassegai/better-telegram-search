@@ -1,5 +1,3 @@
-import heapq
-
 from telegram_search.search.lexical import ContextService, Filters, SearchService, fts_query
 from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
@@ -103,25 +101,28 @@ class HybridSearch:
                             [match, *params, candidates],
                         )
                     ]
-                # Only a bounded batch of IDs and top candidates enters Python RAM.
-                # Each Lance query applies its canonical whitelist BEFORE top-k.
-                rows = conn.execute(f"SELECT c.id {joins} WHERE {predicate}", params)
-                best = []
-                while batch := rows.fetchmany(512):
-                    found = self.semantic._vector_store().exact(
+
+                def eligible(ids):
+                    placeholders = ",".join("?" for _ in ids)
+                    return [
+                        row[0]
+                        for row in conn.execute(
+                            f"SELECT c.id {joins} WHERE c.id IN ({placeholders}) AND {predicate}",
+                            [*ids, *params],
+                        )
+                    ]
+
+                found = []
+                if conn.execute(f"SELECT 1 {joins} WHERE {predicate} LIMIT 1", params).fetchone():
+                    found = self.semantic._vector_store().exact_filtered(
                         encoder.space_id,
                         encoder.spec.dimension,
                         vector,
-                        [row[0] for row in batch],
+                        eligible,
                         candidates,
+                        predicate="utc_day <> 'media'",
                     )
-                    for item in found:
-                        entry = (-float(item["_distance"]), item["id"])
-                        if len(best) < candidates:
-                            heapq.heappush(best, entry)
-                        elif entry > best[0]:
-                            heapq.heapreplace(best, entry)
-                dense = [item[1] for item in sorted(best, reverse=True)]
+                dense = [item["id"] for item in found]
                 scores, branches = {}, {}
                 for name, ranked, weight in (
                     ("words", lexical, self.db.settings.lexical_weight),

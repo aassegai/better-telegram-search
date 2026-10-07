@@ -1,0 +1,52 @@
+{
+  "synthetic_only": true,
+  "scope": "CPU vector retrieval and synthetic SQLite eligibility, excluding model inference",
+  "platform": "Linux",
+  "architecture": "x86_64",
+  "numpy": "2.5.3",
+  "lancedb": "0.39.0",
+  "cases": [
+    {
+      "vectors": 16384,
+      "dimension": 384,
+      "trials": 3,
+      "previous_seconds": 0.6816,
+      "current_seconds": 0.0797,
+      "speedup": 8.55,
+      "same_top_100": true,
+      "timings": {
+        "previous": [
+          0.7524439900007565,
+          0.6815579679969233,
+          0.6674857710022479
+        ],
+        "current": [
+          0.0796745919942623,
+          0.08184869200340472,
+          0.07204207399627194
+        ]
+      }
+    },
+    {
+      "vectors": 65536,
+      "dimension": 384,
+      "trials": 3,
+      "previous_seconds": 13.4579,
+      "current_seconds": 0.4037,
+      "speedup": 33.33,
+      "same_top_100": true,
+      "timings": {
+        "previous": [
+          13.362654996992205,
+          13.666449434997048,
+          13.457897072003107
+        ],
+        "current": [
+          0.4037280560005456,
+          0.38064850799855776,
+          0.4786827609932516
+        ]
+      }
+    }
+  ]
+}

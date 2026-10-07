@@ -310,6 +310,55 @@ def test_clip_image_vectors_use_separate_space_and_prefilter(db, importer, tmp_p
     assert semantic._vector_store().table(media.clip.space_id, 512).count_rows() == 0
 
 
+def test_media_scan_rejects_unpublished_vectors_and_other_ocr_versions_before_top_k(
+    db, importer, tmp_path
+):
+    from test_semantic import TestEncoder
+
+    np = pytest.importorskip("numpy")
+    job = load(importer, photo_export(tmp_path / "source"))
+    semantic, media = services(db, importer)
+    semantic.activate(TestEncoder())
+    fake_ocr(media)
+    assert media._ocr_one() and media._ocr_embeddings()
+    store = semantic._vector_store()
+    ghosts = [
+        {"id": f"ghost-{i}", "chat_id": "synthetic", "utc_day": "media", "generation": 1}
+        for i in range(1100)
+    ]
+    store.upsert("synthetic", 4, ghosts, np.tile([1.0, 0.0, 0.0, 0.0], (len(ghosts), 1)))
+    search = MediaSearch(db, media, semantic, importer.lifecycle_lock)
+    hits, _ = search.search("unmatched", Filters([job["chat_id"]]), kind="ocr", mode="meaning")
+    assert len(hits) == 1 and hits[0]["matched_by"] == ["ocr_meaning"]
+    assert not search.search("unmatched", Filters(["absent"]), kind="ocr", mode="meaning")[0]
+    with db.connect() as conn:
+        conn.execute("UPDATE media_embeddings SET ocr_version='older-model'")
+    assert (
+        search._dense("synthetic", 4, np.array([1, 0, 0, 0]), "ocr", Filters(), media.ocr.version)
+        == []
+    )
+
+
+def test_prepared_clip_without_published_images_returns_empty_without_vector_table(
+    db, importer, tmp_path, monkeypatch
+):
+    np = pytest.importorskip("numpy")
+    load(importer, photo_export(tmp_path / "source"))
+    semantic, media = services(db, importer)
+    media.clip = SimpleNamespace(
+        space_id="unindexed-clip", encode_text=lambda texts: np.eye(1, 512, dtype=np.float32)
+    )
+
+    def forbidden():
+        raise AssertionError("No LanceDB table is needed before any eligible vectors exist")
+
+    monkeypatch.setattr(semantic, "_vector_store", forbidden)
+    hits, warnings = MediaSearch(db, media, semantic, importer.lifecycle_lock).search(
+        "synthetic", Filters(), kind="images"
+    )
+    assert hits == [] and warnings == []
+
+
 def test_clip_rejects_extreme_aspect_before_resize(monkeypatch):
     pytest.importorskip("numpy")
     from telegram_search.inference.clip import image_tensor
