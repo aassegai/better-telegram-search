@@ -1,4 +1,5 @@
 import sys
+from collections import deque
 from contextlib import ExitStack, contextmanager, nullcontext
 from threading import Condition, Lock, get_ident, local
 
@@ -12,10 +13,15 @@ class CpuGate:
         self.depth = 0
         self.interactive_waiters = 0
         self.local = local()
+        self.waiters = deque()
 
     @contextmanager
     def slot(self, *, interactive=False):
         with self.condition:
+            reentrant = self.owner == get_ident()
+            ticket = object()
+            if not reentrant:
+                self.waiters.append(ticket)
             if interactive:
                 self.interactive_waiters += 1
             try:
@@ -23,11 +29,14 @@ class CpuGate:
                     self.owner is not None
                     and self.owner != get_ident()
                     or (self.owner != get_ident() and not interactive and self.interactive_waiters)
+                    or (not reentrant and not interactive and self.waiters[0] is not ticket)
                 ):
                     self.condition.wait()
                 self.owner = get_ident()
                 self.depth += 1
             finally:
+                if not reentrant:
+                    self.waiters.remove(ticket)
                 if interactive:
                     self.interactive_waiters -= 1
         try:

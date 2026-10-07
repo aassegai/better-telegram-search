@@ -23,7 +23,7 @@ def media_command(db, args):
                     media.control("retry")
                 media.control("resume")
                 while True:
-                    worked = media._ocr_one()
+                    worked = media._ocr_run()
                     worked |= media._image_batch()
                     worked |= media._ocr_embeddings()
                     if not worked:

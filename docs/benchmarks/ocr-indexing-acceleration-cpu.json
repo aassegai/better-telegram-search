@@ -1,0 +1,97 @@
+{
+  "device": "cpu",
+  "threads": 4,
+  "trials": 5,
+  "synthetic_unique_images": 8,
+  "queue": {
+    "images": 40060,
+    "completed_prefix": 40000,
+    "trials": 30,
+    "previous": {
+      "p50_ms": 18.5271,
+      "p95_ms": 26.1234
+    },
+    "pending": {
+      "p50_ms": 0.0046,
+      "p95_ms": 0.0065
+    }
+  },
+  "modes": {
+    "images=1,regions=8": {
+      "cold_load_seconds": 0.243,
+      "warm_images_per_minute": 279.86,
+      "warm_dataset_p50_seconds": 1.7151,
+      "same_transcriptions": true,
+      "rss_bytes": 443912192,
+      "phase_means": {
+        "preprocess_seconds": 0.008665,
+        "detection_seconds": 0.016027,
+        "boxes_seconds": 0.002187,
+        "recognition_seconds": 0.193047,
+        "regions": 4.375
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 8,
+      "control_tokens_total": 9
+    },
+    "images=2,regions=8": {
+      "cold_load_seconds": 0.1467,
+      "warm_images_per_minute": 258.83,
+      "warm_dataset_p50_seconds": 1.8545,
+      "same_transcriptions": true,
+      "rss_bytes": 579895296,
+      "phase_means": {
+        "preprocess_seconds": 0.006195,
+        "detection_seconds": 0.013935,
+        "boxes_seconds": 0.001892,
+        "recognition_seconds": 0.207521,
+        "regions": 4.375
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 8,
+      "control_tokens_total": 9
+    },
+    "images=4,regions=8": {
+      "cold_load_seconds": 0.1219,
+      "warm_images_per_minute": 273.53,
+      "warm_dataset_p50_seconds": 1.7548,
+      "same_transcriptions": true,
+      "rss_bytes": 580358144,
+      "phase_means": {
+        "preprocess_seconds": 0.005901,
+        "detection_seconds": 0.014932,
+        "boxes_seconds": 0.002119,
+        "recognition_seconds": 0.22025,
+        "regions": 4.375
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 8,
+      "control_tokens_total": 9
+    },
+    "images=4,regions=16": {
+      "cold_load_seconds": 0.1208,
+      "warm_images_per_minute": 236.96,
+      "warm_dataset_p50_seconds": 2.0256,
+      "same_transcriptions": true,
+      "rss_bytes": 769757184,
+      "phase_means": {
+        "preprocess_seconds": 0.00681,
+        "detection_seconds": 0.015587,
+        "boxes_seconds": 0.002379,
+        "recognition_seconds": 0.233135,
+        "regions": 4.375
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 8,
+      "control_tokens_total": 9
+    }
+  },
+  "runtime": {
+    "onnxruntime": "1.30.0",
+    "python": "3.12.3"
+  }
+}

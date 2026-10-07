@@ -25,6 +25,13 @@ export type Hit = {
 };
 
 export type MediaStatus = {
+  ocr_batch_size?: number; ocr_region_batch_size?: number;
+  ocr_dense_paused?: boolean | number;
+  ocr_dense_estimated_remaining_seconds?: number | null;
+  preparation_estimated_remaining_seconds?: number | null;
+  photo_attachments?: number; photo_messages?: number;
+  queues?: Record<string, { pending: number; samples: number; units_per_minute: number | null;
+    p50_seconds: number | null; p95_seconds: number | null; measuring: boolean }>;
   batch_size?: number;
   ocr_enabled: number; images_enabled: number; paused: number; running: boolean;
   ocr_paused?: boolean | number; ocr_engine?: 'tesseract' | 'paddle'; ocr_backend?: { device: string; provider: string };

@@ -5,6 +5,8 @@ import type { MediaStatus } from './types';
 import { useDialogOperation } from './useDialogOperation';
 import IndexCard from './IndexCard';
 import OcrIndexCard from './OcrIndexCard';
+import OcrBatchSettings from './OcrBatchSettings';
+import { estimatedTime } from './estimatedTime';
 import type { Mutation } from './IndexCard';
 import DevicePanel from './DevicePanel';
 
@@ -14,6 +16,7 @@ const resources = [
   ['idle_unload_seconds', 'Выгрузка модели после простоя (сек)', 1, 86400],
   ['query_cache_entries', 'Запросов в кэше', 0, 256], ['retrieval_candidates', 'Кандидатов поиска', 100, 1000],
   ['ocr_timeout_seconds', 'Лимит OCR на фото (сек)', 5, 300], ['ocr_max_edge', 'Максимальная сторона OCR (px)', 512, 4096],
+  ['ocr_cpu_workers', 'Воркеров OCR на CPU', 1, 4],
 ] as const;
 const mib = (value: number) => t("{p0} МиБ", { p0: (value / 1024 ** 2).toFixed(1) });
 
@@ -40,10 +43,10 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
       if (current()) accept(value);
     } finally { onEnd?.(); }
   });
-  const control = (action: string, kind: 'images' | 'ocr' = 'images') => void op.run(async current => {
+  const control = (action: string, kind: 'images' | 'ocr' | 'ocr_dense' = 'images') => void op.run(async current => {
     onStart?.();
     try {
-      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/${kind}/${action}` : `/api/${kind === 'ocr' ? 'ocr-index' : 'image-index'}/${action}`, { method: 'POST' });
+      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/${kind}/${action}` : `/api/${kind === 'ocr' ? 'ocr-index' : kind === 'ocr_dense' ? 'ocr-dense-index' : 'image-index'}/${action}`, { method: 'POST' });
       if (current()) accept(value);
     } finally { onEnd?.(); }
   });
@@ -69,7 +72,16 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         {[media.error, media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
         {media.missing_refs > 0 && <p className="warning">{t('Недоступных фотографий в источниках: ')}{media.missing_refs}</p>}
       </IndexCard>}
-      {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={action => control(action, 'ocr')} />}
+      {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={action => control(action, 'ocr')} onDenseControl={action => control(action, 'ocr_dense')}>
+        {chatId && <OcrBatchSettings media={media} chatId={chatId} busy={busy || preparing} onSaved={accept} onStart={onStart} onEnd={onEnd} />}
+      </OcrIndexCard>}
+      {media?.queues && <details className="index-advanced"><summary>{t('Скорость и очереди подготовки')}</summary>
+        <p>{t('Уникальных доступных изображений: {p0}', { p0: media.total_photos })}</p>
+        {media.photo_attachments != null && <p>{t('Вложений: {p0}. Сообщений с фото: {p1}.', { p0: media.photo_attachments, p1: media.photo_messages ?? 0 })}</p>}
+        <p>{t('Вся подготовка: ')}{estimatedTime(media.preparation_estimated_remaining_seconds, t('Оценка появится, когда будет известна вся очередь смыслового OCR.'))}</p>
+        {(['ocr', 'clip', 'ocr_dense'] as const).map(stage => { const queue = media.queues?.[stage]; return queue && <p key={stage}>{stage === 'ocr' ? 'OCR' : stage === 'clip' ? 'CLIP' : 'OCR → E5'}: {t('В очереди: {p0}', { p0: queue.pending })} · {queue.units_per_minute == null ? t('Измеряем скорость…') : t('{p0} изобр./мин.', { p0: queue.units_per_minute })}</p>; })}
+        <small>{t('Скорость измеряется по активной подготовке приложения. Общая оценка — сумма этапов; параллельная работа может закончиться раньше.')}</small>
+      </details>}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>
     </>}
     {!indexing && <>

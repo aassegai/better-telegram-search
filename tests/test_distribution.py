@@ -93,7 +93,7 @@ def test_frozen_ocr_subprocess_never_runs_python_switches(monkeypatch, tmp_path)
         def __init__(self, command, **kwargs):
             commands.append(command)
             self.stdin = io.BytesIO()
-            self.stdout = io.BytesIO(b'{"text": "synthetic", "confidence": 99}\n')
+            self.stdout = io.BytesIO(b'{"ready":true}\n{"text": "synthetic", "confidence": 99}\n')
             self.returncode = None
 
         def poll(self):

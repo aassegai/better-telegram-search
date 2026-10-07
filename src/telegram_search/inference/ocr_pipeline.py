@@ -243,6 +243,143 @@ class OnnxOcrPipeline:
                 start = end
         return results
 
+    def recognize_many(self, images, *, region_batch=8):
+        """Bounded cross-image recognition; fixed padding keeps the cache contract.
+
+        Detection remains single-image. One decode is prefetched while the current
+        detector runs. At most four images / 12M retained pixels plus one prefetched
+        image are resident. Invalid inputs produce individual failures.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        if not 1 <= len(images) <= 4:
+            raise ValueError("image batch budget")
+        results = [None] * len(images)
+        group, pixels = [], 0
+
+        def prepare(data):
+            started = time.perf_counter()
+            with Image.open(io.BytesIO(data)) as original:
+                if original.width * original.height > Image.MAX_IMAGE_PIXELS:
+                    raise ValueError("pixel budget")
+                image = ImageOps.exif_transpose(original).convert("RGB")
+                image.thumbnail((self.max_edge, self.max_edge), Image.Resampling.LANCZOS)
+                image = np.asarray(image)[:, :, ::-1].copy()
+            h, w = image.shape[:2]
+            ratio = min(1.0, 960 / max(h, w))
+            dh, dw = max(32, round(h * ratio / 32) * 32), max(32, round(w * ratio / 32) * 32)
+            tensor = cv2.resize(image, (dw, dh)).astype(np.float32) / 255
+            tensor = (tensor - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
+                [0.229, 0.224, 0.225], dtype=np.float32
+            )
+            return image, tensor.transpose(2, 0, 1)[None].copy(), time.perf_counter() - started
+
+        def flush():
+            if not group:
+                return
+            started = time.perf_counter()
+            tasks, values = {}, {}
+            for index, image, boxes, _ in group:
+                values[index] = [None] * len(boxes)
+                for ordinal, box in enumerate(boxes):
+                    width, height = crop_dimensions(box)
+                    if height / width >= 1.5:
+                        width, height = height, width
+                    _, bucket = recognition_dimensions(width, height)
+                    tasks.setdefault(bucket, []).append(
+                        (index, ordinal, image, box, width * height)
+                    )
+            for bucket, regions in tasks.items():
+                cursor = 0
+                while cursor < len(regions):
+                    limit = min(region_batch, self.recognition_limits.get(bucket, region_batch))
+                    chosen, budget = [], 0
+                    for region in regions[cursor : cursor + limit]:
+                        if chosen and budget + region[4] > 8_000_000:
+                            break
+                        chosen.append(region)
+                        budget += region[4]
+                    crops = [crop_box(image, box) for _, _, image, box, _ in chosen]
+                    try:
+                        recognized = self._recognize_crops(crops)
+                    except Exception:
+                        # Isolate bad regions/images; do not fail unrelated images.
+                        recognized = []
+                        for crop in crops:
+                            try:
+                                recognized.append(self._recognize_crops([crop])[0])
+                            except Exception:
+                                recognized.append(None)
+                    for region, value in zip(chosen, recognized, strict=True):
+                        values[region[0]][region[1]] = value
+                    cursor += len(chosen)
+            elapsed = time.perf_counter() - started
+            for index, _, boxes, timings in group:
+                lines = values[index]
+                if any(value is None for value in lines):
+                    results[index] = {"error": True}
+                    continue
+                lines = [
+                    (text, confidence) for text, confidence in lines if text and confidence >= 0.5
+                ]
+                text = "\n".join(line[0] for line in lines)
+                if len(text) > 65536:
+                    results[index] = {"error": True}
+                    continue
+                results[index] = {
+                    "text": text,
+                    "confidence": float(np.mean([line[1] for line in lines])) * 100
+                    if lines
+                    else 0.0,
+                    "provider": self.execution.provider,
+                    "timings": {
+                        **timings,
+                        "recognition_seconds": elapsed / len(group),
+                        "regions": len(boxes),
+                    },
+                }
+
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-decode") as pool:
+            future = pool.submit(prepare, images[0])
+            for index in range(len(images)):
+                current = future
+                try:
+                    image, tensor, decoded = current.result()
+                except Exception:
+                    results[index] = {"error": True}
+                    image = None
+                # At most one pending decode, never an unbounded archive prefetch.
+                future = (
+                    pool.submit(prepare, images[index + 1]) if index + 1 < len(images) else None
+                )
+                if image is None:
+                    continue
+                if group and pixels + image.shape[0] * image.shape[1] > 12_000_000:
+                    flush()
+                    group, pixels = [], 0
+                try:
+                    started = time.perf_counter()
+                    scores = self._detect(tensor)
+                    detected = time.perf_counter()
+                    boxes = detected_boxes(scores, image.shape[1], image.shape[0])
+                    group.append(
+                        (
+                            index,
+                            image,
+                            boxes,
+                            {
+                                "preprocess_seconds": decoded,
+                                "detection_seconds": detected - started,
+                                "boxes_seconds": time.perf_counter() - detected,
+                            },
+                        )
+                    )
+                    pixels += image.shape[0] * image.shape[1]
+                except Exception:
+                    results[index] = {"error": True}
+            flush()
+        return results
+
     def _recognize_crops(self, crops):
         dimensions = [recognition_dimensions(crop.shape[1], crop.shape[0]) for crop in crops]
         widths = [size[0] for size in dimensions]

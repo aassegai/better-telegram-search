@@ -10,7 +10,8 @@ class ChatIndexing:
     def status(self, chat_id):
         with self.db.connect() as conn:
             chat = conn.execute(
-                "SELECT text_batch,image_batch FROM chats WHERE id=?", (chat_id,)
+                "SELECT text_batch,image_batch,ocr_batch,ocr_region_batch FROM chats WHERE id=?",
+                (chat_id,),
             ).fetchone()
         if chat is None:
             raise UserError("Диалог не найден.")
@@ -22,11 +23,20 @@ class ChatIndexing:
             "media": {
                 **self.media.status(chat_id),
                 "batch_size": chat[1] or self.db.settings.image_batch,
+                "ocr_batch_size": chat[2] or self.db.settings.ocr_batch_size,
+                "ocr_region_batch_size": chat[3]
+                or self.db.settings.ocr_region_batch_size
+                or (32 if self.db.settings.ocr_device in {"gpu", "hybrid"} else 8),
             },
         }
 
     def settings(self, chat_id, values):
-        fields = {"embedding_batch": ("text_batch", 128), "image_batch": ("image_batch", 32)}
+        fields = {
+            "embedding_batch": ("text_batch", 128),
+            "image_batch": ("image_batch", 32),
+            "ocr_batch_size": ("ocr_batch", 4),
+            "ocr_region_batch_size": ("ocr_region_batch", 32),
+        }
         if not values or set(values) - fields.keys():
             raise UserError("Неизвестные настройки индексации.")
         for key, value in values.items():
@@ -37,6 +47,9 @@ class ChatIndexing:
                 raise UserError("Диалог не найден.")
             for key, value in values.items():
                 conn.execute(f"UPDATE chats SET {fields[key][0]}=? WHERE id=?", (value, chat_id))
+            if {"ocr_batch_size", "ocr_region_batch_size"} & values.keys():
+                conn.execute("DELETE FROM index_rates WHERE kind='ocr'")
+                self.media.metrics.reset("ocr")
         if "embedding_batch" in values and self.semantic.encoder:
             self.semantic.encoder.index_batch_limit = None
         if "image_batch" in values:
@@ -53,9 +66,11 @@ class ChatIndexing:
             "text": [("text_paused", "semantic_state", "paused")],
             "images": [("media_paused", "media_state", "paused")],
             "ocr": [("ocr_paused", "media_state", "ocr_paused")],
+            "ocr_dense": [("ocr_dense_paused", "media_state", "ocr_dense_paused")],
             "media": [
                 ("media_paused", "media_state", "paused"),
                 ("ocr_paused", "media_state", "ocr_paused"),
+                ("ocr_dense_paused", "media_state", "ocr_dense_paused"),
             ],
         }
         if kind not in queues:
@@ -95,7 +110,7 @@ class ChatIndexing:
                         failure_space = None
                         if kind == "images" and self.media.clip:
                             failure_space = self.media.clip.space_id
-                        elif kind == "ocr" and self.media.ocr and self.semantic.encoder:
+                        elif kind == "ocr_dense" and self.media.ocr and self.semantic.encoder:
                             import hashlib
 
                             from telegram_search.shared.text import serialize

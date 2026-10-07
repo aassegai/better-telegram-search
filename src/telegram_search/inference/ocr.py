@@ -50,6 +50,7 @@ class OcrEngine:
             ocr_command(str(self.root), str(self.max_edge), "--server"),
             threads=threads,
             timeout=timeout,
+            ready_handshake=True,
         )
         self.version = hashlib.sha256(
             serialize(
@@ -122,9 +123,10 @@ class OcrEngine:
             if remaining or response.read(1):
                 raise UserError("Размер словаря OCR не совпадает с manifest.")
 
-    def recognize(self, data: bytes) -> dict:
+    def recognize(self, data: bytes, *, _generation=None) -> dict:
         try:
-            value = json.loads(self.worker.recognize(data))
+            kwargs = {"generation": _generation} if _generation is not None else {}
+            value = json.loads(self.worker.recognize(data, **kwargs))
             if (
                 not isinstance(value["text"], str)
                 or len(value["text"]) > 65536

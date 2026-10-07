@@ -173,6 +173,9 @@ class WorkspaceService:
             "dense_weight",
             "ocr_timeout_seconds",
             "ocr_max_edge",
+            "ocr_batch_size",
+            "ocr_region_batch_size",
+            "ocr_cpu_workers",
             "memory_limit_mib",
         } | display_keys
         if set(values) - allowed:
@@ -285,7 +288,12 @@ class WorkspaceService:
                 raise UserError("Неизвестная модель.")
             if model == "ocr":
                 engine = ocr_engine or ("paddle" if device != "cpu" else previous.ocr_engine)
-                candidate = replace(previous, ocr_device=device, ocr_engine=engine)
+                candidate = replace(
+                    previous,
+                    ocr_device=device,
+                    ocr_engine=engine,
+                    ocr_cpu_workers=previous.ocr_cpu_workers if device == "cpu" else 1,
+                )
             elif model:
                 if ocr_engine is not None:
                     raise UserError("Неизвестные или недоступные настройки.")

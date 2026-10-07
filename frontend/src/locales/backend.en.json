@@ -263,5 +263,11 @@
   "Эту задачу нельзя возобновить в текущем состоянии.": "This task cannot be resumed in its current state.",
   "Tesseract работает на CPU. Для GPU выберите PaddleOCR.": "Tesseract runs on CPU. Select PaddleOCR for GPU recognition.",
   "Установите OCR runtime: uv sync --locked --extra semantic --extra ocr.": "Install the OCR runtime: uv sync --locked --extra semantic --extra ocr.",
-  "Неизвестная модель.": "Unknown model."
+  "Неизвестная модель.": "Unknown model.",
+  "Число OCR-воркеров не должно превышать бюджет потоков CPU.": "CPU OCR workers cannot exceed the CPU thread budget.",
+  "Несколько CPU OCR-воркеров доступны при выборе устройства CPU.": "Multiple CPU OCR workers are available when the OCR device is set to CPU.",
+  "Не удалось распознать изображение. Повторите обработку.": "Could not recognize the image. Retry processing.",
+  "Недопустимый батч модели.": "Invalid model batch.",
+  "Подготовленный батч не соответствует модели.": "The prepared batch does not match the model.",
+  "Подготовленный батч CLIP не соответствует изображениям.": "The prepared CLIP batch does not match the images."
 }

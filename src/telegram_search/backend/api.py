@@ -307,6 +307,10 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     def ocr_control(action: Literal["pause", "resume", "retry"]):
         return app.state.media.control(action, kind="ocr")
 
+    @app.post("/api/ocr-dense-index/{action}")
+    def ocr_dense_control(action: Literal["pause", "resume", "retry"]):
+        return app.state.media.control(action, kind="ocr_dense")
+
     @app.post("/api/image-index/{action}")
     def image_control(action: Literal["pause", "resume", "retry"]):
         return app.state.media.control(action, kind="images")
@@ -398,7 +402,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @app.post("/api/chats/{chat_id}/index/{kind}/{action}")
     def chat_index_control(
         chat_id: str,
-        kind: Literal["text", "media", "images", "ocr"],
+        kind: Literal["text", "media", "images", "ocr", "ocr_dense"],
         action: Literal["pause", "resume", "retry", "compact"],
     ):
         return app.state.chat_indexing.control(chat_id, kind, action)

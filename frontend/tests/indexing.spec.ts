@@ -89,33 +89,33 @@ test('CLIP shows a counted retry action at progress and preserves ready images',
 });
 
 for (const recognitionFailed of [0, 5]) {
-  test(`OCR shows recognition and semantic failures and retries both (${recognitionFailed})`, async ({ page }) => {
+  test(`OCR retries semantic errors independently of recognition (${recognitionFailed})`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ colorScheme: 'dark' });
     let retried = false;
     const ocr = { ocr_enabled: 1, ocr_paused: 1, total_photos: 100,
       ocr_ready: 100 - recognitionFailed, ocr_failed: recognitionFailed, ocr_dense_failed: 2,
-      ocr_nonempty_ready: 20, ocr_dense_ready: 18, ocr_dense_available: true };
+      ocr_dense_paused: 1, ocr_nonempty_ready: 20, ocr_dense_ready: 18, ocr_dense_available: true };
     await page.route('**/api/chats/*/index', async route => {
       const base = await (await route.fetch()).json();
       await route.fulfill({ json: { ...base, media: { ...base.media, ...ocr,
-        ...(retried ? { ocr_failed: 0, ocr_dense_failed: 0, ocr_paused: 0 } : {}) } } });
+        ...(retried ? { ocr_dense_failed: 0, ocr_dense_paused: 0 } : {}) } } });
     });
     let release!: () => void;
-    await page.route('**/api/chats/*/index/ocr/retry', async route => {
-      const base = await (await page.request.get(route.request().url().replace('/ocr/retry', ''))).json();
+    await page.route('**/api/chats/*/index/ocr_dense/retry', async route => {
+      const base = await (await page.request.get(route.request().url().replace('/ocr_dense/retry', ''))).json();
       await new Promise<void>(resolve => { release = resolve; });
       retried = true;
       await route.fulfill({ json: { ...base, media: { ...base.media, ...ocr,
-        ocr_failed: 0, ocr_dense_failed: 0, ocr_paused: 0 } } });
+        ocr_dense_failed: 0, ocr_dense_paused: 0 } } });
     });
     await page.goto('/');
     await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
     const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
     await expect(card).toContainText('Обработано: 100 / 100');
-    await expect(card).toContainText('Требуется повтор');
+    await expect(card).toContainText(recognitionFailed ? 'Требуется повтор' : 'Готово');
     await expect(card).toContainText('Смысловой OCR с ошибкой: 2');
-    const retry = card.getByRole('button', { name: `Повторить ошибки (${recognitionFailed + 2})`, exact: true });
+    const retry = card.locator('.ocr-semantic-progress').getByRole('button', { name: 'Повторить ошибки (2)', exact: true });
     await retry.scrollIntoViewIfNeeded();
     const box = await retry.boundingBox();
     expect(box!.x).toBeGreaterThanOrEqual(0);
@@ -126,10 +126,12 @@ for (const recognitionFailed of [0, 5]) {
     await expect(retry).toBeDisabled();
     await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeDisabled();
     release();
-    await expect(card.locator('.index-errors')).toHaveCount(0);
+    await expect(card.locator('.ocr-semantic-progress .index-errors')).toHaveCount(0);
+    await expect(card.locator('.index-errors')).toHaveCount(recognitionFailed ? 1 : 0);
     await expect(card).toContainText('OCR по смыслу: 18 / 20 с текстом');
-    await expect(card).toContainText(`Обработано: ${100 - recognitionFailed} / 100`);
-    await expect(card.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
+    await expect(card).toContainText('Обработано: 100 / 100');
+    await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Пауза смыслового OCR', exact: true })).toBeVisible();
   });
 }
 
@@ -191,6 +193,111 @@ test('OCR can pause and resume before CLIP has been prepared', async ({ page }) 
   await page.getByRole('button', { name: 'Продолжить OCR', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
   expect(action).toBe('resume');
+});
+
+test('OCR batches validate integers and persist per chat without resuming recognition', async ({ page }) => {
+  const settings = { ocr_batch_size: 1, ocr_region_batch_size: 8 };
+  let saves = 0;
+  const media = { ocr_enabled: 1, ocr_paused: 1, total_photos: 100, ocr_ready: 10,
+    ocr_failed: 0, ocr_dense_ready: 0, ocr_nonempty_ready: 0, ocr_dense_available: true,
+    ocr_dense_paused: 1, photo_attachments: 120, photo_messages: 110,
+    queues: { ocr: { pending: 90, units_per_minute: 30 } } };
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...media, ...settings } } });
+  });
+  await page.route('**/api/chats/*/index/settings', async route => {
+    expect(route.request().postDataJSON()).toEqual({ ocr_batch_size: 2, ocr_region_batch_size: 16 });
+    Object.assign(settings, route.request().postDataJSON());
+    saves += 1;
+    const base = await (await page.request.get(route.request().url().replace('/settings', ''))).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...media, ...settings } } });
+  });
+  await page.goto('/');
+  const open = page.getByRole('button', { name: /^Настройки индексации / }).first();
+  await open.click();
+  const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+  await card.getByText('Батчи OCR', { exact: true }).click();
+  const images = card.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
+  const regions = card.getByRole('spinbutton', { name: 'Областей текста в батче OCR', exact: true });
+  for (const invalid of ['0', '5', '1.5']) {
+    await images.fill(invalid);
+    await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeDisabled();
+  }
+  await images.fill('2');
+  await regions.fill('33');
+  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeDisabled();
+  await regions.fill('16');
+  await card.getByRole('button', { name: 'Применить батчи OCR' }).click();
+  await expect.poll(() => saves).toBe(1);
+  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await open.click();
+  await card.getByText('Батчи OCR', { exact: true }).click();
+  await expect(images).toHaveValue('2');
+  await expect(regions).toHaveValue('16');
+  await page.getByRole('slider').press('End');
+  await expect(page.getByRole('spinbutton', { name: 'Images per OCR batch', exact: true })).toHaveValue('2');
+  await expect(page.getByRole('region', { name: 'Text in images · OCR' })).toContainText('Waiting for newly recognized images.');
+});
+
+test('recognition and semantic OCR pause independently', async ({ page }) => {
+  const state = { ocr_enabled: 1, ocr_paused: 1, ocr_dense_paused: 1,
+    total_photos: 100, ocr_ready: 10, ocr_failed: 0, ocr_nonempty_ready: 5,
+    ocr_dense_ready: 3, ocr_dense_available: true };
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...state } } });
+  });
+  await page.route(/\/api\/chats\/[^/]+\/index\/(ocr|ocr_dense)\/(pause|resume)$/, async route => {
+    const parts = route.request().url().split('/');
+    const kind = parts.at(-2);
+    state[kind === 'ocr' ? 'ocr_paused' : 'ocr_dense_paused'] = Number(parts.at(-1) === 'pause');
+    const base = await (await page.request.get(parts.slice(0, -2).join('/'))).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ...state } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+  await card.getByRole('button', { name: 'Продолжить смысловой OCR', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Пауза смыслового OCR', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Продолжить OCR', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
+  await card.getByRole('button', { name: 'Пауза смыслового OCR', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Продолжить смысловой OCR', exact: true })).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
+});
+
+test('late OCR batch save cannot overwrite edits in a reopened dialog', async ({ page }) => {
+  await mockIndex(page, true);
+  let release!: () => void;
+  await page.route('**/api/chats/*/index/settings', async route => {
+    const base = await (await page.request.get(route.request().url().replace('/settings', ''))).json();
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: { ...base, media: { ...base.media, ocr_batch_size: 4 } } });
+  });
+  await page.goto('/');
+  const open = page.getByRole('button', { name: /^Настройки индексации / }).first();
+  await open.click();
+  const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+  await card.getByText('Батчи OCR', { exact: true }).click();
+  const images = card.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
+  await images.fill('4');
+  await card.getByRole('button', { name: 'Применить батчи OCR' }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await page.keyboard.press('Escape');
+  await open.click();
+  await card.getByText('Батчи OCR', { exact: true }).click();
+  await images.fill('2');
+  const response = page.waitForResponse(value => value.request().method() === 'PATCH' && value.url().endsWith('/index/settings'));
+  release();
+  await (await response).finished();
+  // Allow the settled fetch callback and React effects to run before checking stale edits.
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(images).toHaveValue('2');
+  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeEnabled();
 });
 
 test('OCR recognition and semantic progress are visible with chat-scoped ETA and errors', async ({ page }) => {

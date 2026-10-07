@@ -14,7 +14,9 @@ def provider(encoder):
 def rate_space(encoder):
     if hasattr(encoder, "space_id"):
         return encoder.space_id
-    return f"{encoder.version}:threads={getattr(encoder, 'threads', 1)}"
+    identity = f"{encoder.version}:threads={getattr(encoder, 'threads', 1)}"
+    config = getattr(encoder, "rate_settings", None)
+    return f"{identity}:batch={config}" if config is not None else identity
 
 
 def record_rate(conn, kind, encoder, units, seconds):

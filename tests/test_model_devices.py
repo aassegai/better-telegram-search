@@ -288,9 +288,19 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("UPDATE chats SET media_paused=1")
         conn.execute("UPDATE media_state SET paused=1")
         before = [tuple(row) for row in conn.execute("SELECT * FROM ocr_cache")]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'ocr_work_%'"
+        ).fetchall():
+            conn.execute(f'DROP TRIGGER "{row[0]}"')
+        conn.execute("DROP TABLE ocr_work")
+        conn.execute("DROP TABLE ocr_queue_version")
+        conn.execute("ALTER TABLE chats DROP COLUMN ocr_dense_paused")
+        conn.execute("ALTER TABLE media_state DROP COLUMN ocr_dense_paused")
+        conn.execute("ALTER TABLE chats DROP COLUMN ocr_batch")
+        conn.execute("ALTER TABLE chats DROP COLUMN ocr_region_batch")
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_paused")
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_paused")
-        conn.execute("DELETE FROM schema_migrations WHERE version=6")
+        conn.execute("DELETE FROM schema_migrations WHERE version>=6")
     importer.shutdown()
     db.initialize()
     with db.connect() as conn:

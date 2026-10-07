@@ -32,6 +32,9 @@ class Settings:
     image_batch: int = 1
     ocr_timeout_seconds: int = 45
     ocr_max_edge: int = 2400
+    ocr_batch_size: int = 1
+    ocr_region_batch_size: int = 0
+    ocr_cpu_workers: int = 1
     memory_limit_mib: int = 4096
     search_result_limit: int = 20
     display_chunk_size: int = 10
@@ -102,6 +105,9 @@ class Settings:
             ("image_batch", 1, 32),
             ("ocr_timeout_seconds", 5, 300),
             ("ocr_max_edge", 512, 4096),
+            ("ocr_batch_size", 1, 4),
+            ("ocr_region_batch_size", 0, 32),
+            ("ocr_cpu_workers", 1, 4),
             ("memory_limit_mib", 1024, 65536),
             ("search_result_limit", 1, 100),
             ("display_chunk_size", 1, 100),
@@ -113,6 +119,10 @@ class Settings:
             value = getattr(settings, name)
             if type(value) not in (int, float) or not 0 < value <= 100:
                 raise UserError(f"Недопустимое значение настройки {name}.")
+        if settings.ocr_cpu_workers > settings.cpu_threads:
+            raise UserError("Число OCR-воркеров не должно превышать бюджет потоков CPU.")
+        if settings.ocr_cpu_workers > 1 and settings.ocr_device != "cpu":
+            raise UserError("Несколько CPU OCR-воркеров доступны при выборе устройства CPU.")
 
     def save(self, workspace: Path) -> None:
         self.validate()

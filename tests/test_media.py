@@ -68,7 +68,7 @@ def test_ocr_deduplicates_reimports_and_alternative_chats(db, importer, tmp_path
         assert conn.execute("SELECT COUNT(*) FROM media_vector_cleanup").fetchone()[0] == 1
 
 
-def test_ocr_eta_uses_whole_cycles_and_preserves_progress_on_restart(
+def test_ocr_eta_measures_its_own_queue_and_preserves_progress_on_restart(
     db, importer, tmp_path, monkeypatch
 ):
     chats = []
@@ -98,16 +98,16 @@ def test_ocr_eta_uses_whole_cycles_and_preserves_progress_on_restart(
     assert media._index_cycle()
     status = media.status()
     assert status["ocr_ready"] == 2 and status["total_photos"] == 3
-    assert status["ocr_estimated_remaining_seconds"] == 15
+    assert status["ocr_estimated_remaining_seconds"] == 2
     for chat in chats:
         scoped = media.status(chat)
         assert scoped["total_photos"] == 1
-        assert scoped["ocr_estimated_remaining_seconds"] == (1 - scoped["ocr_ready"]) * 15
+        assert scoped["ocr_estimated_remaining_seconds"] == (1 - scoped["ocr_ready"]) * 2
 
     _, restarted = services(db, importer)
     fake_ocr(restarted)
     assert restarted.status()["ocr_ready"] == 2
-    assert restarted.status()["ocr_estimated_remaining_seconds"] == 15
+    assert restarted.status()["ocr_estimated_remaining_seconds"] == 2
     restarted.ocr.threads = 2
     assert restarted.status()["ocr_estimated_remaining_seconds"] is None
     restarted.ocr.version = "different-recognition-model"
@@ -115,7 +115,7 @@ def test_ocr_eta_uses_whole_cycles_and_preserves_progress_on_restart(
     assert restarted.status()["ocr_estimated_remaining_seconds"] is None
 
 
-def test_ocr_failed_items_finish_the_queue_but_paused_results_do_not_advance_it(
+def test_ocr_failed_items_finish_queue_and_pause_flushes_completed_results(
     db, importer, tmp_path, monkeypatch
 ):
     load(importer, photo_export(tmp_path / "source"))
@@ -134,14 +134,14 @@ def test_ocr_failed_items_finish_the_queue_but_paused_results_do_not_advance_it(
 
     def pause(data):
         media.control("pause")
-        return {"text": "не публиковать", "confidence": 90}
+        return {"text": "сохранить готовый результат при паузе", "confidence": 90}
 
     media.ocr.recognize = pause
     assert media._index_cycle()
     status = media.status()
-    assert status["ocr_failed"] == 0 and status["ocr_ready"] == 0
+    assert status["ocr_failed"] == 0 and status["ocr_ready"] == 1
     with db.connect() as conn:
-        assert conn.execute("SELECT batches FROM index_rates WHERE kind='ocr'").fetchone()[0] == 1
+        assert conn.execute("SELECT batches FROM index_rates WHERE kind='ocr'").fetchone()[0] == 2
 
 
 def test_media_publication_does_not_resurrect_deleted_chat(db, importer, tmp_path):
@@ -470,7 +470,7 @@ def test_ocr_pause_aborts_publication_and_new_version_retries_failure(db, import
     semantic, media = services(db, importer)
 
     def pause(texts):
-        semantic.control("pause")
+        media.control("pause", kind="ocr_dense")
 
     encoder = TestEncoder(on_encode=pause)
     semantic.activate(encoder)
@@ -481,7 +481,7 @@ def test_ocr_pause_aborts_publication_and_new_version_retries_failure(db, import
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM media_embeddings").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM media_failures").fetchone()[0] == 0
-    semantic.control("resume")
+    media.control("resume", kind="ocr_dense")
     encoder.on_encode = lambda texts: (_ for _ in ()).throw(UserError("synthetic failure"))
     assert media._ocr_embeddings()
     assert not media._ocr_embeddings()
@@ -540,7 +540,8 @@ def test_semantic_ocr_error_counts_are_scoped_and_retry_preserves_recognition(
         conn.execute("INSERT INTO media_failures VALUES(?, 'old-model', 'stale')", (sha,))
     assert media.status()["ocr_dense_failed"] == 2
     indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
-    retried = indexing.control(first, "ocr", "retry")
+    assert indexing.control(first, "ocr", "retry")["media"]["ocr_dense_failed"] == 1
+    retried = indexing.control(first, "ocr_dense", "retry")
     assert retried["media"]["ocr_dense_failed"] == 0
     assert media.status(shared)["ocr_dense_failed"] == 0
     assert media.status(other)["ocr_dense_failed"] == 1

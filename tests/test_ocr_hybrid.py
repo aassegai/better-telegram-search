@@ -83,12 +83,13 @@ def test_hybrid_ocr_overlaps_without_duplicate_claims_and_guards_publication(
     assert not media.ocr_claims
     with db.connect() as conn:
         count = conn.execute("SELECT COUNT(*) FROM ocr_cache").fetchone()[0]
-    assert count == (2 if mutation is None else 0)
+    assert count == (2 if mutation in {None, "pause"} else 0)
     assert media.ocr_completed == count
     if mutation is None:
         assert not media._ocr_one() and not media._ocr_one(media.ocr.cpu_peer)
         assert len(calls) == 2
         assert set(media.ocr_timings) == {
+            "select_seconds",
             "read_seconds",
             "compute_wait_seconds",
             "inference_seconds",

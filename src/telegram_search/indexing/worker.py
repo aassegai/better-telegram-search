@@ -2,6 +2,7 @@ import time
 from datetime import UTC, datetime
 
 from telegram_search.indexing.estimates import record_rate
+from telegram_search.indexing.prefetch import BatchPrefetch
 from telegram_search.inference.resources import (
     backoff_indexing_batch,
     indexing_batch_size,
@@ -113,6 +114,28 @@ class SegmentWorker:
                     ],
                 )
 
+    def _prepared_batch(self, work, checkpoint, batch_size):
+        with self.db.connect() as conn:
+            rows = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM chunks WHERE chat_id=? AND utc_day=? AND generation=? "
+                    "AND embedding_space_id=? AND ordinal>? ORDER BY ordinal LIMIT ?",
+                    (
+                        work["chat_id"],
+                        work["utc_day"],
+                        work["generation"],
+                        self.encoder.space_id,
+                        checkpoint,
+                        batch_size,
+                    ),
+                )
+            ]
+        prepared = None
+        if rows and hasattr(self.encoder, "prepare_text"):
+            prepared = self.encoder.prepare_text([row["text"] for row in rows], "passage")
+        return rows, prepared
+
     def run(self, work_id: str) -> dict:
         with self.lock, self.db.connect() as conn:
             row = conn.execute("SELECT * FROM index_work WHERE id=?", (work_id,)).fetchone()
@@ -164,6 +187,7 @@ class SegmentWorker:
                     "embedding_seconds=0 WHERE id=?",
                     (work_id,),
                 )
+        prefetch = BatchPrefetch()
         try:
             if work["stage"] == "building":
                 self._build(work)
@@ -180,31 +204,37 @@ class SegmentWorker:
                     checkpoint = conn.execute(
                         "SELECT chunks_done FROM index_work WHERE id=?", (work_id,)
                     ).fetchone()[0]
-                    rows = [
-                        dict(row)
-                        for row in conn.execute(
-                            "SELECT * FROM chunks WHERE chat_id=? AND utc_day=? AND generation=? "
-                            "AND embedding_space_id=? AND ordinal>? ORDER BY ordinal LIMIT ?",
-                            (
-                                work["chat_id"],
-                                work["utc_day"],
-                                work["generation"],
-                                self.encoder.space_id,
-                                checkpoint,
-                                self.batch_size,
-                            ),
-                        )
-                    ]
+                size = self.batch_size
+                key = (checkpoint, size)
+                rows, prepared = prefetch.take(
+                    key,
+                    lambda checkpoint=checkpoint, size=size: self._prepared_batch(
+                        work, checkpoint, size
+                    ),
+                )
                 if not rows:
                     break
+                next_checkpoint = rows[-1]["ordinal"]
+                prefetch.submit(
+                    (next_checkpoint, size),
+                    lambda checkpoint=next_checkpoint, size=size: self._prepared_batch(
+                        work, checkpoint, size
+                    ),
+                )
+                with self.db.connect() as conn:
+                    self._guard(conn, work)
                 began = time.perf_counter()
                 try:
-                    embeddings = self.encoder.encode_text([row["text"] for row in rows], "passage")
+                    kwargs = {"_prepared": prepared} if prepared is not None else {}
+                    embeddings = self.encoder.encode_text(
+                        [row["text"] for row in rows], "passage", **kwargs
+                    )
                 except Exception as exc:
                     if memory_exhausted(exc) and len(rows) > 1:
                         self.batch_size = backoff_indexing_batch(self.encoder, len(rows))
                         continue
                     raise
+                publish_started = time.perf_counter()
                 with self.lock, self.db.connect() as conn:
                     self._guard(conn, work)
                     # If the process dies after this write, replay uses the same stable IDs.
@@ -223,6 +253,12 @@ class SegmentWorker:
                         sum(len(row["text"]) for row in rows),
                         time.perf_counter() - began,
                     )
+                if hasattr(self.encoder, "last_timings"):
+                    self.encoder.last_timings = {
+                        **self.encoder.last_timings,
+                        "publish_seconds": time.perf_counter() - publish_started,
+                        "batch_seconds": time.perf_counter() - began,
+                    }
             with self.lock, self.db.connect() as conn:
                 self._guard(conn, work)
                 conn.execute(
@@ -289,6 +325,8 @@ class SegmentWorker:
                         work_id,
                     ),
                 )
+        finally:
+            prefetch.close()
         with self.db.connect() as conn:
             row = conn.execute("SELECT * FROM index_work WHERE id=?", (work_id,)).fetchone()
             return dict(row) if row else {"state": "deleted"}

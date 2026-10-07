@@ -424,7 +424,10 @@ class SemanticService:
                         if self.encoder is encoder and encoder.unload_idle(
                             query_last_used=self.last_used,
                             idle_seconds=self.db.settings.idle_unload_seconds,
-                            index_paused=bool(state[1]),
+                            index_paused=bool(state[1])
+                            and not getattr(
+                                getattr(self, "media", None), "ocr_dense_waiting", False
+                            ),
                         ):
                             self.query_cache.clear()
             except Exception:

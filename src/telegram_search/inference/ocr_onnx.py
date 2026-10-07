@@ -30,6 +30,12 @@ class OnnxOcrEngine:
         self.threads = max(1, settings.cpu_threads // 2) if hybrid else settings.cpu_threads
         self.cpu_peer = None
         self.last_timings = {}
+        self.batch_limit = 4
+        self.rate_settings = (
+            settings.ocr_batch_size,
+            settings.ocr_region_batch_size,
+            settings.ocr_cpu_workers,
+        )
         self.execution = Execution(
             device,
             device_id=settings.gpu_device_id,
@@ -65,6 +71,9 @@ class OnnxOcrEngine:
             ),
             threads=self.threads,
             timeout=settings.ocr_timeout_seconds,
+            region_batch=settings.ocr_region_batch_size,
+            memory_limit_mib=max(256, settings.memory_limit_mib // 2),
+            ready_handshake=True,
         )
 
         if hybrid:
@@ -111,52 +120,73 @@ class OnnxOcrEngine:
         finally:
             self.unload()
 
-    def recognize(self, data):
+    def recognize(self, data, *, _generation=None):
         self.last_timings = {}
         try:
-            value = json.loads(self.worker.recognize(data))
-            if (
-                not isinstance(value["text"], str)
-                or len(value["text"]) > 65536
-                or type(value["confidence"]) not in {int, float}
-                or not 0 <= value["confidence"] <= 100
-                or not math.isfinite(value["confidence"])
-                or value["provider"] not in {CPU, CUDA, COREML}
-                or (self.execution.device == "cpu" and value["provider"] != CPU)
-                or (self.execution.device == "gpu" and value["provider"] != self.execution.provider)
-            ):
-                raise ValueError("OCR output")
-            timings = value.get("timings", {})
-            durations = {
-                "preprocess_seconds",
-                "detection_seconds",
-                "boxes_seconds",
-                "recognition_seconds",
-            }
-            if (
-                not isinstance(timings, dict)
-                or set(timings) - durations - {"regions"}
-                or any(
-                    type(seconds) not in {int, float}
-                    or not 0 <= seconds <= 3600
-                    or not math.isfinite(seconds)
-                    for key, seconds in timings.items()
-                    if key in durations
-                )
-                or (
-                    "regions" in timings
-                    and (type(timings["regions"]) is not int or not 0 <= timings["regions"] <= 1000)
-                )
-            ):
-                raise ValueError("OCR timings")
-            self.last_timings = timings
-            self.execution.provider = value["provider"]
-            if self.execution.device == "auto" and value["provider"] == CPU:
-                self.execution.warning = "GPU недоступен: режим Авто использует CPU."
-            return {"text": value["text"], "confidence": value["confidence"]}
+            kwargs = {"generation": _generation} if _generation is not None else {}
+            value = json.loads(self.worker.recognize(data, **kwargs))
+            return self._parse(value)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             self.worker.unload()
             raise UserError("OCR не смог обработать изображение за заданное время.") from exc
+
+    def recognize_many(self, images):
+        try:
+            responses = self.worker.recognize_many(images)
+        except UserError:
+            # A batch timeout/native failure is retried as individual images. Keep
+            # this cap for the lifetime of the lane instead of repeating bad batches.
+            self.batch_limit = 1
+            raise
+        values = []
+        for response in responses:
+            try:
+                result = self._parse(json.loads(response))
+                values.append({**result, "timings": dict(self.last_timings)})
+            except (OSError, ValueError, KeyError, TypeError):
+                values.append({"error": True})
+        return values
+
+    def _parse(self, value):
+        if (
+            not isinstance(value["text"], str)
+            or len(value["text"]) > 65536
+            or type(value["confidence"]) not in {int, float}
+            or not 0 <= value["confidence"] <= 100
+            or not math.isfinite(value["confidence"])
+            or value["provider"] not in {CPU, CUDA, COREML}
+            or (self.execution.device == "cpu" and value["provider"] != CPU)
+            or (self.execution.device == "gpu" and value["provider"] != self.execution.provider)
+        ):
+            raise ValueError("OCR output")
+        timings = value.get("timings", {})
+        durations = {
+            "preprocess_seconds",
+            "detection_seconds",
+            "boxes_seconds",
+            "recognition_seconds",
+        }
+        if (
+            not isinstance(timings, dict)
+            or set(timings) - durations - {"regions"}
+            or any(
+                type(seconds) not in {int, float}
+                or not 0 <= seconds <= 3600
+                or not math.isfinite(seconds)
+                for key, seconds in timings.items()
+                if key in durations
+            )
+            or (
+                "regions" in timings
+                and (type(timings["regions"]) is not int or not 0 <= timings["regions"] <= 1000)
+            )
+        ):
+            raise ValueError("OCR timings")
+        self.last_timings = timings
+        self.execution.provider = value["provider"]
+        if self.execution.device == "auto" and value["provider"] == CPU:
+            self.execution.warning = "GPU недоступен: режим Авто использует CPU."
+        return {"text": value["text"], "confidence": value["confidence"]}
 
     def unload_worker(self):
         self.worker.unload()

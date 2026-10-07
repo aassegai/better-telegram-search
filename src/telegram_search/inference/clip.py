@@ -4,6 +4,7 @@ import importlib.metadata
 import io
 import json
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +80,7 @@ class ClipEncoder:
             probe=False,
         )
         self.lock = threading.RLock()
+        self.last_used = time.monotonic()
         self.query_execution = Execution(
             search_device or device,
             device_id=gpu_device_id,
@@ -206,10 +208,12 @@ class ClipEncoder:
             raise UserError("Батч CLIP должен содержать от 1 до 32 текстов.")
         inputs = self.tokenizer.batch(texts, limit=128)
         with self.lock, compute_gate(self.query_execution).slot(interactive=True):
+            self.last_used = time.monotonic()
             session = self._session("text")
             hidden = session.run(
                 ["last_hidden_state"], {key: inputs[key] for key in ("input_ids", "attention_mask")}
             )[0]
+            self.last_used = time.monotonic()
         mask = inputs["attention_mask"][..., None].astype(np.float32)
         mean = (hidden * mask).sum(axis=1) / mask.sum(axis=1).clip(min=1)
         result = normalize(np.einsum("bi,oi->bo", mean, self.projection, optimize=False))
@@ -217,16 +221,41 @@ class ClipEncoder:
             raise UserError("Размерность CLIP text embedding не соответствует паре.")
         return result
 
-    def encode_images(self, images):
+    def prepare_images(self, images):
+        values = []
+        for data in images:
+            started = time.perf_counter()
+            values.append((image_tensor(data, self.preprocessor), time.perf_counter() - started))
+        return values
+
+    def encode_images(self, images, *, _prepared=None):
         if not 1 <= len(images) <= 32:
             raise UserError("Батч изображений должен содержать от 1 до 32 файлов.")
-        pixels = np.stack([image_tensor(data, self.preprocessor) for data in images])
+        values = _prepared if _prepared is not None else self.prepare_images(images)
+        if len(values) != len(images):
+            raise UserError("Подготовленный батч CLIP не соответствует изображениям.")
+        pixels = np.stack([value[0] for value in values])
+        prepared = time.perf_counter()
         with self.lock, compute_gate(self.execution):
-            result = normalize(
-                self._session("image").run(["image_embeds"], {"pixel_values": pixels})[0]
-            )
+            self.last_used = time.monotonic()
+            acquired = time.perf_counter()
+            session = self._session("image")
+            loaded = time.perf_counter()
+            raw = session.run(["image_embeds"], {"pixel_values": pixels})[0]
+            inferred = time.perf_counter()
+            self.last_used = time.monotonic()
+        result = normalize(raw)
         if result.shape != (len(images), 512):
             raise UserError("Размерность CLIP image embedding не соответствует паре.")
+        self.last_timings = {
+            "preprocess_seconds": sum(value[1] for value in values),
+            "compute_wait_seconds": acquired - prepared,
+            "model_load_seconds": loaded - acquired,
+            "inference_seconds": inferred - loaded,
+            "postprocess_seconds": time.perf_counter() - inferred,
+            "batch_size": len(images),
+            "prefetched": int(_prepared is not None),
+        }
         return result
 
     def unload(self):
@@ -238,6 +267,18 @@ class ClipEncoder:
         with self.lock:
             self.sessions.pop("image", None)
         gc.collect()
+
+    def unload_idle(self, *, idle_seconds):
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
+            if time.monotonic() - self.last_used < idle_seconds or not self.sessions:
+                return False
+            self.sessions.clear()
+        finally:
+            self.lock.release()
+        gc.collect()
+        return True
 
     def update_threads(self, threads):
         with self.lock:

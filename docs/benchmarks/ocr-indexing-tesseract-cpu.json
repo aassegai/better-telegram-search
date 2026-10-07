@@ -1,0 +1,184 @@
+{
+  "device": "cpu",
+  "indexing": [
+    {
+      "engine": "tesseract",
+      "workers": 1,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 4.2783,
+      "completed_images_per_minute": 350.61,
+      "resources": {
+        "rss_bytes": 72261632,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 0,
+        "ram_available_bytes": 12546465792,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 142995456,
+      "queue": {
+        "pending": 0,
+        "samples": 25,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 1.0,
+        "regions_per_second": 0.0,
+        "units_per_minute": 374.44,
+        "p50_seconds": 0.0558,
+        "p95_seconds": 0.8237,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "select_seconds": 0.012728,
+          "cold_start_seconds": 0.014108,
+          "read_seconds": 0.002335,
+          "inference_seconds": 0.13476,
+          "publish_seconds": 0.009131,
+          "compute_wait_seconds": 0.001245,
+          "request_seconds": 0.135334,
+          "child_rss_bytes": 61576314.88,
+          "process_starts": 1.0,
+          "cold_start": 0.04
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.007459,
+        "p95_seconds": 0.01398
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 6.4e-05,
+        "p95_seconds": 0.389226
+      },
+      "cer": 0.0188,
+      "wer": 0.0192,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27
+    },
+    {
+      "engine": "tesseract",
+      "workers": 2,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 2.594,
+      "completed_images_per_minute": 578.27,
+      "resources": {
+        "rss_bytes": 73949184,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 0,
+        "ram_available_bytes": 12544647168,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 208572416,
+      "queue": {
+        "pending": 0,
+        "samples": 13,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 2.0,
+        "regions_per_second": 0.0,
+        "units_per_minute": 610.98,
+        "p50_seconds": 0.0405,
+        "p95_seconds": 0.403,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "select_seconds": 0.011489,
+          "cold_start_seconds": 0.028236,
+          "read_seconds": 0.003103,
+          "inference_seconds": 0.164328,
+          "publish_seconds": 0.008655,
+          "compute_wait_seconds": 0.001218,
+          "request_seconds": 0.25248,
+          "child_rss_bytes": 100764750.769231,
+          "process_starts": 1.846154,
+          "cold_start": 0.153846
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.006472,
+        "p95_seconds": 0.009446
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 3.1e-05,
+        "p95_seconds": 0.210824
+      },
+      "cer": 0.0188,
+      "wer": 0.0192,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27
+    },
+    {
+      "engine": "tesseract",
+      "workers": 4,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 2.4713,
+      "completed_images_per_minute": 606.97,
+      "resources": {
+        "rss_bytes": 73965568,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 0,
+        "ram_available_bytes": 12541558784,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 322527232,
+      "queue": {
+        "pending": 0,
+        "samples": 7,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 4.0,
+        "regions_per_second": 0.0,
+        "units_per_minute": 642.9,
+        "p50_seconds": 0.0217,
+        "p95_seconds": 0.2708,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "select_seconds": 0.011848,
+          "cold_start_seconds": 0.155237,
+          "read_seconds": 0.005832,
+          "inference_seconds": 0.303757,
+          "publish_seconds": 0.010163,
+          "compute_wait_seconds": 0.001637,
+          "request_seconds": 0.600478,
+          "child_rss_bytes": 160673792.0,
+          "process_starts": 3.428571,
+          "cold_start": 0.571429
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.007771,
+        "p95_seconds": 0.016423
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 4.5e-05,
+        "p95_seconds": 0.829509
+      },
+      "cer": 0.0188,
+      "wer": 0.0192,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27
+    }
+  ],
+  "runtime": {
+    "onnxruntime": "1.30.0",
+    "tesserocr": "2.11.0",
+    "python": "3.12.3"
+  }
+}

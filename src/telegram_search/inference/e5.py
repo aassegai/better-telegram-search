@@ -70,6 +70,7 @@ class E5Encoder:
         self.validated_providers = {CPU}
         self.last_index_used = 0.0
         self.index_batch_limit = None
+        self.last_timings = {}
         self.condition = threading.Condition()
         self.encoding = False
         self.suspended = False
@@ -157,12 +158,22 @@ class E5Encoder:
                 masked_mean_normalize(candidate.run(output, feed)[0], inputs["attention_mask"]),
             )
 
+    def prepare_text(self, texts, purpose):
+        if purpose not in {"query", "passage"} or not 1 <= len(texts) <= 128:
+            raise UserError("Недопустимый батч модели.")
+        started = time.perf_counter()
+        prefix = self.spec.manifest[f"{purpose}_prefix"]
+        limit = self.spec.manifest["chunk_max_tokens"] if purpose == "passage" else 512
+        inputs = self.tokenizer.batch([prefix + text for text in texts], limit)
+        return (inputs, len(texts), purpose, time.perf_counter() - started, self)
+
     def encode_text(
         self,
         texts: Sequence[str],
         purpose: Literal["query", "passage"],
         *,
         interactive: bool = False,
+        _prepared=None,
     ) -> np.ndarray:
         if purpose not in {"query", "passage"}:
             raise UserError("Неизвестное назначение embedding.")
@@ -170,11 +181,20 @@ class E5Encoder:
             return np.empty((0, self.spec.dimension), dtype=np.float32)
         if len(texts) > 128:
             raise UserError("Батч модели должен содержать не более 128 текстов.")
+        began = time.perf_counter()
         with self.condition:
+            ticket = object()
+            if not hasattr(self, "background_tickets"):
+                self.background_tickets = []
+            if not interactive:
+                self.background_tickets.append(ticket)
             if interactive:
                 self.interactive_waiters += 1
             try:
-                while self.encoding or (not interactive and self.interactive_waiters):
+                while self.encoding or (
+                    not interactive
+                    and (self.interactive_waiters or self.background_tickets[0] is not ticket)
+                ):
                     if self.suspended:
                         raise UserError(
                             "Модель временно остановлена для подготовки нового профиля."
@@ -184,20 +204,27 @@ class E5Encoder:
                     raise UserError("Модель временно остановлена для подготовки нового профиля.")
                 self.encoding = True
             finally:
+                if not interactive:
+                    self.background_tickets.remove(ticket)
                 if interactive:
                     self.interactive_waiters -= 1
                 self.condition.notify_all()
         try:
-            prefix = self.spec.manifest[f"{purpose}_prefix"]
-            prepared = [prefix + text for text in texts]
-            limit = self.spec.manifest["chunk_max_tokens"] if purpose == "passage" else 512
-            inputs = self.tokenizer.batch(prepared, limit)
+            acquired = time.perf_counter()
+            prepared = _prepared or self.prepare_text(texts, purpose)
+            inputs, count, prepared_purpose, preprocessing, owner = prepared
+            if owner is not self or count != len(texts) or prepared_purpose != purpose:
+                raise UserError("Подготовленный батч не соответствует модели.")
+            before_gate = time.perf_counter()
             try:
                 execution = self.query_execution if purpose == "query" else self.execution
                 with compute_gate(execution).slot(interactive=interactive):
+                    granted = time.perf_counter()
                     session = self._load(query=purpose == "query")
                     feed = {item.name: inputs[item.name] for item in session.get_inputs()}
+                    inference = time.perf_counter()
                     hidden = session.run([self.spec.manifest["output_name"]], feed)[0]
+                    inferred = time.perf_counter()
             except UserError:
                 # Preserve actionable device/precision errors; native exceptions
                 # remain behind the content-free generic inference message.
@@ -207,6 +234,18 @@ class E5Encoder:
             embeddings = masked_mean_normalize(hidden, inputs["attention_mask"])
             if embeddings.shape != (len(texts), self.spec.dimension):
                 raise UserError("Размерность embeddings не соответствует закреплённой модели.")
+            if purpose == "passage":
+                self.last_timings = {
+                    "encoder_wait_seconds": acquired - began,
+                    "preprocess_seconds": preprocessing,
+                    "compute_wait_seconds": granted - before_gate,
+                    "model_load_seconds": inference - granted,
+                    "inference_seconds": inferred - inference,
+                    "postprocess_seconds": time.perf_counter() - inferred,
+                    "batch_size": len(texts),
+                    "sequence_length": inputs["input_ids"].shape[1],
+                    "prefetched": int(_prepared is not None),
+                }
             return embeddings
         finally:
             with self.condition:
@@ -228,6 +267,7 @@ class E5Encoder:
             "query_loaded": self.query_session is not None,
             "threads": self.threads,
             "index_batch_limit": self.index_batch_limit,
+            "index_timings": getattr(self, "last_timings", {}),
         }
 
     def unload(self) -> None:
@@ -259,6 +299,14 @@ class E5Encoder:
                 self.condition.wait()
             self.session = None
         gc.collect()
+
+    def unload_index_if_idle(self):
+        with self.condition:
+            if self.encoding:
+                return False
+            self.session = None
+        gc.collect()
+        return True
 
     def unload_idle(self, *, query_last_used, idle_seconds, index_paused=False):
         """Release idle sessions without waiting for, then evicting, an active batch."""

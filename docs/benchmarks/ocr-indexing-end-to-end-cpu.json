@@ -1,0 +1,228 @@
+{
+  "device": "cpu",
+  "indexing": [
+    {
+      "workers": 1,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 7.6301,
+      "completed_images_per_minute": 196.59,
+      "resources": {
+        "rss_bytes": 71790592,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 70.3,
+        "ram_available_bytes": 12541751296,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 486666240,
+      "queue": {
+        "pending": 0,
+        "samples": 25,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 1.0,
+        "regions_per_second": 14.36,
+        "units_per_minute": 205.11,
+        "p50_seconds": 0.0679,
+        "p95_seconds": 1.6096,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "cold_start_seconds": 0.015892,
+          "cold_start": 0.04,
+          "process_starts": 1.0,
+          "select_seconds": 0.014216,
+          "publish_seconds": 0.0104,
+          "preprocess_seconds": 0.007566,
+          "inference_seconds": 0.263901,
+          "boxes_seconds": 0.002302,
+          "recognition_seconds": 0.230072,
+          "regions": 4.375,
+          "request_seconds": 0.265185,
+          "child_rss_bytes": 304747806.72,
+          "compute_wait_seconds": 0.00154,
+          "read_seconds": 0.002417,
+          "detection_seconds": 0.016776
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.008529,
+        "p95_seconds": 0.01847
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 5.1e-05,
+        "p95_seconds": 0.455739
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27,
+      "engine": "paddle"
+    },
+    {
+      "workers": 2,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 7.335,
+      "completed_images_per_minute": 204.5,
+      "resources": {
+        "rss_bytes": 73154560,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 77.0,
+        "ram_available_bytes": 12539035648,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 812965888,
+      "queue": {
+        "pending": 0,
+        "samples": 13,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 2.0,
+        "regions_per_second": 14.98,
+        "units_per_minute": 214.01,
+        "p50_seconds": 0.0816,
+        "p95_seconds": 1.456,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "cold_start_seconds": 0.061089,
+          "cold_start": 0.153846,
+          "process_starts": 1.846154,
+          "select_seconds": 0.013294,
+          "publish_seconds": 0.011221,
+          "preprocess_seconds": 0.01778,
+          "inference_seconds": 0.509441,
+          "boxes_seconds": 0.003959,
+          "recognition_seconds": 0.687905,
+          "regions": 8.076923,
+          "request_seconds": 0.821295,
+          "child_rss_bytes": 416376674.461538,
+          "compute_wait_seconds": 0.001715,
+          "read_seconds": 0.003414,
+          "detection_seconds": 0.04634
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.00936,
+        "p95_seconds": 0.019209
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 4.8e-05,
+        "p95_seconds": 0.487703
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27,
+      "engine": "paddle"
+    },
+    {
+      "workers": 4,
+      "total_threads": 4,
+      "attachments": 28,
+      "unique_images": 25,
+      "ready": 24,
+      "failed": 1,
+      "elapsed_seconds": 9.9746,
+      "completed_images_per_minute": 150.38,
+      "resources": {
+        "rss_bytes": 73928704,
+        "child_rss_bytes": 0,
+        "native_threads": 31,
+        "cpu_percent_one_core": 0,
+        "ram_available_bytes": 12538318848,
+        "gpu_utilization_percent": null,
+        "vram_bytes": null
+      },
+      "sampled_peak_rss_bytes": 1261666304,
+      "queue": {
+        "pending": 0,
+        "samples": 7,
+        "completed": 25,
+        "errors": 1,
+        "cold_starts": 4.0,
+        "regions_per_second": 10.85,
+        "units_per_minute": 155.03,
+        "p50_seconds": 0.1119,
+        "p95_seconds": 1.0708,
+        "estimated_remaining_seconds": 0.0,
+        "phase_means": {
+          "cold_start_seconds": 0.200847,
+          "cold_start": 0.571429,
+          "process_starts": 3.428571,
+          "select_seconds": 0.012407,
+          "publish_seconds": 0.011148,
+          "preprocess_seconds": 0.049316,
+          "inference_seconds": 1.349323,
+          "boxes_seconds": 0.008167,
+          "recognition_seconds": 1.954458,
+          "regions": 15.0,
+          "request_seconds": 2.371651,
+          "child_rss_bytes": 545634011.428571,
+          "compute_wait_seconds": 0.001487,
+          "read_seconds": 0.007843,
+          "detection_seconds": 0.148423
+        },
+        "measuring": false
+      },
+      "lexical_search": {
+        "p50_seconds": 0.009249,
+        "p95_seconds": 0.015468
+      },
+      "interactive_device_wait": {
+        "p50_seconds": 5.2e-05,
+        "p95_seconds": 0.473596
+      },
+      "cer": 0.1688,
+      "wer": 0.1795,
+      "control_tokens_found": 24,
+      "control_tokens_total": 27,
+      "engine": "paddle"
+    }
+  ],
+  "lifecycle": [
+    {
+      "images": 130,
+      "recycle_after": 128,
+      "process_starts": 2,
+      "elapsed_seconds": 30.1707,
+      "cold_start_seconds": [
+        0.4073,
+        0.4514
+      ],
+      "rss_max_bytes": 414179328,
+      "rss_last_bytes": 127205376,
+      "p50_seconds": 0.040664,
+      "p95_seconds": 1.410793
+    },
+    {
+      "images": 130,
+      "recycle_after": 1024,
+      "process_starts": 1,
+      "elapsed_seconds": 29.634,
+      "cold_start_seconds": [
+        0.402
+      ],
+      "rss_max_bytes": 413102080,
+      "rss_last_bytes": 408621056,
+      "p50_seconds": 0.041998,
+      "p95_seconds": 1.378863
+    }
+  ],
+  "runtime": {
+    "onnxruntime": "1.30.0",
+    "tesserocr": "2.11.0",
+    "python": "3.12.3"
+  }
+}

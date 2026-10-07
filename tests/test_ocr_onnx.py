@@ -17,6 +17,50 @@ from telegram_search.inference.providers import CPU, CUDA  # noqa: E402
 from telegram_search.shared.errors import UserError  # noqa: E402
 
 
+def test_cross_image_regions_keep_mapping_padding_and_persistent_oom_limit(monkeypatch):
+    pipeline = OnnxOcrPipeline.__new__(OnnxOcrPipeline)
+    pipeline.max_edge = 2400
+    pipeline.execution = SimpleNamespace(provider=CPU)
+    pipeline.recognition_limits = {}
+    pipeline.alphabet = ["", "А", "B"]
+    pipeline._detect = lambda tensor: np.zeros((32, 32), dtype=np.float32)
+    boxes = [
+        np.array([[0, 0], [50, 0], [50, 10], [0, 10]], dtype=np.float32),
+        np.array([[0, 15], [50, 15], [50, 25], [0, 25]], dtype=np.float32),
+    ]
+    monkeypatch.setattr(
+        "telegram_search.inference.ocr_pipeline.detected_boxes", lambda *args: boxes
+    )
+    batches = []
+
+    class Recognizer:
+        def get_inputs(self):
+            return [SimpleNamespace(name="x")]
+
+        def run(self, names, inputs):
+            tensor = inputs["x"]
+            batches.append(len(tensor))
+            if len(tensor) > 2:
+                raise MemoryError("synthetic out of memory")
+            indices = np.where(tensor[:, 0, 0, 0] < 0, 1, 2)
+            return [np.eye(3, dtype=np.float32)[indices][:, None, :]]
+
+    pipeline.recognizer = Recognizer()
+    inputs = []
+    for color in ("black", "white"):
+        stream = io.BytesIO()
+        Image.new("RGB", (64, 32), color).save(stream, format="PNG")
+        inputs.append(stream.getvalue())
+    values = pipeline.recognize_many([inputs[0], b"corrupt", inputs[1]], region_batch=8)
+    assert [value.get("text") for value in values] == ["А\nА", None, "B\nB"]
+    assert values[1] == {"error": True} and batches == [4, 2, 2]
+    assert pipeline.recognition_limits == {320: 2}
+    batches.clear()
+    values = pipeline.recognize_many(inputs, region_batch=8)
+    assert [value["text"] for value in values] == ["А\nА", "B\nB"]
+    assert batches == [2, 2]
+
+
 def test_ctc_preserves_repeated_letters_separated_by_blank_and_rejects_bad_contract():
     probabilities = np.eye(3, dtype=np.float32)[[0, 1, 1, 0, 1, 2, 2]]
     assert decode_ctc(probabilities, ["", "А", "B"]) == ("ААB", 1.0)

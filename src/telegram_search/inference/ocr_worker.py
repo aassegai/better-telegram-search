@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import sys
 
 from PIL import Image, ImageOps
@@ -27,6 +28,45 @@ def recognize(data, max_edge, api):
 
 def serve(api, max_edge, *, onnx=False):
     while header := sys.stdin.buffer.readline(16):
+        if header.startswith(b"B"):
+            parts = header[1:-1].split(b":")
+            if (
+                not header.endswith(b"\n")
+                or len(parts) != 2
+                or any(not part.isdigit() for part in parts)
+            ):
+                raise ValueError("batch header")
+            count, regions = map(int, parts)
+            if not 1 <= count <= 4 or not 0 <= regions <= 32:
+                raise ValueError("batch budget")
+            images, size = [], 0
+            for _ in range(count):
+                length_header = sys.stdin.buffer.readline(16)
+                if not length_header.endswith(b"\n") or not length_header[:-1].isdigit():
+                    raise ValueError("frame header")
+                length = int(length_header[:-1])
+                size += length
+                if length <= 0 or size > MAX_IMAGE_BYTES:
+                    raise ValueError("frame budget")
+                data = sys.stdin.buffer.read(length)
+                if len(data) != length:
+                    raise ValueError("truncated image")
+                images.append(data)
+            if not onnx:
+                raise ValueError("batch runtime")
+            default_regions = 8 if api.execution.provider == "CPUExecutionProvider" else 32
+            regions = regions or default_regions
+            if count == 1 and regions == default_regions:
+                try:
+                    value = api.recognize(images[0])
+                    values = [{**value, "timings": dict(api.last_timings)}]
+                except Exception:
+                    values = [{"error": True}]
+            else:
+                values = api.recognize_many(images, region_batch=regions)
+            for value in values:
+                print(json.dumps(value, ensure_ascii=True), flush=True)
+            continue
         if not header.endswith(b"\n") or not header[:-1].isdigit():
             raise ValueError("frame header")
         length = int(header[:-1])
@@ -63,6 +103,8 @@ def main(argv=None):
             memory_limit_mib=int(args[5]),
             threads=int(args[6]),
         )
+        if os.environ.get("OCR_READY_HANDSHAKE") == "1":
+            print('{"ready":true}', flush=True)
         serve(engine, int(args[2]), onnx=True)
         return
     import tesserocr
@@ -75,6 +117,8 @@ def main(argv=None):
     Image.MAX_IMAGE_PIXELS = 25_000_000
     with tesserocr.PyTessBaseAPI(path=args[0], lang="rus+eng", psm=tesserocr.PSM.AUTO) as api:
         if len(args) == 3:
+            if os.environ.get("OCR_READY_HANDSHAKE") == "1":
+                print('{"ready":true}', flush=True)
             serve(api, int(args[1]))
         else:
             data = sys.stdin.buffer.read(MAX_IMAGE_BYTES + 1)
