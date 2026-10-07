@@ -47,24 +47,34 @@ class ChatIndexing:
         return self.status(chat_id)
 
     def control(self, chat_id, kind, action):
-        column, table = (
-            ("text_paused", "semantic_state") if kind == "text" else ("media_paused", "media_state")
-        )
+        queues = {
+            "text": [("text_paused", "semantic_state", "paused")],
+            "images": [("media_paused", "media_state", "paused")],
+            "ocr": [("ocr_paused", "media_state", "ocr_paused")],
+            "media": [
+                ("media_paused", "media_state", "paused"),
+                ("ocr_paused", "media_state", "ocr_paused"),
+            ],
+        }
+        if kind not in queues:
+            raise UserError("Неизвестное действие индексации.")
         with self.lock, self.db.connect() as conn:
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
                 raise UserError("Диалог не найден.")
             if action == "compact":
                 pass
             elif action in {"pause", "resume", "retry"}:
-                if action != "pause":
-                    # Transfer a legacy workspace-wide pause to every dialog before
-                    # resuming this one. Other paused queues must remain paused.
-                    if conn.execute(f"SELECT paused FROM {table} WHERE id=1").fetchone()[0]:
-                        conn.execute(f"UPDATE chats SET {column}=1")
-                        conn.execute(f"UPDATE {table} SET paused=0 WHERE id=1")
-                conn.execute(
-                    f"UPDATE chats SET {column}=? WHERE id=?", (action == "pause", chat_id)
-                )
+                for column, table, global_column in queues[kind]:
+                    if action != "pause":
+                        # Transfer each legacy global pause independently, preserving other chats.
+                        if conn.execute(
+                            f"SELECT {global_column} FROM {table} WHERE id=1"
+                        ).fetchone()[0]:
+                            conn.execute(f"UPDATE chats SET {column}=1")
+                            conn.execute(f"UPDATE {table} SET {global_column}=0 WHERE id=1")
+                    conn.execute(
+                        f"UPDATE chats SET {column}=? WHERE id=?", (action == "pause", chat_id)
+                    )
                 if action == "retry":
                     if kind == "text":
                         conn.execute(
@@ -73,12 +83,31 @@ class ChatIndexing:
                             (chat_id,),
                         )
                     else:
-                        for target in ("ocr_cache", "media_failures"):
-                            condition = "state='failed' AND " if target == "ocr_cache" else ""
+                        if kind in {"media", "ocr"}:
                             conn.execute(
-                                f"DELETE FROM {target} WHERE {condition}sha256 IN "
+                                "DELETE FROM ocr_cache WHERE state='failed' AND sha256 IN "
                                 "(SELECT sha256 FROM media_refs WHERE chat_id=?)",
                                 (chat_id,),
+                            )
+                        failure_space = None
+                        if kind == "images" and self.media.clip:
+                            failure_space = self.media.clip.space_id
+                        elif kind == "ocr" and self.media.ocr and self.semantic.encoder:
+                            import hashlib
+
+                            from telegram_search.shared.text import serialize
+
+                            failure_space = hashlib.sha256(
+                                serialize(
+                                    ["ocr", self.media.ocr.version, self.semantic.encoder.space_id]
+                                ).encode()
+                            ).hexdigest()
+                        if failure_space is not None or kind == "media":
+                            conn.execute(
+                                "DELETE FROM media_failures WHERE sha256 IN "
+                                "(SELECT sha256 FROM media_refs WHERE chat_id=?)"
+                                + (" AND space_id=?" if failure_space else ""),
+                                (chat_id, failure_space) if failure_space else (chat_id,),
                             )
             else:
                 raise UserError("Неизвестное действие индексации.")
@@ -97,9 +126,10 @@ class ChatIndexing:
                 first = not service.status()["enabled"]
                 service.prepare(**options)
             else:
-                service, column = self.media, "media_paused"
+                service = self.media
+                column = "ocr_paused" if kind == "ocr" else "media_paused"
                 state = service.status()
-                first = not state["ocr_enabled"] and not state["images_enabled"]
+                first = not state["ocr_enabled" if kind == "ocr" else "images_enabled"]
                 service.prepare(kind, offline=options.get("offline", False))
             if first:
                 with self.db.connect() as conn:
@@ -118,7 +148,8 @@ class ChatIndexing:
             else:
                 state = self.media.status()
                 self.media.prepare(kind, offline=options.get("offline", False))
-                if not state["ocr_enabled"] and not state["images_enabled"]:
+                if not state["ocr_enabled" if kind == "ocr" else "images_enabled"]:
                     with self.db.connect() as conn:
-                        conn.execute("UPDATE chats SET media_paused=1 WHERE id<>?", (chat_id,))
-            return self.control(chat_id, "text" if kind == "text" else "media", "resume")
+                        column = "ocr_paused" if kind == "ocr" else "media_paused"
+                        conn.execute(f"UPDATE chats SET {column}=1 WHERE id<>?", (chat_id,))
+            return self.control(chat_id, kind, "resume")

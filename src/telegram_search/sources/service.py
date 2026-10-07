@@ -13,7 +13,7 @@ class WorkspaceService:
         self.db, self.importer, self.semantic, self.media = db, importer, semantic, media
         self.lock = importer.lifecycle_lock
 
-    def sources(self):
+    def sources(self, chat_id=None):
         with self.db.connect() as conn:
             rows = [
                 dict(row)
@@ -21,7 +21,10 @@ class WorkspaceService:
                     "SELECT s.*,c.name AS chat_name,COUNT(r.id) AS media_refs,"
                     "SUM(CASE WHEN r.status='ready' THEN 1 ELSE 0 END) AS ready_refs "
                     "FROM source_roots s JOIN chats c ON c.id=s.chat_id LEFT JOIN media_refs r "
-                    "ON r.source_root_id=s.id GROUP BY s.id ORDER BY s.id"
+                    "ON r.source_root_id=s.id "
+                    + ("WHERE s.chat_id=? " if chat_id else "")
+                    + "GROUP BY s.id ORDER BY s.id",
+                    (chat_id,) if chat_id else (),
                 )
             ]
         for row in rows:
@@ -119,6 +122,38 @@ class WorkspaceService:
 
     def settings(self):
         return asdict(self.db.settings)
+
+    def models(self):
+        from telegram_search.config.model_registry import media_registry, ocr_spec, registry
+        from telegram_search.inference.bundles import BundleStore
+
+        settings = self.db.settings
+        store = BundleStore(self.db.workspace)
+        text = registry()
+        profile = self.semantic.status().get("profile") or "small"
+        ocr_path = (
+            store.path(ocr_spec())
+            if settings.ocr_engine == "paddle"
+            else self.db.workspace / "models" / "ocr"
+        )
+        return {
+            "e5": {
+                "device": settings.model_device("e5"),
+                "search_device": settings.model_device("e5", query=True),
+                "paths": [str(store.path(text[profile]))],
+                "profile_paths": {key: str(store.path(spec)) for key, spec in text.items()},
+            },
+            "clip": {
+                "device": settings.model_device("clip"),
+                "search_device": settings.model_device("clip", query=True),
+                "paths": [str(store.path(spec)) for spec in media_registry().values()],
+            },
+            "ocr": {
+                "device": settings.ocr_device,
+                "engine": settings.ocr_engine,
+                "paths": [str(ocr_path)],
+            },
+        }
 
     def update_settings(self, values):
         display_keys = {"search_result_limit", "display_chunk_size"}
@@ -224,21 +259,58 @@ class WorkspaceService:
         return sizes
 
     def change_device(
-        self, device, gpu_device_id=0, gpu_memory_limit_mib=4096, reindex=False, search_device="cpu"
+        self,
+        device,
+        gpu_device_id=0,
+        gpu_memory_limit_mib=4096,
+        reindex=False,
+        search_device="cpu",
+        *,
+        model=None,
+        ocr_engine=None,
     ):
         """Validate the new device before saving; publish each new space explicitly."""
         from telegram_search.inference.providers import Execution
 
         with self.lock:
             previous = self.db.settings
-            candidate = replace(
-                previous,
-                device=device,
-                search_device=search_device,
-                gpu_device_id=gpu_device_id,
-                gpu_memory_limit_mib=gpu_memory_limit_mib,
+            if model not in {None, "e5", "clip", "ocr"}:
+                raise UserError("Неизвестная модель.")
+            if model == "ocr":
+                engine = ocr_engine or ("paddle" if device != "cpu" else previous.ocr_engine)
+                candidate = replace(previous, ocr_device=device, ocr_engine=engine)
+            elif model:
+                if ocr_engine is not None:
+                    raise UserError("Неизвестные или недоступные настройки.")
+                candidate = replace(
+                    previous, **{f"{model}_device": device, f"{model}_search_device": search_device}
+                )
+            else:
+                candidate = replace(
+                    previous,
+                    device=device,
+                    search_device=search_device,
+                    e5_device=None,
+                    e5_search_device=None,
+                    clip_device=None,
+                    clip_search_device=None,
+                    gpu_device_id=gpu_device_id,
+                    gpu_memory_limit_mib=gpu_memory_limit_mib,
+                )
+            gpu_device_id, gpu_memory_limit_mib = (
+                candidate.gpu_device_id,
+                candidate.gpu_memory_limit_mib,
             )
             candidate.validate()
+            change_ocr = model == "ocr" or (
+                model is None
+                and self.media.ocr is not None
+                and previous.ocr_engine == "paddle"
+                and (
+                    previous.gpu_device_id != candidate.gpu_device_id
+                    or previous.gpu_memory_limit_mib != candidate.gpu_memory_limit_mib
+                )
+            )
             if any(
                 task and task.is_alive()
                 for task in (self.semantic.preparation, self.media.preparation)
@@ -275,15 +347,16 @@ class WorkspaceService:
                 raise UserError(
                     "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
                 ) from exc
-            old_encoder, old_clip = self.semantic.encoder, self.media.clip
-            new_encoder = new_clip = None
+            old_encoder = self.semantic.encoder if model in {None, "e5"} else None
+            old_clip = self.media.clip if model in {None, "clip"} else None
+            new_encoder = new_clip = new_ocr = None
             saved = False
             try:
                 if old_encoder:
                     old_encoder.suspend()
                 if old_clip:
                     old_clip.unload()
-                if active and active["profile"]:
+                if active and active["profile"] and model in {None, "e5"}:
                     new_encoder = self.semantic._new_encoder(active["profile"], candidate)
                     try:
                         new_encoder.adopt_space(active["manifest_json"])
@@ -306,17 +379,45 @@ class WorkspaceService:
                             "Подтвердите перестроение семантических индексов при смене устройства."
                         )
                     new_clip.check_contract()
+                if change_ocr:
+                    new_ocr = self.media._new_ocr(candidate)
+                    if self.media.ocr and candidate.ocr_engine == previous.ocr_engine:
+                        new_ocr.verify()
+                    else:
+                        try:
+                            new_ocr.verify()
+                        except UserError:
+                            new_ocr = None  # Save the selection; prepare its pinned model next.
+                    if new_ocr and hasattr(new_ocr, "check_contract"):
+                        new_ocr.check_contract()
+                    if self.media.ocr:
+                        # Clean up before publishing durable settings or SQLite changes.
+                        self.media.ocr.unload()
                 candidate.save(self.db.workspace)
                 saved = True
-                self.db.settings = candidate
+
+                def save_ocr(conn):
+                    conn.execute(
+                        "UPDATE media_state SET ocr_enabled=?,error=NULL WHERE id=1",
+                        (int(new_ocr is not None),),
+                    )
+
                 if new_encoder:
                     self.semantic.activate(
                         new_encoder,
                         reindex=reindex and new_encoder.space_id != active["active_space_id"],
+                        before_commit=save_ocr if change_ocr else None,
                     )
+                elif change_ocr:
+                    with self.db.connect() as conn:
+                        save_ocr(conn)
+                # No model pointer is published until all SQLite changes commit.
+                self.db.settings = candidate
                 self.semantic.query_cache.clear()
                 if new_clip:
                     self.media.clip = new_clip
+                if change_ocr:
+                    self.media.ocr = new_ocr
             except Exception:
                 if saved:
                     previous.save(self.db.workspace)
@@ -325,17 +426,20 @@ class WorkspaceService:
                     new_encoder.unload()
                 if new_clip and new_clip is not self.media.clip:
                     new_clip.unload()
+                if new_ocr and new_ocr is not self.media.ocr:
+                    new_ocr.unload()
                 raise
             finally:
                 if old_encoder and self.semantic.encoder is old_encoder:
                     old_encoder.resume()
         self.semantic.wake.set()
         self.media.wake.set()
-        runtime = new_encoder or new_clip
+        runtime = new_encoder or new_clip or new_ocr
         return {
             "settings": self.settings(),
-            "execution": (runtime.execution if runtime else execution).info(),
-            "query_execution": (runtime.query_execution if runtime else query_execution).info(),
+            "execution": getattr(runtime, "execution", execution).info(),
+            "query_execution": (getattr(runtime, "query_execution", query_execution)).info(),
+            **({"model": self.models()[model]} if model else {}),
         }
 
     def deletion_estimate(self, chat_id):

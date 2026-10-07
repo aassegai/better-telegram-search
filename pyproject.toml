@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "better-telegram-search"
-version = "0.3.2"
+version = "0.3.3"
 description = "Local search for Telegram Desktop exports with ONNX CPU and GPU inference"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -34,6 +34,8 @@ semantic = [
 ]
 ocr = [
   "tesserocr>=2.11,<3",
+  "opencv-python-headless>=4.11,<5",
+  "pyclipper>=1.3,<2",
   "cysignals>=1.12.6,<2; sys_platform != 'win32' and python_version >= '3.12'",
 ]
 gpu = [

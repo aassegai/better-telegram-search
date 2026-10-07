@@ -28,6 +28,16 @@ def test_namespace_only_cuda_library_moves_to_runtime_loader_directory():
     ]
 
 
+def test_image_only_bundle_keeps_cv2_and_drops_only_optional_windows_video_plugin():
+    entries = [
+        (r"cv2\cv2.pyd", "cv2.pyd", "EXTENSION"),
+        (r"cv2\opencv_videoio_ffmpeg4140_64.dll", "video.dll", "BINARY"),
+        ("other/ffmpeg.dll", "ffmpeg.dll", "BINARY"),
+        ("cv2/LICENSE-ffmpeg.txt", "license.txt", "DATA"),
+    ]
+    assert layout.windows_image_binaries(entries) == [entries[0], entries[2], entries[3]]
+
+
 def test_conflicting_cuda_library_sources_fail_instead_of_shadowing_each_other():
     with pytest.raises(RuntimeError, match="Conflicting NVIDIA DLL"):
         layout.windows_nvidia_binaries(

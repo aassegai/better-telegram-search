@@ -1,4 +1,4 @@
-# Devices and updates in 0.3.0
+# Devices and updates
 
 Recommended configuration: GPU for background E5/CLIP indexing and CPU for queries.
 Both use pinned FP32 ONNX weights, identical tokenization, pooling, and L2
@@ -6,7 +6,7 @@ normalization; CUDA TF32 is disabled. Devices share one embedding space.
 Changing the model or preprocessing requires rebuilding; changing CPU/GPU does not.
 
 To continue a 0.2.0 database, pause text and media indexing, fully close the app,
-launch 0.3.0 with the same workspace, and select devices. The original space ID,
+launch the current release with the same workspace, and select devices. The original space ID,
 chunk IDs, segment generations, and checkpoint remain intact. Only unfinished
 chunks are encoded; CPU queries can search the combined index.
 
@@ -16,7 +16,21 @@ five idle seconds and CLIP when its image queue is exhausted. This frees model
 memory; powering down a discrete GPU also depends on drivers and other apps and
 has not been measured. E5 reuses one session when devices match. CUDA's memory
 setting limits each session's arena, not total VRAM; it does not apply to CoreML.
-OCR runs on CPU.
+
+Since 0.3.3, E5 and CLIP devices are chosen independently in their settings cards.
+The OCR card offers the existing Tesseract CPU engine or PaddleOCR RU/EN on CPU,
+GPU, or Auto. NVIDIA requires a GPU archive. PaddleOCR downloads about 10 MiB of
+pinned ONNX weights and a dictionary, without Torch or the Paddle framework.
+Detection and recognition use the selected ONNX provider; text lines run in
+microbatches of up to eight, reduced on memory exhaustion. Strict GPU stops on
+session failure; Auto may use CPU. CoreML may run part of a graph on CPU.
+Performance depends on image size and GPU load.
+
+PaddleOCR shares its cache across CPU/GPU and has a separate cache from Tesseract,
+since the models recognize text differently. Changing the PaddleOCR device preserves
+progress; changing OCR models starts that model's own queue, retaining previous
+results. Each chat has an OCR pause independent of CLIP. Pause indexing and wait
+for the current batch to finish before changing a device.
 
 NVIDIA uses separate Windows/Linux x64 builds. The uv CPU/GPU extras are mutually
 exclusive. GPU environments include ONNX Runtime GPU 1.23.2, CUDA 12, and cuDNN 9,

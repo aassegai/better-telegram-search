@@ -379,6 +379,7 @@ def test_model_preparation_interruption_requeues_worker(db, importer, tmp_path):
 def test_activation_commit_failure_keeps_original_encoder(db, importer, tmp_path, monkeypatch):
     _, service, _, _ = setup_index(db, importer, tmp_path)
     old = service.encoder
+    reference = old.encode_text(["поезд"], "query")
     unloaded = []
     old.unload = lambda: unloaded.append(True)
     original = db.connect
@@ -393,7 +394,8 @@ def test_activation_commit_failure_keeps_original_encoder(db, importer, tmp_path
     with pytest.raises(RuntimeError, match="commit failure"):
         service.activate(TestEncoder("other"), reindex=True)
     monkeypatch.setattr(db, "connect", original)
-    assert service.encoder is old and unloaded == []
+    assert service.encoder is old and unloaded == [True]
+    np.testing.assert_array_equal(old.encode_text(["поезд"], "query"), reference)
     with db.connect() as conn:
         assert (
             conn.execute("SELECT active_space_id FROM semantic_state").fetchone()[0] == old.space_id

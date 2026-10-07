@@ -93,9 +93,10 @@ test('search settings preserve edits and translate errors outside the settings d
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toHaveAccessibleName('Settings and diagnostics');
-  for (const title of ['Sources', 'Disk usage']) {
+  for (const title of ['Disk usage']) {
     await expect(dialog.getByRole('heading', { name: title, exact: true })).toBeVisible();
   }
+  await expect(dialog.getByText('Sources', { exact: true })).toHaveCount(0);
   await expect(dialog.locator('.index-card')).toHaveCount(0);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.route('**/api/settings', async route => {

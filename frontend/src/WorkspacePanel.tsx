@@ -6,8 +6,8 @@ import { useDialogOperation } from './useDialogOperation';
 import IndexCard from './IndexCard';
 import OcrIndexCard from './OcrIndexCard';
 import type { Mutation } from './IndexCard';
+import DevicePanel from './DevicePanel';
 
-type Source = { id: number; chat_name: string; path: string; available: boolean; media_refs: number; ready_refs: number };
 type Sizes = { database_bytes: number; vectors_bytes: number; models_bytes: number; cache_bytes: number; reclaim_estimate_bytes: number; estimate_note: string };
 const resources = [
   ['cpu_threads', 'Потоков CPU', 1, 32], ['memory_limit_mib', 'Порог RAM для медиа (МиБ)', 1024, 65536],
@@ -19,17 +19,16 @@ const mib = (value: number) => t("{p0} МиБ", { p0: (value / 1024 ** 2).toFixe
 
 export default function WorkspacePanel({ media, onMediaChange, chatId, indexing = false, onStart, onEnd, pending, onModels }: Mutation & { media: MediaStatus | null; onMediaChange: (value: MediaStatus) => void; chatId?: string; indexing?: boolean; onModels?: () => void }) {
   const [settings, setSettings] = useState<Record<string, number> | null>(null);
-  const [sources, setSources] = useState<Source[]>([]);
-  const [paths, setPaths] = useState<Record<number, string>>({});
   const [sizes, setSizes] = useState<Sizes | null>(null);
   const [offline, setOffline] = useState(false);
+  const [ocrOffline, setOcrOffline] = useState(false);
   const [notice, setNotice] = useState('');
   const op = useDialogOperation();
   const busy = op.busy || Boolean(pending);
   useEffect(() => {
     let alive = true;
-    Promise.all([api<Record<string, number>>('/api/settings'), api<Source[]>('/api/sources'), api<Sizes>('/api/storage')])
-      .then(([settings, sources, sizes]) => { if (alive) { setSettings(settings); setSources(sources); setSizes(sizes); } })
+    Promise.all([api<Record<string, number>>('/api/settings'), api<Sizes>('/api/storage')])
+      .then(([settings, sizes]) => { if (alive) { setSettings(settings); setSizes(sizes); } })
       .catch(error => { if (alive) setNotice(error instanceof Error ? error.message : t('Не удалось прочитать настройки.')); });
     return () => { alive = false; };
   }, []);
@@ -37,14 +36,14 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
   const prepare = (kind: 'ocr' | 'images') => void op.run(async current => {
     onStart?.();
     try {
-      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/media/prepare` : '/api/media-index/prepare', { method: 'POST', body: JSON.stringify({ kind, offline }) });
+      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/media/prepare` : '/api/media-index/prepare', { method: 'POST', body: JSON.stringify({ kind, offline: kind === 'ocr' ? ocrOffline : offline }) });
       if (current()) accept(value);
     } finally { onEnd?.(); }
   });
-  const control = (action: string) => void op.run(async current => {
+  const control = (action: string, kind: 'images' | 'ocr' = 'images') => void op.run(async current => {
     onStart?.();
     try {
-      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/media/${action}` : `/api/media-index/${action}`, { method: 'POST' });
+      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/${kind}/${action}` : `/api/${kind === 'ocr' ? 'ocr-index' : 'image-index'}/${action}`, { method: 'POST' });
       if (current()) accept(value);
     } finally { onEnd?.(); }
   });
@@ -54,14 +53,10 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
     const value = await api<Record<string, number>>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) });
     if (current()) { setSettings(value); setNotice(t('Настройки сохранены. Изменение размера OCR обновляет версию кэша.')); }
   });
-  const checkSource = (source: Source, relink: boolean) => void op.run(async current => {
-    const result = await api<{ counts: Record<string, number> }>(`/api/sources/${source.id}/${relink ? 'relink' : 'check'}`, {
-      method: 'POST', ...(relink ? { body: JSON.stringify({ path: paths[source.id] || source.path, expected_path: source.path }) } : {}),
-    });
-    const values = await api<Source[]>('/api/sources');
-    if (current()) { setSources(values); setNotice(t("Проверено: {p0} доступно, {p1} отсутствует, {p2} изменилось. Изменённые и непроверенные файлы требуют повторного импорта.", { p0: result.counts.ready, p1: result.counts.missing, p2: result.counts.changed })); }
-  });
   const preparing = media?.preparation_state === 'preparing';
+  const refreshDevice = async (current: () => boolean) => {
+    const value = await api<MediaStatus>('/api/media-index'); if (current()) onMediaChange(value);
+  };
   return <section className="workspace-panel">
     {indexing && <>
       {media && <IndexCard title={t('Изображения')} model="CLIP" ready={media.images_ready} total={media.total_photos}
@@ -73,16 +68,21 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         {media.missing_refs > 0 && <p className="warning">{t('Недоступных фотографий в источниках: ')}{media.missing_refs}</p>}
         {(media.images_failed ?? 0) > 0 && <p className="warning">{t('Фотографий с ошибкой: {p0}', { p0: media.images_failed ?? 0 })}</p>}
       </IndexCard>}
-      {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={control} />}
+      {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={action => control(action, 'ocr')} />}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>
     </>}
     {!indexing && <>
-    <section className="model-setup"><h3>{t('Модели изображений · CLIP и OCR')}</h3>
+    <section className="model-setup"><h3>{t('Модель изображений · CLIP')}</h3>
+      <DevicePanel model="clip" onChange={refreshDevice} />
       <label><input type="checkbox" checked={offline} disabled={busy || preparing} onChange={event => setOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>
-      <div className="job-actions"><button disabled={busy || preparing || !media?.ocr_runtime_installed} onClick={() => prepare('ocr')}>{t('Подготовить OCR')}</button>
-      <button disabled={busy || preparing} onClick={() => prepare('images')}>{t('Подготовить CLIP')}</button></div>
+      <button disabled={busy || preparing} onClick={() => prepare('images')}>{t('Подготовить CLIP')}</button>
       {preparing && <p role="status">{t('Подготавливаем…')}</p>}
       {media?.error && <p className="warning" role="alert">{t(media.error)}</p>}
+    </section>
+    <section className="model-setup"><h3>{t('Модель распознавания · OCR')}</h3>
+      <DevicePanel model="ocr" onChange={refreshDevice} />
+      <label><input type="checkbox" checked={ocrOffline} disabled={busy || preparing} onChange={event => setOcrOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>
+      <button disabled={busy || preparing || !media?.ocr_runtime_installed} onClick={() => prepare('ocr')}>{t('Подготовить OCR')}</button>
     </section>
       <details className="index-advanced"><summary>{t('Общие ресурсы индексации')}</summary>
     <h3>{t("Общие ресурсы индексации")}</h3>
@@ -91,11 +91,6 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
     {settings && <div className="resource-fields">{resources.map(([key, label, min, max]) => <label key={key}>{t(label)}<input aria-label={t(label)} type="number" min={min} max={max} step="1" value={settings[key]} disabled={busy} onChange={event => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}</div>}
     <button disabled={!settings || op.busy || preparing} onClick={save}>{t("Сохранить ресурсы")}</button>
     </details>
-    <h3>{t("Источники")}</h3>
-    {sources.map(source => <div className="source-row" key={source.id}><strong>{source.chat_name}</strong><p>{source.available ? t('Папка доступна') : t('Папка отсутствует')}{t(" · вложений: ")}{source.ready_refs || 0} / {source.media_refs}</p>
-      <label>{t("Папка источника")}<input aria-label={t("Папка источника {p0}", { p0: source.chat_name })} value={paths[source.id] ?? source.path} disabled={busy} onChange={event => setPaths({ ...paths, [source.id]: event.target.value })} /></label>
-      <div className="job-actions"><button disabled={busy} onClick={() => checkSource(source, false)}>{t("Проверить файлы")}</button><button disabled={busy || !paths[source.id] || paths[source.id] === source.path} onClick={() => checkSource(source, true)}>{t("Привязать новую папку")}</button></div>
-    </div>)}
     <h3>{t("Место на диске")}</h3>
     {sizes && <><dl className="diagnostics"><dt>{t("База")}</dt><dd>{mib(sizes.database_bytes)}</dd><dt>{t("Векторы")}</dt><dd>{mib(sizes.vectors_bytes)}</dd><dt>{t("Модели и словари")}</dt><dd>{mib(sizes.models_bytes)}</dd><dt>{t("Кэш")}</dt><dd>{mib(sizes.cache_bytes)}</dd><dt>{t("Можно освободить в SQLite")}</dt><dd>{mib(sizes.reclaim_estimate_bytes)}</dd></dl><p>{t(sizes.estimate_note)}</p></>}
     <div className="job-actions"><button disabled={busy || !sizes} onClick={() => void op.run(async current => { const value = await api<Sizes>('/api/storage'); if (current()) setSizes(value); })}>{t("Обновить сведения о месте")}</button>

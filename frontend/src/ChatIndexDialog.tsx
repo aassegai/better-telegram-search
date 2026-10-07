@@ -4,6 +4,7 @@ import { t } from './i18n';
 import type { Chat, MediaStatus, SemanticStatus } from './types';
 import TextIndexPanel from './TextIndexPanel';
 import WorkspacePanel from './WorkspacePanel';
+import SourcePanel from './SourcePanel';
 
 type Status = { semantic: SemanticStatus; media: MediaStatus };
 
@@ -40,5 +41,6 @@ export default function ChatIndexDialog({ chat, onClose, onModels }: { chat: Cha
       onChange={semantic => setStatus(value => value ? { ...value, semantic } : value)} />
     <WorkspacePanel onModels={onModels} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} indexing media={status?.media ?? null}
       onMediaChange={media => setStatus(value => value ? { ...value, media } : value)} />
+    <SourcePanel chatId={chat.id} />
   </section>;
 }

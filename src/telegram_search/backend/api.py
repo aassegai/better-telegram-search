@@ -74,6 +74,12 @@ class DeviceRequest(BaseModel):
     reindex: bool = False
 
 
+class ModelDeviceRequest(BaseModel):
+    device: Literal["cpu", "auto", "gpu"]
+    search_device: Literal["cpu", "auto", "gpu"] = "cpu"
+    ocr_engine: Literal["tesseract", "paddle"] | None = None
+
+
 class UpdateCheckRequest(BaseModel):
     variant: Literal["cpu", "gpu"] | None = None
 
@@ -289,6 +295,22 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     def change_device(body: DeviceRequest):
         return app.state.workspace.change_device(**body.model_dump())
 
+    @app.get("/api/models")
+    def model_settings():
+        return app.state.workspace.models()
+
+    @app.post("/api/models/{model}/device")
+    def model_device(model: Literal["e5", "clip", "ocr"], body: ModelDeviceRequest):
+        return app.state.workspace.change_device(model=model, **body.model_dump())
+
+    @app.post("/api/ocr-index/{action}")
+    def ocr_control(action: Literal["pause", "resume", "retry"]):
+        return app.state.media.control(action, kind="ocr")
+
+    @app.post("/api/image-index/{action}")
+    def image_control(action: Literal["pause", "resume", "retry"]):
+        return app.state.media.control(action, kind="images")
+
     @app.get("/api/updates")
     def update_status():
         return app.state.updates.status()
@@ -325,8 +347,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         return {"confirmed": True}
 
     @app.get("/api/sources")
-    def sources():
-        return app.state.workspace.sources()
+    def sources(chat_id: str | None = None):
+        return app.state.workspace.sources(chat_id)
 
     @app.post("/api/sources/{source_id}/check")
     def check_source(source_id: int):
@@ -376,7 +398,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @app.post("/api/chats/{chat_id}/index/{kind}/{action}")
     def chat_index_control(
         chat_id: str,
-        kind: Literal["text", "media"],
+        kind: Literal["text", "media", "images", "ocr"],
         action: Literal["pause", "resume", "retry", "compact"],
     ):
         return app.state.chat_indexing.control(chat_id, kind, action)

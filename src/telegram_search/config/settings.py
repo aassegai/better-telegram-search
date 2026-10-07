@@ -12,6 +12,12 @@ class Settings:
     version: int = 1
     device: str = "cpu"
     search_device: str = "cpu"
+    e5_device: str | None = None
+    e5_search_device: str | None = None
+    clip_device: str | None = None
+    clip_search_device: str | None = None
+    ocr_device: str = "cpu"
+    ocr_engine: str = "tesseract"
     gpu_device_id: int = 0
     gpu_memory_limit_mib: int = 4096
     search_backend: str = "fts5_messages"
@@ -29,6 +35,12 @@ class Settings:
     memory_limit_mib: int = 4096
     search_result_limit: int = 20
     display_chunk_size: int = 10
+
+    def model_device(self, model, *, query=False):
+        if model == "ocr":
+            return self.ocr_device
+        suffix = "search_device" if query else "device"
+        return getattr(self, f"{model}_{suffix}") or getattr(self, suffix)
 
     @classmethod
     def load(cls, workspace: Path) -> "Settings":
@@ -48,6 +60,20 @@ class Settings:
 
     def validate(self) -> None:
         settings = self
+        for name in ("e5_device", "e5_search_device", "clip_device", "clip_search_device"):
+            value = getattr(settings, name)
+            if value is not None and (
+                type(value) is not str or value not in {"cpu", "auto", "gpu"}
+            ):
+                raise UserError("Недопустимый профиль устройства или версия настроек.")
+        if (
+            type(settings.ocr_device) is not str
+            or settings.ocr_device not in {"cpu", "auto", "gpu"}
+            or type(settings.ocr_engine) is not str
+            or settings.ocr_engine not in {"tesseract", "paddle"}
+            or (settings.ocr_engine == "tesseract" and settings.ocr_device != "cpu")
+        ):
+            raise UserError("Tesseract работает на CPU. Для GPU выберите PaddleOCR.")
         if (
             type(settings.version) is not int
             or settings.version != 1

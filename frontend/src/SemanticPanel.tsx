@@ -4,6 +4,7 @@ import { api } from './api';
 import type { SemanticStatus } from './types';
 import { useDialogOperation } from './useDialogOperation';
 import type { Mutation } from './IndexCard';
+import DevicePanel from './DevicePanel';
 
 type Result = SemanticStatus | { semantic: SemanticStatus };
 export default function SemanticPanel({ status, onChange, chatId, onStart, onEnd, pending }: Mutation & {
@@ -37,6 +38,9 @@ export default function SemanticPanel({ status, onChange, chatId, onStart, onEnd
   if (!status) return <p>{t('Проверяем…')}</p>;
   return <section className="model-setup semantic-panel">
     <h3>{t('Модель текста · E5')}</h3>
+    <DevicePanel model="e5" profile={profile} onChange={async current => {
+      const value = await api<SemanticStatus>('/api/semantic'); if (current()) onChange(value);
+    }} />
     <p className="baseline-note">{t('Модели общие для всех диалогов. Прогресс, пауза и батчи находятся в меню диалога.')}</p>
     {status.backend?.warning && <p className="warning">{t(status.backend.warning)}</p>}
     {preparing && <div className="model-download"><progress aria-label={t('Загрузка модели')} value={status.download_completed_bytes} max={Math.max(1, status.download_total_bytes)} />

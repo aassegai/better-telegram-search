@@ -395,5 +395,14 @@
   "Распознавание завершено.": "Recognition completed.",
   "Оценка появится после первых изображений.": "The estimate will appear after the first images.",
   "OCR по смыслу: {p0} / {p1} с текстом": "Semantic OCR: {p0} / {p1} containing text",
-  "Прогресс смысловой индексации OCR": "Semantic OCR indexing progress"
+  "Прогресс смысловой индексации OCR": "Semantic OCR indexing progress",
+  "Устройства {p0}": "{p0} devices",
+  "Модель OCR": "OCR model",
+  "Устройство распознавания": "Recognition device",
+  "PaddleOCR использует общий кэш на CPU и GPU. При смене OCR-модели распознавание выполняется заново; прежний кэш сохраняется.": "PaddleOCR shares its cache between CPU and GPU. Changing the OCR model starts recognition for that model; the previous cache is retained.",
+  "Папка загрузки модели": "Model download folder",
+  "Модель изображений · CLIP": "Image model · CLIP",
+  "Модель распознавания · OCR": "Recognition model · OCR",
+  "Выполнение поиска": "Search progress",
+  "Тёмная тема": "Dark theme"
 }

@@ -26,6 +26,7 @@ export type Hit = {
 export type MediaStatus = {
   batch_size?: number;
   ocr_enabled: number; images_enabled: number; paused: number; running: boolean;
+  ocr_paused?: boolean | number; ocr_engine?: 'tesseract' | 'paddle'; ocr_backend?: { device: string; provider: string };
   preparation_state: string; error: string | null; resource_error: string | null;
   total_photos: number; ocr_ready: number; ocr_failed: number; ocr_dense_ready: number;
   ocr_nonempty_ready?: number; ocr_dense_available?: boolean;

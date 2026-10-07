@@ -130,6 +130,14 @@ def main():
             ocr.unload()
         if process.poll() is None:
             raise RuntimeError("Native OCR worker did not stop")
+        from telegram_search.inference.ocr_pipeline import decode_ctc, detected_boxes
+
+        blank = np.zeros((32, 32), dtype=np.float32)
+        if detected_boxes(blank, 32, 32):
+            raise RuntimeError("Native ONNX OCR detection postprocessing")
+        decoded, score = decode_ctc(np.eye(3, dtype=np.float32), ["", "A", "Б"])
+        if decoded != "AБ" or score != 1:
+            raise RuntimeError("Native ONNX OCR CTC decoding")
         # Free Lance handles before temporary-directory cleanup (important on Windows).
         del vectors
         _update_check(db.workspace, root)
@@ -144,6 +152,7 @@ def main():
                 "safetensors": True,
                 "ocr_rus_eng": True,
                 "ocr_worker_reuse": True,
+                "onnx_ocr_runtime": True,
                 "frontend_http": True,
                 "csrf": True,
                 "torch_absent": True,

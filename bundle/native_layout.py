@@ -3,6 +3,20 @@
 from pathlib import PureWindowsPath
 
 
+def windows_image_binaries(entries):
+    # OpenCV's optional video-I/O plugin is unrelated to still-image OCR and
+    # costs ~12 MiB in the Windows ZIP, close to GitHub's 2 GiB asset limit.
+    return [
+        entry
+        for entry in entries
+        if not (
+            entry[2] == "BINARY"
+            and PureWindowsPath(entry[0]).name.casefold().startswith("opencv_videoio_ffmpeg")
+            and PureWindowsPath(entry[0]).suffix.casefold() == ".dll"
+        )
+    ]
+
+
 def windows_nvidia_binaries(entries, names):
     names = {name.casefold() for name in names}
     sources = {}

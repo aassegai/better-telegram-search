@@ -25,7 +25,7 @@ def recognize(data, max_edge, api):
     return {"text": text, "confidence": float(api.MeanTextConf())}
 
 
-def serve(api, max_edge):
+def serve(api, max_edge, *, onnx=False):
     while header := sys.stdin.buffer.readline(16):
         if not header.endswith(b"\n") or not header[:-1].isdigit():
             raise ValueError("frame header")
@@ -36,7 +36,7 @@ def serve(api, max_edge):
         if len(data) != length:
             raise ValueError("truncated image")
         try:
-            value = recognize(data, max_edge, api)
+            value = api.recognize(data) if onnx else recognize(data, max_edge, api)
         except Exception:
             # Never emit file names, recognized content, or native tracebacks.
             value = {"error": True}
@@ -44,9 +44,27 @@ def serve(api, max_edge):
 
 
 def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "--onnx":
+        from pathlib import Path
+
+        from telegram_search.inference.ocr_pipeline import OnnxOcrPipeline
+
+        if len(args) != 8 or args[-1] != "--server":
+            raise ValueError("worker arguments")
+        Image.MAX_IMAGE_PIXELS = 25_000_000
+        engine = OnnxOcrPipeline(
+            Path(args[1]),
+            max_edge=int(args[2]),
+            device=args[3],
+            device_id=int(args[4]),
+            memory_limit_mib=int(args[5]),
+            threads=int(args[6]),
+        )
+        serve(engine, int(args[2]), onnx=True)
+        return
     import tesserocr
 
-    args = sys.argv[1:] if argv is None else argv
     if args == ["--runtime"]:
         print(tesserocr.tesseract_version())
         return

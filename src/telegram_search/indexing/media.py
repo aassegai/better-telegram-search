@@ -47,6 +47,10 @@ class MediaService:
         from telegram_search.inference.ocr import OcrEngine
 
         settings = settings or self.db.settings
+        if settings.ocr_engine == "paddle":
+            from telegram_search.inference.ocr_onnx import OnnxOcrEngine
+
+            return OnnxOcrEngine(self.db.workspace, settings)
         return OcrEngine(
             self.db.workspace,
             threads=settings.cpu_threads,
@@ -66,8 +70,8 @@ class MediaService:
         encoder = ClipEncoder(
             self.db.workspace,
             threads=settings.cpu_threads,
-            device=settings.device,
-            search_device=settings.search_device,
+            device=settings.model_device("clip"),
+            search_device=settings.model_device("clip", query=True),
             gpu_device_id=settings.gpu_device_id,
             gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
         )
@@ -162,13 +166,34 @@ class MediaService:
         finally:
             self.wake.set()
 
-    def control(self, action):
+    def control(self, action, *, kind="media"):
+        columns = {
+            "media": ("paused", "ocr_paused"),
+            "images": ("paused",),
+            "ocr": ("ocr_paused",),
+        }[kind]
         with self.lock, self.db.connect() as conn:
             if action in {"pause", "resume"}:
-                conn.execute("UPDATE media_state SET paused=? WHERE id=1", (action == "pause",))
+                for column in columns:
+                    conn.execute(
+                        f"UPDATE media_state SET {column}=? WHERE id=1", (action == "pause",)
+                    )
             elif action == "retry":
-                conn.execute("DELETE FROM ocr_cache WHERE state='failed'")
-                conn.execute("DELETE FROM media_failures")
+                if kind in {"ocr", "media"}:
+                    conn.execute("DELETE FROM ocr_cache WHERE state='failed'")
+                if kind == "media":
+                    conn.execute("DELETE FROM media_failures")
+                elif kind == "images" and self.clip:
+                    conn.execute(
+                        "DELETE FROM media_failures WHERE space_id=?", (self.clip.space_id,)
+                    )
+                elif kind == "ocr" and self.ocr and self.semantic.encoder:
+                    identity = hashlib.sha256(
+                        serialize(
+                            ["ocr", self.ocr.version, self.semantic.encoder.space_id]
+                        ).encode()
+                    ).hexdigest()
+                    conn.execute("DELETE FROM media_failures WHERE space_id=?", (identity,))
                 conn.execute("UPDATE media_state SET error=NULL WHERE id=1")
             else:
                 raise UserError("Неизвестное действие медиа.")
@@ -233,10 +258,13 @@ class MediaService:
                 (self.clip.space_id if self.clip else "", *args),
             ).fetchone()[0]
             if chat_id is not None:
-                chat = conn.execute("SELECT media_paused FROM chats WHERE id=?", args).fetchone()
+                chat = conn.execute(
+                    "SELECT media_paused,ocr_paused FROM chats WHERE id=?", args
+                ).fetchone()
                 if chat is None:
                     raise UserError("Диалог не найден.")
                 state["paused"] = bool(state["paused"] or chat[0])
+                state["ocr_paused"] = bool(state["ocr_paused"] or chat[1])
         return {
             **state,
             "total_photos": total,
@@ -256,12 +284,23 @@ class MediaService:
             "missing_refs": missing,
             "ocr_available": self.ocr is not None,
             "images_available": self.clip is not None,
-            "ocr_runtime_installed": importlib.util.find_spec("tesserocr") is not None,
+            "ocr_runtime_installed": all(
+                importlib.util.find_spec(name)
+                for name in (
+                    ("onnxruntime", "cv2", "pyclipper")
+                    if self.db.settings.ocr_engine == "paddle"
+                    else ("tesserocr",)
+                )
+            ),
+            "ocr_engine": self.db.settings.ocr_engine,
+            "ocr_backend": self.ocr.execution.info()
+            if self.ocr and hasattr(self.ocr, "execution")
+            else {"device": "cpu", "provider": "tesseract"},
             "running": self.running,
             "resource_error": self.resource_error,
             "device": self.clip.execution.info()["device"]
             if self.clip
-            else self.db.settings.device,
+            else self.db.settings.model_device("clip"),
             "backend": self.clip.execution.info() if self.clip else None,
             "query_backend": self.clip.query_execution.info()
             if self.clip and hasattr(self.clip, "query_execution")
@@ -287,14 +326,17 @@ class MediaService:
                 continue
         raise UserError("Файл недоступен или изменился. Проверьте источник и повторите импорт.")
 
-    def _current(self, conn, sha):
-        state = conn.execute("SELECT paused FROM media_state WHERE id=1").fetchone()
+    def _current(self, conn, sha, *, kind="images"):
+        global_column, chat_column = (
+            ("ocr_paused", "ocr_paused") if kind == "ocr" else ("paused", "media_paused")
+        )
+        state = conn.execute(f"SELECT {global_column} FROM media_state WHERE id=1").fetchone()
         return (
             not self.stop.is_set()
             and not state[0]
             and conn.execute(
                 "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id WHERE r.sha256=? "
-                "AND c.media_paused=0 AND r.status='ready' AND r.kind='photo' LIMIT 1",
+                f"AND c.{chat_column}=0 AND r.status='ready' AND r.kind='photo' LIMIT 1",
                 (sha,),
             ).fetchone()
             is not None
@@ -305,9 +347,13 @@ class MediaService:
             return False
         engine = self.ocr
         with self.db.connect() as conn:
+            if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
+                if hasattr(engine, "unload"):
+                    engine.unload()
+                return False
             row = conn.execute(
                 "SELECT r.sha256 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
-                "WHERE c.media_paused=0 AND r.kind='photo' "
+                "WHERE c.ocr_paused=0 AND r.kind='photo' "
                 "AND r.status='ready' AND NOT EXISTS (SELECT 1 FROM ocr_cache o "
                 "WHERE o.sha256=r.sha256 AND o.version=?) LIMIT 1",
                 (engine.version,),
@@ -327,7 +373,7 @@ class MediaService:
             state, error = "failed", str(exc)
         published = False
         with self.lock, self.db.connect() as conn:
-            if self.ocr is engine and self._current(conn, sha):
+            if self.ocr is engine and self._current(conn, sha, kind="ocr"):
                 conn.execute(
                     "INSERT INTO ocr_cache(sha256,version,state,text,"
                     "text_normalized,confidence,error) VALUES(?,?,?,?,?,?,?) "
@@ -376,13 +422,15 @@ class MediaService:
 
     def _loop(self):
         while not self.stop.is_set():
-            paused = False
+            paused = ocr_paused = False
             try:
                 self.cleanup()
                 with self.lock, self.db.connect() as conn:
-                    paused = conn.execute("SELECT paused FROM media_state WHERE id=1").fetchone()[0]
+                    paused, ocr_paused = conn.execute(
+                        "SELECT paused,ocr_paused FROM media_state WHERE id=1"
+                    ).fetchone()
                     busy = self.preparation and self.preparation.is_alive()
-                    self.running = not paused and not busy
+                    self.running = not (paused and ocr_paused) and not busy
                 if self.running:
                     if (
                         psutil.Process().memory_info().rss
@@ -404,7 +452,7 @@ class MediaService:
                 self.running = False
             if self.clip and paused and hasattr(self.clip, "unload_index"):
                 self.clip.unload_index()
-            if self.ocr and (paused or self.resource_error) and hasattr(self.ocr, "unload"):
+            if self.ocr and (ocr_paused or self.resource_error) and hasattr(self.ocr, "unload"):
                 self.ocr.unload()
             if (
                 self.clip
@@ -501,17 +549,19 @@ class MediaService:
             serialize(["ocr", engine.version, encoder.space_id]).encode()
         ).hexdigest()
         with self.db.connect() as conn:
+            if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
+                return False
             if conn.execute("SELECT paused FROM semantic_state WHERE id=1").fetchone()[0]:
                 return False
             row = conn.execute(
                 "SELECT o.sha256,o.text,(SELECT c.text_batch FROM media_refs r JOIN chats c "
                 "ON c.id=r.chat_id WHERE r.sha256=o.sha256 AND r.status='ready' "
-                "AND r.kind='photo' AND c.media_paused=0 AND c.text_paused=0 "
+                "AND r.kind='photo' AND c.ocr_paused=0 AND c.text_paused=0 "
                 "ORDER BY c.id LIMIT 1) AS text_batch "
                 "FROM ocr_cache o WHERE o.version=? AND o.state='ready' "
                 "AND o.text<>'' AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 "
                 "AND r.kind='photo' AND r.status='ready' AND EXISTS "
-                "(SELECT 1 FROM chats c WHERE c.id=r.chat_id AND c.media_paused=0 "
+                "(SELECT 1 FROM chats c WHERE c.id=r.chat_id AND c.ocr_paused=0 "
                 "AND c.text_paused=0)) AND NOT EXISTS "
                 "(SELECT 1 FROM media_embeddings e WHERE e.sha256=o.sha256 AND e.kind='ocr' "
                 "AND e.space_id=? AND e.ocr_version=?) AND NOT EXISTS "
@@ -596,7 +646,10 @@ class MediaService:
                 current = self._ocr_guard(conn, row["sha256"], encoder, engine)
             if current:
                 self._failure(
-                    row["sha256"], failure_identity, "Не удалось построить смысловой OCR-индекс."
+                    row["sha256"],
+                    failure_identity,
+                    "Не удалось построить смысловой OCR-индекс.",
+                    kind="ocr",
                 )
         finally:
             with self.lock:
@@ -610,7 +663,7 @@ class MediaService:
         return (
             self.semantic.encoder is encoder
             and self.ocr is engine
-            and self._current(conn, sha)
+            and self._current(conn, sha, kind="ocr")
             and not self.semantic.preparing_encoder.is_set()
             and state["enabled"]
             and not state["paused"]
@@ -618,15 +671,15 @@ class MediaService:
             and conn.execute(
                 "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
                 "WHERE r.sha256=? AND r.kind='photo' AND r.status='ready' "
-                "AND c.media_paused=0 AND c.text_paused=0 LIMIT 1",
+                "AND c.ocr_paused=0 AND c.text_paused=0 LIMIT 1",
                 (sha,),
             ).fetchone()
             is not None
         )
 
-    def _failure(self, sha, space, error):
+    def _failure(self, sha, space, error, *, kind="images"):
         with self.lock, self.db.connect() as conn:
-            if self._current(conn, sha):
+            if self._current(conn, sha, kind=kind):
                 conn.execute(
                     "INSERT INTO media_failures VALUES(?,?,?) ON CONFLICT DO NOTHING",
                     (sha, space, error),

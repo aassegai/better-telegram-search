@@ -50,6 +50,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
-      - run: uv sync --locked --extra semantic
-      - run: uv run --no-sync pytest tests/test_chunks.py tests/test_inference.py tests/test_semantic.py
+      - run: uv sync --locked --extra semantic --extra ocr
+      - run: uv run --no-sync pytest tests/test_chunks.py tests/test_inference.py tests/test_semantic.py tests/test_ocr_onnx.py tests/test_model_devices.py
       - run: uv run --no-sync python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('sentence_transformers') is None"

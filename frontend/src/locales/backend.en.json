@@ -260,5 +260,8 @@
   "Фотография больше 32 МиБ.": "The photo exceeds 32 MiB.",
   "Число CPU-потоков должно быть от 1 до 32.": "The number of CPU threads must be between 1 and 32.",
   "Эта задача уже завершена.": "This task has already finished.",
-  "Эту задачу нельзя возобновить в текущем состоянии.": "This task cannot be resumed in its current state."
+  "Эту задачу нельзя возобновить в текущем состоянии.": "This task cannot be resumed in its current state.",
+  "Tesseract работает на CPU. Для GPU выберите PaddleOCR.": "Tesseract runs on CPU. Select PaddleOCR for GPU recognition.",
+  "Установите OCR runtime: uv sync --locked --extra semantic --extra ocr.": "Install the OCR runtime: uv sync --locked --extra semantic --extra ocr.",
+  "Неизвестная модель.": "Unknown model."
 }

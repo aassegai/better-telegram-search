@@ -2,8 +2,8 @@
 
 Each build includes Python, the interface, ONNX Runtime, LanceDB, tokenizers, and
 Tesseract with Russian and English dictionaries. You do not need Python, uv,
-Node.js, or a system Tesseract installation to run it. Download E5 and CLIP from
-settings; their model revisions are pinned. OCR preparation works offline with
+Node.js, or a system Tesseract installation to run it. Download E5, CLIP, and PaddleOCR from
+settings; their model revisions are pinned. Tesseract OCR preparation works offline with
 the bundled dictionaries. Conversations and search indexes are not included.
 
 | Platform | Architecture | Minimum OS | Format |
@@ -14,7 +14,7 @@ the bundled dictionaries. Conversations and search indexes are not included.
 | macOS | Apple Silicon | macOS 15 | ZIP containing .app |
 | macOS | Intel | macOS 15 | ZIP containing .app |
 
-Each artifact's JSON report confirms twelve successful native checks. NVIDIA builds
+Each artifact's JSON report confirms successful native checks. NVIDIA builds
 also verify bundled CUDA libraries. Windows/Linux x64 offer `-gpu` archives with
 CUDA/cuDNN; a compatible NVIDIA driver is required. Torch is unnecessary. macOS
 CoreML is available in the standard build. Windows

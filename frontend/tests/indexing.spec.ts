@@ -9,7 +9,7 @@ async function mockIndex(page: import('@playwright/test').Page, ocrOnly = false)
         paused: 1, batch_size: 4, ready_segments: 2, total_segments: 20,
         estimated_remaining_seconds: 7200 },
       media: { ...value.media, images_enabled: ocrOnly ? 0 : 1, ocr_enabled: 1,
-        ocr_runtime_installed: true, paused: 1, batch_size: 1,
+        ocr_runtime_installed: true, paused: 1, ocr_paused: 1, batch_size: 1,
         ocr_ready: 20, ocr_failed: 5, ocr_nonempty_ready: 15, ocr_dense_ready: 8,
         ocr_dense_available: true, ocr_estimated_remaining_seconds: 1800,
         images_ready: 10, total_photos: 100, images_estimated_remaining_seconds: 600 },
@@ -65,10 +65,10 @@ test('pending batch save disables preparation and other chat-index mutations', a
 test('OCR can pause and resume before CLIP has been prepared', async ({ page }) => {
   await mockIndex(page, true);
   let action = '';
-  await page.route('**/api/chats/*/index/media/resume', async route => {
+  await page.route('**/api/chats/*/index/ocr/resume', async route => {
     action = 'resume';
-    const base = await (await page.request.get(route.request().url().replace('/media/resume', ''))).json();
-    await route.fulfill({ json: { ...base, media: { ...base.media, ocr_enabled: 1, images_enabled: 0, paused: 0 } } });
+    const base = await (await page.request.get(route.request().url().replace('/ocr/resume', ''))).json();
+    await route.fulfill({ json: { ...base, media: { ...base.media, ocr_enabled: 1, images_enabled: 0, ocr_paused: 0 } } });
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();

@@ -1,3 +1,3 @@
-"""Local Telegram archive search with CPU inference."""
+"""Local Telegram archive search with ONNX CPU and GPU inference."""
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"

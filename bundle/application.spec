@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
-from bundle.native_layout import windows_nvidia_binaries
+from bundle.native_layout import windows_image_binaries, windows_nvidia_binaries
 
 repo = Path(SPECPATH).parent
 version = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["version"]
@@ -40,6 +40,7 @@ hiddenimports = ["uvicorn.logging", "uvicorn.loops.asyncio", "uvicorn.protocols.
                  "uvicorn.lifespan.on", "tesserocr", "tokenizers", "safetensors.numpy"]
 hiddenimports += collect_submodules("lancedb")
 hiddenimports += collect_submodules("tesserocr")
+hiddenimports += ["cv2", "pyclipper", "telegram_search.inference.ocr_pipeline"]
 datas += collect_data_files("tesserocr", include_py_files=True, includes=["cysignals/*-helper.py"])
 hiddenimports += collect_submodules("pyarrow", filter=lambda name: ".tests" not in name)
 if importlib.util.find_spec("cysignals") is not None:
@@ -61,6 +62,7 @@ if sys.platform == "win32":
     # Dependency analysis adds namespace copies of DLLs already collected at
     # the top level. Windows has no deduplicating symlinks; retain one copy.
     a.binaries = windows_nvidia_binaries(a.binaries, nvidia_dlls)
+    a.binaries = windows_image_binaries(a.binaries)
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="telegram-search",

@@ -48,3 +48,10 @@ def model_spec(profile: str) -> ModelSpec:
 def media_registry() -> dict[str, ModelSpec]:
     manifest = json.loads(files("telegram_search.config").joinpath("media_models.json").read_text())
     return {profile: ModelSpec(profile, value) for profile, value in manifest.items()}
+
+
+def ocr_spec() -> ModelSpec:
+    manifest = json.loads(
+        files("telegram_search.config").joinpath("ocr_onnx_model.json").read_text()
+    )
+    return ModelSpec("paddle-ru-en", manifest)

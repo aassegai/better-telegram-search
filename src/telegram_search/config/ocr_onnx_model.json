@@ -1,0 +1,39 @@
+{
+  "model_id": "monkt/paddleocr-onnx",
+  "revision": "7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65",
+  "dimension": 1,
+  "license": "Apache-2.0",
+  "source": "https://github.com/PaddlePaddle/PaddleOCR",
+  "files": [
+    {
+      "name": "detection/v3/det.onnx",
+      "bytes": 2429873,
+      "sha256": "ee40e80071ba3a320d4efda75f3e22047a7d049e9bf7bcaaf9daea23fc21b935"
+    },
+    {
+      "name": "languages/eslav/rec.onnx",
+      "bytes": 7870092,
+      "sha256": "dc6bf0e855247decce214ba6dae5bc135fa0ad725a5918a7fcfb59fad6c9cdee"
+    },
+    {
+      "name": "languages/eslav/dict.txt",
+      "bytes": 1663,
+      "sha256": "3e95f1581557162870cacdba5af91a4c6be2890710d395b0c3c7578e7ee5e6eb"
+    },
+    {
+      "name": "detection/v3/config.json",
+      "bytes": 516,
+      "sha256": "c6a0b87e6965411a9b878e29b592b3c696163c0584f464c846c2547e41e104dc"
+    },
+    {
+      "name": "languages/eslav/config.json",
+      "bytes": 1106,
+      "sha256": "e1a9cce5fdd904d2e8a1bb3289ae136268f84e9989922517242edd6956536a55"
+    },
+    {
+      "name": "README.md",
+      "bytes": 12319,
+      "sha256": "783815b2d4127bbdf2847fac50d4dfa3b4ec58508324e43a7b41de66994f6611"
+    }
+  ]
+}

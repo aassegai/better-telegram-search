@@ -27,14 +27,24 @@ Your browser opens automatically at `http://127.0.0.1:8765`.
 [OS requirements and updates](docs/portable-builds.en.md).
 Use the **RU / EN** slider at the top to select English. Your choice is saved in
 this browser. Messages and search queries keep their original language.
+The adjacent ☾ / ☀ button switches light and dark themes. The first launch follows
+your system theme; your subsequent choice is saved.
 
 For NVIDIA on Windows/Linux x64, choose an archive ending in `-gpu`. Torch and a
 separate CUDA installation are unnecessary; a compatible NVIDIA driver is required.
-Set **Indexing device → GPU** and **Search device → CPU** in settings.
+Set **Indexing device → GPU** and **Search device → CPU** separately for
+**E5** and **CLIP** in settings.
 Click **Apply device**, then resume indexing.
 Both devices use one index, preserving completed chunks and progress.
 GPU sessions are unloaded when indexing is paused or finished.
 macOS supports CoreML when the model passes its CPU compatibility check.
+
+For GPU OCR, select **Settings → OCR → PaddleOCR**, choose **GPU**, apply the
+device, and prepare the model (about 10 MiB). PaddleOCR supports Russian and English
+and shares its recognition cache between CPU/GPU. Switching from Tesseract starts
+recognition with the new model while retaining the previous cache. To resume your
+existing recognition queue unchanged, keep **Tesseract · CPU**. Each model's card
+shows where its files are downloaded.
 
 From 0.3.0 onwards, use **Settings → Application updates** to check, download,
 and **Update and restart**. Upgrade from 0.2.0 manually the first time: pause text
@@ -83,11 +93,13 @@ run the commands without the environment prefix. [Device details](docs/gpu-and-u
 5. The chat menu contains text and image batch sizes, progress, and an estimate
    for the whole remaining queue. Larger GPU batches use more memory; the app
    retries smaller batches if memory runs out.
+   Pause OCR independently of CLIP. Open **Sources** in the same chat menu to
+   check attachments or relink a moved export folder.
 6. **Keywords and meaning** is the default mode. Keyword search remains available
    while the semantic index is being built. Combine **Text**, **Images**, and
    **OCR** under **Search in**, or select **Exact phrase** when needed.
 
-Preparing E5/CLIP downloads the models; subsequent searches work offline.
+Preparing E5/CLIP/PaddleOCR downloads the models; subsequent searches work offline.
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.

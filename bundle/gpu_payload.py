@@ -52,7 +52,7 @@ def pack(product, archive, *, exclude=()):
     excluded = {product.name + "/" + name for name in exclude}
     if archive.suffix == ".zip":
         with zipfile.ZipFile(
-            archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+            archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
         ) as out:
             for path in sorted(product.rglob("*")):
                 name = path.relative_to(product.parent).as_posix()

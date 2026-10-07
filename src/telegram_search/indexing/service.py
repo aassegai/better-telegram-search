@@ -64,8 +64,8 @@ class SemanticService:
             spec,
             BundleStore(self.db.workspace).verify(spec),
             threads=settings.cpu_threads,
-            device=settings.device,
-            search_device=settings.search_device,
+            device=settings.model_device("e5"),
+            search_device=settings.model_device("e5", query=True),
             gpu_device_id=settings.gpu_device_id,
             gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
         )
@@ -96,8 +96,13 @@ class SemanticService:
             self.vectors = VectorStore(self.db.workspace)
         return self.vectors
 
-    def activate(self, encoder, *, reindex=False):
+    def activate(self, encoder, *, reindex=False, before_commit=None):
         with self.lock:
+            old = self.encoder
+            if old and old is not encoder:
+                # Cleanup can fail; do it before committing or publishing a new
+                # space. The old encoder lazily reloads if activation aborts.
+                old.unload()
             with self.db.connect() as conn:
                 current = conn.execute(
                     "SELECT active_space_id FROM semantic_state WHERE id=1"
@@ -138,13 +143,12 @@ class SemanticService:
                     "preparation_state='ready' WHERE id=1",
                     (encoder.space_id,),
                 )
+                if before_commit:
+                    before_commit(conn)
             # The durable space must commit before queries can see a new encoder.
-            old = self.encoder
             self.encoder = encoder
             self.query_cache.clear()
             self.last_used = time.monotonic()
-            if old and old is not encoder:
-                old.unload()
         self.wake.set()
 
     def prepare(

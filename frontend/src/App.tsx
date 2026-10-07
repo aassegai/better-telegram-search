@@ -7,10 +7,11 @@ import ConflictDialog from './ConflictDialog';
 import ChatIndexDialog from './ChatIndexDialog';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
-import DevicePanel from './DevicePanel';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
+import { useTheme } from './theme';
+import './theme.css';
 import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchModality, SemanticStatus } from './types';
 
 const dates = {
@@ -54,6 +55,7 @@ function MessageRow({ message, anchor, query = '' }: { message: Message; anchor:
 
 export default function App() {
   const [language, changeLanguage] = useLanguage();
+  const [theme, toggleTheme] = useTheme();
   const [chats, setChats] = useState<Chat[]>([]);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -91,6 +93,10 @@ export default function App() {
   const contextVersion = useRef(0);
   const [searchFilters, setSearchFilters] = useState('');
   const closeContext = () => { contextVersion.current++; setContext(null); setLoadingContext(false); };
+  const devices = (values: (string | undefined)[]) => [...new Set(values.filter(Boolean).map(value => value!.toUpperCase()))].join(' + ') || 'CPU';
+  const indexingDevices = devices([semantic?.backend?.device, media?.backend?.device,
+    media?.ocr_enabled ? media.ocr_backend?.device : undefined]);
+  const searchDevices = devices([semantic?.backend?.query_execution?.device, media?.query_backend?.device]);
 
   const restarting = useRef(false);
   const updateObserverRevision = useRef(0);
@@ -264,12 +270,13 @@ export default function App() {
 
     <main className="main">
       <header className="topbar"><span>{t("Ваша переписка. Под рукой.")}</span><div className="topbar-actions">
+        <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span></button>
         <label className="language-switch"><span className={language === 'ru' ? 'active' : ''}>RU</span>
           <input type="range" min="0" max="1" step="1" value={language === 'en' ? 1 : 0}
             aria-label={t('Язык приложения')} aria-valuetext={language === 'en' ? 'English' : 'Русский'}
             onChange={event => changeLanguage(event.target.value === '1' ? 'en' : 'ru')} />
           <span className={language === 'en' ? 'active' : ''}>EN</span>
-        </label><span className="pill">{t('Индекс: {p0} · Поиск: {p1}', { p0: (semantic?.backend?.device ?? media?.backend?.device ?? 'cpu').toUpperCase(), p1: (semantic?.backend?.query_execution?.device ?? media?.query_backend?.device ?? 'cpu').toUpperCase() })} <span className="dot" /></span>
+        </label><span className="pill">{t('Индекс: {p0} · Поиск: {p1}', { p0: indexingDevices, p1: searchDevices })} <span className="dot" /></span>
       </div></header>
       <div className="content">
         <div className="heading"><div className="eyebrow">{t("ЛИЧНЫЙ АРХИВ")}</div><h1>{t("Найдите тот самый разговор.")}</h1>
@@ -301,6 +308,7 @@ export default function App() {
             {!modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
+        {busy && <div className="search-progress" role="status"><span>{t('Ищем…')}</span><progress aria-label={t('Выполнение поиска')} /></div>}
         <details className="search-display-options"><summary>{t('Выдача поиска')}</summary><SearchSettingsPanel /></details>
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
@@ -334,9 +342,8 @@ export default function App() {
     {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button className="close" aria-label={t("Закрыть")} onClick={() => setModal(null)}>×</button>
       <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
-      {diagnostics ? <dl className="diagnostics"><dt>{t("Устройство")}</dt><dd>{String(diagnostics.device ?? 'cpu').toUpperCase()}</dd><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
+      {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
-      <DevicePanel onChange={() => { void refresh().catch(reportError); void api<Record<string, unknown>>('/api/doctor').then(setDiagnostics).catch(reportError); }} />
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
       <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
