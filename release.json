@@ -1,5 +1,9 @@
 {
-  "state": "publishing",
+  "state": "published",
   "tag": "v0.3.4",
+  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.3.4",
+  "release_commit": "3d8321a24bf37a9c2017fcf5ef3b44cccab66aa0",
+  "build_commit": "e3a781e89c1080be79fb8fd13e3ba4a4be4e657d",
+  "archives_verified": 7,
   "publishing_run_id": "37597181105"
 }
