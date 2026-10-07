@@ -33,8 +33,15 @@ def main():
         if completed_run["path"].split("@", 1)[0] == ".github/workflows/checks.yml":
             collect_checks(repository, completed_run)
             return
+        if completed_run["path"].split("@", 1)[0] == ".github/workflows/builds.yml":
+            collect_checks(repository, completed_run)
     else:
         recent = gh("api", f"repos/{repository}/actions/workflows/checks.yml/runs?per_page=5")
+        for completed_run in recent["workflow_runs"]:
+            if completed_run["status"] == "completed" and completed_run["head_branch"] == "main":
+                collect_checks(repository, completed_run)
+                break
+        recent = gh("api", f"repos/{repository}/actions/workflows/builds.yml/runs?per_page=5")
         for completed_run in recent["workflow_runs"]:
             if completed_run["status"] == "completed" and completed_run["head_branch"] == "main":
                 collect_checks(repository, completed_run)
@@ -103,8 +110,14 @@ def main():
 
 
 def collect_checks(repository, run):
+    workflow = run["path"].split("@", 1)[0]
+    prefix = {
+        ".github/workflows/checks.yml": "checks",
+        ".github/workflows/builds.yml": "native",
+    }.get(workflow)
     if (
-        run["status"] != "completed"
+        not prefix
+        or run["status"] != "completed"
         or run["head_branch"] != "main"
         or run["head_repository"]["full_name"] != repository
     ):
@@ -137,7 +150,7 @@ def collect_checks(repository, run):
         "result": run["conclusion"],
         "failures": failures,
     }
-    endpoint = f"repos/{repository}/contents/checks-{run['head_sha']}.json"
+    endpoint = f"repos/{repository}/contents/{prefix}-{run['head_sha']}.json"
     existing = subprocess.run(
         ["gh", "api", endpoint + "?ref=build-status"], text=True, capture_output=True
     )
