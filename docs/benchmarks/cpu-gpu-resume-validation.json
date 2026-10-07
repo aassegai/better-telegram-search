@@ -1,0 +1,14 @@
+{
+  "synthetic_only": true,
+  "legacy_version": "0.2.0",
+  "new_version": "0.3.0",
+  "space_id_preserved": true,
+  "chunk_ids_preserved": true,
+  "cpu_vectors_unchanged": true,
+  "cpu_chunks_preserved": 8,
+  "gpu_chunks_encoded": 109,
+  "total_chunks": 117,
+  "legacy_clip_space_preserved": true,
+  "new_gpu_images": 1,
+  "cpu_queries_without_gpu_session_or_preload": true
+}

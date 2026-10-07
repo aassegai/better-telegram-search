@@ -6,6 +6,9 @@ import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
+import DevicePanel from './DevicePanel';
+import UpdatePanel from './UpdatePanel';
+import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
 import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchModality, SemanticStatus } from './types';
 
@@ -87,7 +90,9 @@ export default function App() {
   const [searchFilters, setSearchFilters] = useState('');
   const closeContext = () => { contextVersion.current++; setContext(null); setLoadingContext(false); };
 
-  const reportError = (error: unknown) => setError(error instanceof Error ? error.message : t('Ошибка соединения.'));
+  const restarting = useRef(false);
+  const updateObserverRevision = useRef(0);
+  const reportError = (error: unknown) => { if (!restarting.current) setError(error instanceof Error ? error.message : t('Ошибка соединения.')); };
   const refresh = async () => {
     const [chats, jobs, previews, semantic, media] = await Promise.all([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews'), api<SemanticStatus>('/api/semantic'), api<MediaStatus>('/api/media-index')]);
     setChats(chats); setJobs(jobs); setPreviews(previews); setSemantic(semantic); setMedia(media);
@@ -100,6 +105,30 @@ export default function App() {
     }).catch(reportError);
     const timer = window.setInterval(() => { if (alive) void refresh().catch(reportError); }, 2000);
     return () => { alive = false; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    let pending = false;
+    const poll = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const revision = updateObserverRevision.current;
+        const update = await api<Update>('/api/updates');
+        if (!alive || revision !== updateObserverRevision.current) return;
+        if (update.state === 'installing') restarting.current = true;
+        if (restarting.current && ['updated', 'rolled_back'].includes(update.state)) window.location.reload();
+        if (restarting.current && update.state === 'failed') {
+          restarting.current = false;
+          setError(update.error || t('Не удалось обновить приложение.'));
+        }
+      } catch { /* The server is temporarily absent while restarting. */ }
+      finally { pending = false; }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1000);
+    return () => { alive = false; window.clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -237,7 +266,7 @@ export default function App() {
             aria-label={t('Язык приложения')} aria-valuetext={language === 'en' ? 'English' : 'Русский'}
             onChange={event => changeLanguage(event.target.value === '1' ? 'en' : 'ru')} />
           <span className={language === 'en' ? 'active' : ''}>EN</span>
-        </label><span className="pill">CPU <span className="dot" /></span>
+        </label><span className="pill">{t('Индекс: {p0} · Поиск: {p1}', { p0: (semantic?.backend?.device ?? media?.backend?.device ?? 'cpu').toUpperCase(), p1: (semantic?.backend?.query_execution?.device ?? media?.query_backend?.device ?? 'cpu').toUpperCase() })} <span className="dot" /></span>
       </div></header>
       <div className="content">
         <div className="heading"><div className="eyebrow">{t("ЛИЧНЫЙ АРХИВ")}</div><h1>{t("Найдите тот самый разговор.")}</h1>
@@ -299,12 +328,14 @@ export default function App() {
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
     {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <button className="close" aria-label={t("Закрыть")} onClick={() => setModal(null)}>×</button>
-      <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Приложение использует только CPU.")}</p>
-      {diagnostics ? <dl className="diagnostics"><dt>{t("Устройство")}</dt><dd>CPU</dd><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
+      <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
+      {diagnostics ? <dl className="diagnostics"><dt>{t("Устройство")}</dt><dd>{String(diagnostics.device ?? 'cpu').toUpperCase()}</dd><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
+      <DevicePanel onChange={() => { void refresh().catch(reportError); void api<Record<string, unknown>>('/api/doctor').then(setDiagnostics).catch(reportError); }} />
       <SearchSettingsPanel />
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
+      <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
     </section></div>}
 
     {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">

@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search.config.diagnostics import doctor
-from telegram_search.config.runtime import frontend_directory
+from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
@@ -27,6 +28,7 @@ from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
 from telegram_search.storage.database import Database
+from telegram_search.updates.service import UpdateService
 
 
 class ImportRequest(BaseModel):
@@ -61,35 +63,73 @@ class SourceRelinkRequest(BaseModel):
     expected_path: str = Field(min_length=1, max_length=4096)
 
 
+class DeviceRequest(BaseModel):
+    device: Literal["cpu", "auto", "gpu"]
+    search_device: Literal["cpu", "auto", "gpu"] = "cpu"
+    gpu_device_id: int = Field(default=0, ge=0, le=15, strict=True)
+    gpu_memory_limit_mib: int = Field(default=4096, ge=512, le=65536, strict=True)
+    reindex: bool = False
+
+
+class UpdateCheckRequest(BaseModel):
+    variant: Literal["cpu", "gpu"] | None = None
+
+
+class UpdateConfirmation(BaseModel):
+    nonce: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
 def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     db = Database(workspace)
     db.initialize()
     session_token = secrets.token_urlsafe(32)
+    verification_nonce = os.environ.get("BTS_UPDATE_HEALTHCHECK", "")
     search = SearchService(db)
     context = ContextService(db)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = ImportService(db)
-        app.state.importer = importer
-        semantic = SemanticService(db, importer.lifecycle_lock)
-        app.state.semantic = semantic
-        media = MediaService(db, importer.lifecycle_lock, semantic)
-        app.state.media = media
-        app.state.workspace = WorkspaceService(db, importer, semantic, media)
-        app.state.search = UnifiedSearch(
-            HybridSearch(db, semantic, importer.lifecycle_lock),
-            MediaSearch(db, media, semantic, importer.lifecycle_lock),
-        )
+        importer = semantic = media = updates = None
         try:
+            updates = UpdateService(db.workspace, getattr(app.state, "update_shutdown", None))
+            app.state.updates = updates
+            hold_background = bool(verification_nonce) or updates.recovery_required
+            importer = ImportService(db)
+            app.state.importer = importer
+            semantic = SemanticService(
+                db, importer.lifecycle_lock, start_background=not hold_background
+            )
+            app.state.semantic = semantic
+            media = MediaService(
+                db, importer.lifecycle_lock, semantic, start_background=not hold_background
+            )
+            app.state.media = media
+            app.state.workspace = WorkspaceService(db, importer, semantic, media)
+            app.state.search = UnifiedSearch(
+                HybridSearch(db, semantic, importer.lifecycle_lock),
+                MediaSearch(db, media, semantic, importer.lifecycle_lock),
+            )
+            if (
+                frozen()
+                and not verification_nonce
+                and not updates.recovery_required
+                and not os.environ.get("BTS_DISABLE_UPDATE_CHECK")
+            ):
+                updates.check()
             yield
         finally:
-            media.shutdown()
-            semantic.shutdown()
-            importer.shutdown()
+            if updates:
+                updates.close()
+            if media:
+                media.shutdown()
+            if semantic:
+                semantic.shutdown()
+            if importer:
+                importer.shutdown()
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.state.db = db
+    app.state.update_verifying = bool(verification_nonce)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
 
     @app.middleware("http")
@@ -111,6 +151,21 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 return JSONResponse(
                     {"detail": "Необходим токен локальной сессии."}, status_code=403
                 )
+            if app.state.update_verifying and request.url.path != "/api/updates/confirm":
+                return JSONResponse(
+                    {"detail": "Приложение проверяется после обновления."}, status_code=503
+                )
+            updates = getattr(app.state, "updates", None)
+            if updates and updates.recovery_required:
+                return JSONResponse({"detail": updates.status()["error"]}, status_code=503)
+            if (
+                updates
+                and updates.status()["state"] == "installing"
+                and not (app.state.update_verifying and request.url.path == "/api/updates/confirm")
+            ):
+                return JSONResponse(
+                    {"detail": "Приложение перезапускается для обновления."}, status_code=503
+                )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -129,7 +184,12 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
 
     @app.get("/api/session")
     def session():
-        return {"token": session_token, "device": "cpu", "search_backend": "bm25_messages"}
+        return {
+            "token": session_token,
+            "device": db.settings.device,
+            "search_backend": "bm25_messages",
+            "instance_id": verification_nonce,
+        }
 
     @app.get("/api/chats")
     def chats():
@@ -194,6 +254,43 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @app.patch("/api/settings")
     def update_settings(body: dict):
         return app.state.workspace.update_settings(body)
+
+    @app.post("/api/device")
+    def change_device(body: DeviceRequest):
+        return app.state.workspace.change_device(**body.model_dump())
+
+    @app.get("/api/updates")
+    def update_status():
+        return app.state.updates.status()
+
+    @app.post("/api/updates/check", status_code=202)
+    def check_update(body: UpdateCheckRequest):
+        return app.state.updates.check(body.variant)
+
+    @app.post("/api/updates/download", status_code=202)
+    def download_update():
+        return app.state.updates.download()
+
+    @app.post("/api/updates/install", status_code=202)
+    def install_update():
+        return app.state.updates.install(getattr(app.state, "update_port", 8765))
+
+    @app.post("/api/updates/confirm")
+    def confirm_update(body: UpdateConfirmation):
+        if not verification_nonce or not secrets.compare_digest(body.nonce, verification_nonce):
+            raise UserError("Недопустимое подтверждение обновления.")
+        from telegram_search.updates.installer import commit_update
+
+        with app.state.importer.lifecycle_lock:
+            commit_update(db.workspace, body.nonce)
+            with app.state.updates.lock:
+                app.state.updates.data.update(state="updated", error=None, commit_nonce=body.nonce)
+            # Durable commit precedes any background mutation. A lost HTTP reply
+            # can be retried and cannot trigger rollback over live indexing.
+            app.state.update_verifying = False
+            app.state.semantic.start_background()
+            app.state.media.start_background()
+        return {"confirmed": True}
 
     @app.get("/api/sources")
     def sources():
@@ -403,8 +500,13 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     @app.get("/api/doctor")
     def diagnostics():
         status = app.state.semantic.status()
+        media_backend = app.state.media.status().get("backend")
+        backend = status["backend"] or media_backend
+        result = doctor(db)
+        result["hardware"]["selected_provider"] = backend.get("provider") if backend else None
         return {
-            **doctor(db),
+            **result,
+            "device": backend.get("device", db.settings.device) if backend else db.settings.device,
             "semantic": status,
             "dense_available": status["dense_available"],
             "models_loaded": int(bool(status["backend"] and status["backend"]["loaded"])),

@@ -15,6 +15,7 @@ datas = [
     (str(assets / "tessdata"), "tessdata"),
     (str(repo / "bundle" / "ocr-smoke.png"), "smoke"),
     (str(assets / "licenses"), "licenses"),
+    (str(assets / "build.json"), "."),
     (str(repo / "docs" / "portable-builds.md"), "docs"),
     (str(repo / "docs" / "portable-builds.en.md"), "docs"),
 ]
@@ -23,6 +24,10 @@ binaries = []
 for package in ("onnxruntime", "pyarrow", "lancedb", "tesserocr"):
     binaries += collect_dynamic_libs(package)
 for distribution in importlib.metadata.distributions():
+    if distribution.metadata["Name"].lower().startswith("nvidia-"):
+        for file in distribution.files or []:
+            if ".so" in file.name or file.suffix == ".dll":
+                binaries.append((str(distribution.locate_file(file)), "."))
     for file in distribution.files or []:
         if file.name == "METADATA" and file.parent.name.endswith(".dist-info"):
             datas.append((str(distribution.locate_file(file)), file.parent.name))

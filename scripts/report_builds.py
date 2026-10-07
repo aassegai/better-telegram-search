@@ -26,11 +26,24 @@ def main():
     tag = os.environ["BTS_RELEASE_TAG"]
     release = gh("release", "view", tag, "--json", "assets,url,isDraft")
     assets = {item["name"]: item["url"] for item in release["assets"]}
-    expected = {"linux-x86_64", "linux-arm64", "win32-x86_64", "darwin-x86_64", "darwin-arm64"}
+    expected = {
+        "linux-x86_64",
+        "linux-arm64",
+        "win32-x86_64",
+        "darwin-x86_64",
+        "darwin-arm64",
+        "linux-x86_64-gpu",
+        "win32-x86_64-gpu",
+    }
     builds = {}
     for path in Path("build-reports").glob("*.json"):
         report = json.loads(path.read_text())
-        name = report["platform"] + "-" + report["arch"]
+        name = (
+            report["platform"]
+            + "-"
+            + report["arch"]
+            + ("-gpu" if report.get("variant") == "gpu" else "")
+        )
         builds[name] = {
             "state": "ready",
             "sha256": report["sha256"],
@@ -106,7 +119,8 @@ def main():
     gh("api", "--method", "PUT", f"repos/{repository}/contents/latest.json", payload=payload)
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as out:
         out.write(
-            f"Native CPU builds: {result['result']}\n\n[Unpublished release]({release['url']})\n\n"
+            f"Native CPU/GPU builds: {result['result']}\n\n"
+            f"[Unpublished release]({release['url']})\n\n"
         )
         for name, report in sorted(builds.items()):
             out.write(f"- {name}: {report['state']}\n")

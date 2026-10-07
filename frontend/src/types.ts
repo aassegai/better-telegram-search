@@ -28,11 +28,13 @@ export type MediaStatus = {
   preparation_state: string; error: string | null; resource_error: string | null;
   total_photos: number; ocr_ready: number; ocr_failed: number; ocr_dense_ready: number;
   images_ready: number; missing_refs: number; ocr_available: boolean; images_available: boolean;
-  ocr_runtime_installed: boolean; device: string;
+  ocr_runtime_installed: boolean; device: string; backend?: { device: string; provider: string };
+  query_backend?: { device: string; provider: string };
 };
 
 export type SemanticStatus = {
   runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;
+  backend?: { device: string; provider: string; warning?: string | null; query_execution?: { device: string; provider: string } };
   preparation_state: string; profile: string | null; error: string | null;
   download_completed_bytes: number; download_total_bytes: number;
   total_segments: number; ready_segments: number; pending_segments: number;

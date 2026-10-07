@@ -1,3 +1,4 @@
+import json
 import threading
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -29,6 +30,10 @@ class TestEncoder:
         self.on_encode = on_encode
         self.calls = []
         self.suspended = False
+        self.execution = SimpleNamespace(
+            info=lambda: {"device": "cpu", "provider": "synthetic-CPU"}
+        )
+        self.query_execution = self.execution
 
     def encode_text(self, texts, purpose, **kwargs):
         self.calls.append(len(texts))
@@ -43,6 +48,9 @@ class TestEncoder:
     def unload(self):
         pass
 
+    def unload_index(self):
+        pass
+
     def suspend(self):
         self.suspended = True
 
@@ -51,6 +59,9 @@ class TestEncoder:
 
     def backend_info(self):
         return {"runtime": "synthetic-test", "device": "cpu"}
+
+    def adopt_space(self, manifest_json):
+        assert json.loads(manifest_json) == self.space_manifest
 
 
 def setup_index(db, importer, tmp_path, texts=None):
@@ -93,6 +104,68 @@ def test_pause_resume_reuses_staged_chunks(db, importer, tmp_path):
     with db.connect() as conn:
         assert ids == [row[0] for row in conn.execute("SELECT id FROM chunks ORDER BY id")]
     assert service.status()["pending_segments"] == 0
+
+
+def test_partial_cpu_index_resumes_with_same_chunk_ids_after_gpu_settings_and_restart(
+    db, importer, tmp_path, monkeypatch
+):
+    from telegram_search.indexing.media import MediaService
+    from telegram_search.inference import providers
+    from telegram_search.sources.service import WorkspaceService
+
+    _, service, worker, work = setup_index(db, importer, tmp_path)
+
+    def pause_after_one_saved_batch(texts):
+        if len(worker.encoder.calls) == 2:
+            service.control("pause")
+
+    worker.encoder.on_encode = pause_after_one_saved_batch
+    partial = worker.run(work)
+    assert 0 < partial["chunks_done"] < partial["chunks_total"]
+    with db.connect() as conn:
+        old_ids = [row[0] for row in conn.execute("SELECT id FROM chunks ORDER BY id")]
+        generation = conn.execute("SELECT target_generation FROM index_segments").fetchone()[0]
+    count_before = worker.vectors.table("synthetic", 4).count_rows()
+    monkeypatch.setattr(
+        providers, "Execution", lambda *args, **kw: SimpleNamespace(info=lambda: {})
+    )
+    monkeypatch.setattr(SemanticService, "_new_encoder", lambda *args: TestEncoder())
+    media = MediaService(db, importer.lifecycle_lock, service, start_background=False)
+    media.control("pause")
+    WorkspaceService(db, importer, service, media).change_device("gpu", search_device="cpu")
+    assert service.status()["paused"] == 1
+    assert db.settings.device == "gpu" and db.settings.search_device == "cpu"
+    with db.connect() as conn:
+        unchanged = dict(conn.execute("SELECT * FROM index_work WHERE id=?", (work,)).fetchone())
+        assert unchanged["chunks_done"] == partial["chunks_done"]
+        assert (
+            conn.execute("SELECT target_generation FROM index_segments").fetchone()[0] == generation
+        )
+    service.shutdown()
+    resumed = SemanticService(db, importer.lifecycle_lock, start_background=False)
+    assert resumed.status()["paused"] == 1 and resumed.encoder.space_id == "synthetic"
+    resumed.control("resume")
+    complete = resumed._worker(resumed.encoder).run(work)
+    assert complete["state"] == "done" and complete["chunks_done"] == partial["chunks_total"]
+    with db.connect() as conn:
+        assert old_ids == [row[0] for row in conn.execute("SELECT id FROM chunks ORDER BY id")]
+    assert count_before == partial["chunks_done"]
+    assert sum(resumed.encoder.calls) == partial["chunks_total"] - partial["chunks_done"]
+    resumed.shutdown()
+    media.shutdown()
+
+
+def test_worker_captured_before_same_space_device_change_cannot_use_old_encoder(
+    db, importer, tmp_path
+):
+    _, service, _, work = setup_index(db, importer, tmp_path)
+    old = service.encoder
+    captured = service._worker(old)
+    old.suspend()
+    service.activate(TestEncoder())
+    result = captured.run(work)
+    assert result["state"] == "paused" and not old.calls
+    assert service._worker(service.encoder).run(work)["state"] == "done"
 
 
 def test_oom_reduces_batch_without_losing_rows(db, importer, tmp_path):

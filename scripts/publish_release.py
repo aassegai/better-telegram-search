@@ -33,8 +33,19 @@ PLATFORMS = {
     "darwin-x86_64": "zip",
     "darwin-arm64": "zip",
 }
+GPU_PLATFORMS = {"linux-x86_64-gpu": "tar.xz", "win32-x86_64-gpu": "zip"}
+NEW_CHECKS = {"update_installer", "device_selection"}
+
+
+def platforms(request):
+    numbers = tuple(int(part) for part in request["tag"][1:].split("."))
+    return {**PLATFORMS, **GPU_PLATFORMS} if numbers >= (0, 3, 0) else PLATFORMS
+
+
 PUBLICATION_FILES = {
     "README.md",
+    "README.en.md",
+    "docs/portable-builds.en.md",
     "docs/portable-builds.md",
     "scripts/publish_release.py",
     ".github/workflows/publish-release.yml",
@@ -141,24 +152,28 @@ def verify_build(report, request):
         "Wrong build provenance",
     )
     require(
-        report["result"] == "success" and set(report["builds"]) == set(PLATFORMS),
-        "Five successful native builds required",
+        report["result"] == "success" and set(report["builds"]) == set(platforms(request)),
+        "All CPU and GPU native builds required",
     )
-    for build in report["builds"].values():
+    for platform, build in report["builds"].items():
+        checks = CHECKS | (NEW_CHECKS if len(platforms(request)) == 7 else set())
+        if platform.endswith("-gpu"):
+            checks |= {"cuda_libraries"}
         require(
-            build["state"] == "ready" and CHECKS <= build["checks"].keys(),
+            build["state"] == "ready" and checks <= build["checks"].keys(),
             "Native report incomplete",
         )
         require(all(value is True for value in build["checks"].values()), "Native check failed")
         require(re.fullmatch(r"[0-9a-f]{64}", build["sha256"]), "Invalid archive checksum")
         require(
-            type(build["bytes"]) is int and 0 < build["bytes"] <= 512 * 1024**2,
+            type(build["bytes"]) is int and 0 < build["bytes"] < 2 * 1024**3,
             "Invalid archive size",
         )
 
 
 def verify_manifest(manifest, request, platform, build, archive):
-    system, arch = platform.split("-", 1)
+    variant = "gpu" if platform.endswith("-gpu") else "cpu"
+    system, arch = platform.removesuffix("-gpu").split("-", 1)
     require(
         manifest["commit"] == request["build_commit"] and manifest["source_dirty"] is False,
         "Unverified source tree",
@@ -166,6 +181,7 @@ def verify_manifest(manifest, request, platform, build, archive):
     require(
         manifest["platform"] == system
         and manifest["arch"] == arch
+        and manifest.get("variant", "cpu") == variant
         and manifest["artifact"] == archive,
         "Wrong platform artifact",
     )
@@ -220,16 +236,17 @@ def asset_fingerprint(release):
 
 def verify_assets(release, report, request):
     version = request["tag"][1:]
-    prefixes = {key: f"better-telegram-search-{version}-{key}" for key in PLATFORMS}
+    targets = platforms(request)
+    prefixes = {key: f"better-telegram-search-{version}-{key}" for key in targets}
     expected = {
         name + suffix
         for key, name in prefixes.items()
-        for suffix in ("." + PLATFORMS[key], ".json", ".sha256")
+        for suffix in ("." + targets[key], ".json", ".sha256")
     }
     assets = {item["name"]: item for item in release["assets"]}
     require(
-        set(assets) == expected and len(release["assets"]) == 15,
-        "Release must contain exactly five archives with reports and checksums",
+        set(assets) == expected and len(release["assets"]) == len(targets) * 3,
+        "Release must contain exactly the required archives with reports and checksums",
     )
     require(all(item["state"] == "uploaded" for item in assets.values()), "Upload incomplete")
     require(
@@ -261,7 +278,7 @@ def verify_assets(release, report, request):
         )
         for platform, prefix in prefixes.items():
             build = report["builds"][platform]
-            archive = prefix + "." + PLATFORMS[platform]
+            archive = prefix + "." + platforms(request)[platform]
             require(assets[archive]["size"] == build["bytes"], "Archive byte size mismatch")
             manifest = json.loads((root / (prefix + ".json")).read_text())
             verify_manifest(manifest, request, platform, build, archive)
@@ -375,7 +392,7 @@ def publish(request):
         "release": release["html_url"],
         "release_commit": request["release_commit"],
         "build_commit": request["build_commit"],
-        "archives_verified": 5,
+        "archives_verified": len(platforms(request)),
         "publishing_run_id": os.environ["GITHUB_RUN_ID"],
     }
     # Publication has succeeded. A concurrent build/status update must never
@@ -396,9 +413,8 @@ def publish(request):
                 release_commit=request["release_commit"],
             )
             for platform, build in latest["builds"].items():
-                name = (
-                    f"better-telegram-search-{request['tag'][1:]}-{platform}.{PLATFORMS[platform]}"
-                )
+                extension = platforms(request)[platform]
+                name = f"better-telegram-search-{request['tag'][1:]}-{platform}.{extension}"
                 build["url"] = published_assets[name]["browser_download_url"]
             write_report(repository, "latest.json", latest, sha)
             break

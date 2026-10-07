@@ -3,6 +3,7 @@
 import base64
 import importlib.util
 import json
+import os
 import re
 import socket
 import subprocess
@@ -49,6 +50,13 @@ def main():
     from telegram_search.search.lexical import SearchService
     from telegram_search.search.vectors import VectorStore
     from telegram_search.storage.database import Database
+    from telegram_search.updates.installer import build_info
+
+    gpu_build = build_info().get("variant") == "gpu"
+    if gpu_build:
+        from telegram_search.inference.providers import check_bundled_cuda
+
+        check_bundled_cuda()
 
     values = np.array([[3.0, 4.0]], dtype=np.float32)
     options = ort.SessionOptions()
@@ -114,6 +122,7 @@ def main():
             raise RuntimeError("Native Russian/English OCR smoke")
         # Free Lance handles before temporary-directory cleanup (important on Windows).
         del vectors
+        _update_check(db.workspace, root)
         _http_check(db.workspace, root)
     print(
         json.dumps(
@@ -128,9 +137,44 @@ def main():
                 "csrf": True,
                 "torch_absent": True,
                 "unicode_paths": True,
+                "update_installer": True,
+                "device_selection": True,
+                **({"cuda_libraries": True} if gpu_build else {}),
             }
         )
     )
+
+
+def _update_check(workspace, root):
+    from telegram_search.inference.providers import Execution
+    from telegram_search.updates.installer import apply_plan, atomic_json, tree_digest
+
+    execution = Execution("cpu")
+    if execution.provider != "CPUExecutionProvider":
+        raise RuntimeError("Device selection")
+    directory = workspace / "cache/updates" / ("a" * 32)
+    directory.mkdir(parents=True)
+    atomic_json(directory.parent / "status.json", {"state": "installing"})
+    target = root / "synthetic-application"
+    target.mkdir()
+    (target / "version").write_text("old")
+    stage = root / "synthetic-stage"
+    stage.mkdir()
+    (stage / "version").write_text("new")
+    backup = root / "synthetic-backup"
+    apply_plan(
+        {
+            "workspace": str(workspace),
+            "target": str(target),
+            "stage": str(stage),
+            "backup": str(backup),
+            "directory": str(directory),
+            "stage_digest": tree_digest(stage),
+        },
+        restart=False,
+    )
+    if (target / "version").read_text() != "new" or (backup / "version").read_text() != "old":
+        raise RuntimeError("Update installation/backup contract")
 
 
 def _http_check(workspace, root):
@@ -152,6 +196,7 @@ def _http_check(workspace, root):
             ],
             stdout=log,
             stderr=log,
+            env={**os.environ, "BTS_DISABLE_UPDATE_CHECK": "1"},
         )
         try:
             deadline = time.monotonic() + 60

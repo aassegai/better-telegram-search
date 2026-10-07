@@ -1,6 +1,8 @@
 # CPU media pipeline
 
-Runtime использует только ONNX Runtime CPUExecutionProvider для E5/CLIP и native
+> CPU baseline; устройства 0.3.0 описаны в [GPU и обновления](gpu-and-updates.md).
+
+По умолчанию runtime использует ONNX Runtime CPUExecutionProvider для E5/CLIP и native
 Tesseract для OCR. Torch, Transformers и SentenceTransformers отсутствуют в
 пользовательском окружении. Эталонные проверки находятся в отдельном uv-проекте
 validation, с CPU Torch; веса и оба окружения исключены из Git.

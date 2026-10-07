@@ -1,4 +1,4 @@
-"""Build, unpack and verify a portable CPU application on the target OS.
+"""Build, unpack and verify a portable CPU or NVIDIA GPU application on the target OS.
 
 Inputs are explicitly selected public code/resources. No workspace or corpus is collected.
 Run with the dedicated uv bundle environment; Python 3.12 is the release ABI.
@@ -37,6 +37,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=REPO / "artifacts")
     parser.add_argument("--expected-arch", choices=["x86_64", "arm64"])
+    parser.add_argument("--variant", choices=["cpu", "gpu"], default="cpu")
     args = parser.parse_args()
     arch = {"AMD64": "x86_64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
     if args.expected_arch and args.expected_arch != arch:
@@ -46,11 +47,26 @@ def main():
     installed = {item.metadata["Name"].lower() for item in importlib.metadata.distributions()}
     if installed & {"torch", "torchvision", "torchaudio", "transformers", "sentence-transformers"}:
         raise RuntimeError("Build environment contains excluded ML training dependencies")
+    if args.variant == "gpu" and (sys.platform, arch) not in {
+        ("linux", "x86_64"),
+        ("win32", "x86_64"),
+    }:
+        raise RuntimeError("NVIDIA GPU packages require Windows/Linux x86_64")
+    gpu_installed = "onnxruntime-gpu" in installed
+    if gpu_installed != (args.variant == "gpu"):
+        raise RuntimeError("Runtime does not match the requested build variant")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    build_root = REPO / "build" / f"{sys.platform}-{arch}"
+    build_root = REPO / "build" / f"{sys.platform}-{arch}-{args.variant}"
     assets = build_root / "assets"
     (assets / "licenses").mkdir(parents=True, exist_ok=True)
+    version = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
+    (assets / "build.json").write_text(
+        json.dumps(
+            {"version": version, "variant": args.variant, "platform": sys.platform, "arch": arch}
+        ),
+        encoding="utf-8",
+    )
     from telegram_search.inference.ocr import OcrEngine
 
     engine = OcrEngine(assets)
@@ -111,7 +127,9 @@ def main():
         env=environment,
     )
     version = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
-    name = f"better-telegram-search-{version}-{sys.platform}-{arch}"
+    name = f"better-telegram-search-{version}-{sys.platform}-{arch}" + (
+        "-gpu" if args.variant == "gpu" else ""
+    )
     if sys.platform == "darwin":
         product = build_root / "dist" / "Better Telegram Search.app"
         archive = output / f"{name}.zip"
@@ -120,12 +138,20 @@ def main():
         product = build_root / "dist" / "BetterTelegramSearch"
         shutil.copyfile(REPO / "docs" / "portable-builds.md", product / "README.md")
         shutil.copyfile(REPO / "docs" / "portable-builds.en.md", product / "README.en.md")
-        archive = output / (f"{name}.zip" if sys.platform == "win32" else f"{name}.tar.gz")
+        extension = (
+            "zip" if sys.platform == "win32" else ("tar.xz" if args.variant == "gpu" else "tar.gz")
+        )
+        archive = output / f"{name}.{extension}"
         if sys.platform == "win32":
             shutil.make_archive(str(archive.with_suffix("")), "zip", product.parent, product.name)
         else:
-            with tarfile.open(archive, "w:gz", compresslevel=3) as out:
+            compression = {"preset": 1} if args.variant == "gpu" else {"compresslevel": 3}
+            with tarfile.open(
+                archive, "w:xz" if args.variant == "gpu" else "w:gz", **compression
+            ) as out:
                 out.add(product, arcname=product.name)
+    if archive.stat().st_size >= 2 * 1024**3:
+        raise RuntimeError("Archive exceeds GitHub's per-asset size limit")
     # Smoke-check the artifact after extraction, outside the source tree and environment.
     with tempfile.TemporaryDirectory(prefix="bts-release-") as temporary:
         extracted = Path(temporary) / "Тест сборки 中文"
@@ -178,6 +204,7 @@ def main():
         ),
         "platform": sys.platform,
         "arch": arch,
+        "variant": args.variant,
         "python": platform.python_version(),
         "checks": smoke,
         "dependencies": sorted(inventory, key=lambda item: item["name"]),

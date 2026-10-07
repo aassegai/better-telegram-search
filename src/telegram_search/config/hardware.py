@@ -6,8 +6,8 @@ from pathlib import Path
 import psutil
 
 
-def hardware_info(workspace: Path) -> dict:
-    """Report resources without loading GPU runtimes; this release permits CPU only."""
+def hardware_info(workspace: Path, *, device="cpu", backend=None) -> dict:
+    """Read capabilities without allocating a model or probing a GPU."""
     try:
         import onnxruntime
 
@@ -26,9 +26,9 @@ def hardware_info(workspace: Path) -> dict:
         "runtime": "onnxruntime" if version else None,
         "runtime_version": version,
         "available_providers": providers,
-        "selected_provider": "CPUExecutionProvider",
+        "selected_provider": backend.get("provider") if backend else None,
         "accelerators_probed": False,
-        "device_policy": "cpu_only",
+        "device_policy": device,
         "torch_installed": bool(installed & {"torch", "torchvision", "torchaudio"}),
         "sentence_transformers_installed": "sentence-transformers" in installed,
     }

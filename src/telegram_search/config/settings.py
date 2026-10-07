@@ -11,6 +11,9 @@ from telegram_search.shared.errors import UserError
 class Settings:
     version: int = 1
     device: str = "cpu"
+    search_device: str = "cpu"
+    gpu_device_id: int = 0
+    gpu_memory_limit_mib: int = 4096
     search_backend: str = "fts5_messages"
     cpu_threads: int = 4
     embedding_batch: int = 4
@@ -48,12 +51,17 @@ class Settings:
         if (
             type(settings.version) is not int
             or settings.version != 1
-            or settings.device != "cpu"
+            or type(settings.device) is not str
+            or settings.device not in {"cpu", "auto", "gpu"}
+            or type(settings.search_device) is not str
+            or settings.search_device not in {"cpu", "auto", "gpu"}
             or settings.search_backend != "fts5_messages"
         ):
-            raise UserError("Настройки не поддерживаются: сейчас доступен только профиль CPU.")
+            raise UserError("Недопустимый профиль устройства или версия настроек.")
         for name, lower, upper in (
             ("cpu_threads", 1, 32),
+            ("gpu_device_id", 0, 15),
+            ("gpu_memory_limit_mib", 512, 65536),
             ("embedding_batch", 1, 32),
             ("idle_unload_seconds", 1, 86400),
             ("query_cache_entries", 0, 256),

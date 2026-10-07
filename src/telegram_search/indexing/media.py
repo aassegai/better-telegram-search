@@ -33,6 +33,10 @@ class MediaService:
         self._load_existing()
         self.background = None
         if start_background:
+            self.start_background()
+
+    def start_background(self):
+        if self.background is None:
             self.background = threading.Thread(target=self._loop, name="media-index", daemon=True)
             self.background.start()
 
@@ -47,13 +51,34 @@ class MediaService:
             timeout=settings.ocr_timeout_seconds,
         )
 
-    def _new_clip(self):
+    def _new_clip(self, settings=None):
         try:
             from telegram_search.inference.clip import ClipEncoder
         except ImportError as exc:
-            raise UserError("Установите CPU runtime: uv sync --locked --extra semantic.") from exc
+            raise UserError(
+                "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
+            ) from exc
 
-        return ClipEncoder(self.db.workspace, threads=self.db.settings.cpu_threads)
+        settings = settings or self.db.settings
+        encoder = ClipEncoder(
+            self.db.workspace,
+            threads=settings.cpu_threads,
+            device=settings.device,
+            search_device=settings.search_device,
+            gpu_device_id=settings.gpu_device_id,
+            gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
+        )
+        with self.db.connect() as conn:
+            spaces = conn.execute(
+                "SELECT space_id,COUNT(*) AS count FROM media_embeddings WHERE kind='image' "
+                "GROUP BY space_id ORDER BY count DESC,space_id"
+            ).fetchall()
+        compatible = encoder.compatible_spaces()
+        for row in spaces:
+            if row["space_id"] in compatible:
+                encoder.adopt_space(row["space_id"])
+                break
+        return encoder
 
     def _load_existing(self):
         with self.db.connect() as conn:
@@ -201,7 +226,13 @@ class MediaService:
             "ocr_runtime_installed": importlib.util.find_spec("tesserocr") is not None,
             "running": self.running,
             "resource_error": self.resource_error,
-            "device": "cpu",
+            "device": self.clip.execution.info()["device"]
+            if self.clip
+            else self.db.settings.device,
+            "backend": self.clip.execution.info() if self.clip else None,
+            "query_backend": self.clip.query_execution.info()
+            if self.clip and hasattr(self.clip, "query_execution")
+            else None,
         }
 
     def _read_photo(self, sha):
@@ -280,6 +311,7 @@ class MediaService:
 
     def _loop(self):
         while not self.stop.is_set():
+            paused = False
             try:
                 self.cleanup()
                 with self.lock, self.db.connect() as conn:
@@ -297,8 +329,11 @@ class MediaService:
                     else:
                         self.resource_error = None
                         worked = self._ocr_one()
-                        worked |= self._image_batch()
+                        images_worked = self._image_batch()
+                        worked |= images_worked
                         worked |= self._ocr_embeddings()
+                        if not images_worked and self.clip and hasattr(self.clip, "unload_index"):
+                            self.clip.unload_index()
                         if worked:
                             continue
             except Exception:
@@ -307,6 +342,8 @@ class MediaService:
                 )
             finally:
                 self.running = False
+            if self.clip and paused and hasattr(self.clip, "unload_index"):
+                self.clip.unload_index()
             if (
                 self.clip
                 and time.monotonic() - self.last_used > self.db.settings.idle_unload_seconds

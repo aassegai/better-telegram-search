@@ -1,0 +1,34 @@
+{
+  "synthetic_only": true,
+  "torch_absent": true,
+  "reference_runtime": "1.30.0",
+  "candidate_runtime": "1.23.2",
+  "hardware": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "precision": "FP32, CUDA TF32 disabled",
+  "models": {
+    "e5-small": {
+      "max_absolute_error": 6.705522537231445e-08,
+      "minimum_cosine": 0.9999998807907104
+    },
+    "e5-small-query": {
+      "max_absolute_error": 5.960464477539063e-08,
+      "minimum_cosine": 0.9999999403953552
+    },
+    "e5-base": {
+      "max_absolute_error": 1.4901161193847656e-07,
+      "minimum_cosine": 0.9999999403953552
+    },
+    "e5-base-query": {
+      "max_absolute_error": 1.043081283569336e-07,
+      "minimum_cosine": 1.0
+    },
+    "clip-text": {
+      "max_absolute_error": 1.1920928955078125e-07,
+      "minimum_cosine": 0.9999998211860657
+    },
+    "clip-image": {
+      "max_absolute_error": 2.1532177925109863e-06,
+      "minimum_cosine": 0.9999998211860657
+    }
+  }
+}

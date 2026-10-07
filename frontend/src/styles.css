@@ -155,3 +155,8 @@ mark { color: inherit; background: #e6edbd; padding: 0 1px; border-radius: 2px; 
 .resource-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .source-row { border-bottom: 1px solid #dce3e7; padding: 16px 0; }
 @media (max-width: 700px) { .resource-fields { grid-template-columns: 1fr; } }
+
+.device-panel, .update-panel { border-top: 1px solid var(--line, #d6dfd0); margin-top: 1.5rem; padding-top: 1rem; }
+.release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-height: 18rem; overflow-y: auto; }
+.update-progress { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin: .75rem 0; }
+.update-progress progress { flex: 1; min-width: 8rem; accent-color: #2c624b; }

@@ -221,6 +221,121 @@ class WorkspaceService:
         )
         return sizes
 
+    def change_device(
+        self, device, gpu_device_id=0, gpu_memory_limit_mib=4096, reindex=False, search_device="cpu"
+    ):
+        """Validate the new device before saving; publish each new space explicitly."""
+        from telegram_search.inference.providers import Execution
+
+        with self.lock:
+            previous = self.db.settings
+            candidate = replace(
+                previous,
+                device=device,
+                search_device=search_device,
+                gpu_device_id=gpu_device_id,
+                gpu_memory_limit_mib=gpu_memory_limit_mib,
+            )
+            candidate.validate()
+            if any(
+                task and task.is_alive()
+                for task in (self.semantic.preparation, self.media.preparation)
+            ):
+                raise UserError("Дождитесь завершения подготовки моделей.")
+            with self.db.connect() as conn:
+                active = conn.execute(
+                    "SELECT e.profile,e.manifest_json,s.active_space_id FROM semantic_state s "
+                    "LEFT JOIN embedding_spaces e ON e.id=s.active_space_id WHERE s.enabled=1"
+                ).fetchone()
+                if (
+                    self.media.running
+                    or conn.execute(
+                        "SELECT 1 FROM index_work WHERE state='running' LIMIT 1"
+                    ).fetchone()
+                ):
+                    raise UserError(
+                        "Приостановите индексацию текста и медиа перед сменой устройства."
+                    )
+            try:
+                execution = Execution(
+                    device,
+                    device_id=gpu_device_id,
+                    memory_limit_mib=gpu_memory_limit_mib,
+                    threads=candidate.cpu_threads,
+                )
+                query_execution = Execution(
+                    search_device,
+                    device_id=gpu_device_id,
+                    memory_limit_mib=gpu_memory_limit_mib,
+                    threads=candidate.cpu_threads,
+                )
+            except ImportError as exc:
+                raise UserError(
+                    "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
+                ) from exc
+            old_encoder, old_clip = self.semantic.encoder, self.media.clip
+            new_encoder = new_clip = None
+            saved = False
+            try:
+                if old_encoder:
+                    old_encoder.suspend()
+                if old_clip:
+                    old_clip.unload()
+                if active and active["profile"]:
+                    new_encoder = self.semantic._new_encoder(active["profile"], candidate)
+                    try:
+                        new_encoder.adopt_space(active["manifest_json"])
+                    except UserError:
+                        if not reindex:
+                            raise
+                    if new_encoder.space_id != active["active_space_id"] and not reindex:
+                        raise UserError(
+                            "Подтвердите перестроение семантических индексов при смене устройства."
+                        )
+                    new_encoder.encode_text(
+                        ["Проверка локального поиска"], "query", interactive=True
+                    )
+                    new_encoder.encode_text(["Проверка локальной индексации"], "passage")
+                    new_encoder.unload_index()
+                if old_clip:
+                    new_clip = self.media._new_clip(candidate)
+                    if new_clip.space_id != old_clip.space_id and not reindex:
+                        raise UserError(
+                            "Подтвердите перестроение семантических индексов при смене устройства."
+                        )
+                    new_clip.check_contract()
+                candidate.save(self.db.workspace)
+                saved = True
+                self.db.settings = candidate
+                if new_encoder:
+                    self.semantic.activate(
+                        new_encoder,
+                        reindex=reindex and new_encoder.space_id != active["active_space_id"],
+                    )
+                self.semantic.query_cache.clear()
+                if new_clip:
+                    self.media.clip = new_clip
+            except Exception:
+                if saved:
+                    previous.save(self.db.workspace)
+                    self.db.settings = previous
+                if new_encoder and new_encoder is not self.semantic.encoder:
+                    new_encoder.unload()
+                if new_clip and new_clip is not self.media.clip:
+                    new_clip.unload()
+                raise
+            finally:
+                if old_encoder and self.semantic.encoder is old_encoder:
+                    old_encoder.resume()
+        self.semantic.wake.set()
+        self.media.wake.set()
+        runtime = new_encoder or new_clip
+        return {
+            "settings": self.settings(),
+            "execution": (runtime.execution if runtime else execution).info(),
+            "query_execution": (runtime.query_execution if runtime else query_execution).info(),
+        }
+
     def deletion_estimate(self, chat_id):
         with self.db.connect() as conn:
             row = conn.execute(

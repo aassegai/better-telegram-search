@@ -143,7 +143,12 @@ def test_multimodal_api_merges_evidence_and_preserves_filters(client, tmp_path, 
         )
     media.ocr = SimpleNamespace(version="synthetic-ocr")
     media.clip = SimpleNamespace(
-        space_id="synthetic-clip", encode_text=lambda _: [[0.0] * 512], unload=lambda: None
+        execution=SimpleNamespace(
+            info=lambda: {"device": "cpu", "provider": "CPUExecutionProvider"}
+        ),
+        space_id="synthetic-clip",
+        encode_text=lambda _: [[0.0] * 512],
+        unload=lambda: None,
     )
     monkeypatch.setattr(client.app.state.search.media, "_dense", lambda *args: ["synthetic-image"])
     for selected in (["text", "ocr"], ["images", "ocr"], ["text", "images", "ocr"]):

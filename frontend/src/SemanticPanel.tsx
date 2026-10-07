@@ -26,7 +26,8 @@ export default function SemanticPanel({ status, onChange }: {
   });
   return <section className="semantic-panel" aria-labelledby="semantic-title">
     <h3 id="semantic-title">{t("Смысловой поиск")}</h3>
-    <p>{t("Модель обрабатывает сообщения локально на CPU. При подготовке загружаются только файлы модели с Hugging Face.")}</p>
+    <p>{t("Модель обрабатывает сообщения локально через ONNX Runtime. Устройство выбирается в настройках. При подготовке загружаются только файлы модели с Hugging Face.")}</p>
+    {status?.backend?.warning && <p className="warning">{t(status.backend.warning)}</p>}
     {!status ? <p>{t("Проверяем…")}</p> : !status.runtime_installed ?
       <p className="warning">{t("Установите окружение поиска: ")}<code>uv sync --locked --extra semantic</code>{t(", затем перезапустите приложение.")}</p> : <>
         <p role="status">{t("Готово сегментов: ")}{status.ready_segments} / {status.total_segments}{status.paused ? t(' · на паузе') : ''}</p>

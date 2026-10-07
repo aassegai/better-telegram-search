@@ -11,7 +11,7 @@ from telegram_search.storage.generations import invalidate_segments
 
 
 class SemanticService:
-    """One CPU encoder and bounded background work per workspace, never auto-download."""
+    """One model space with independently selected indexing and query sessions."""
 
     def __init__(self, db, lifecycle_lock, *, start_background=True):
         self.db = db
@@ -42,18 +42,29 @@ class SemanticService:
                 with self.db.connect() as conn:
                     conn.execute("UPDATE semantic_state SET error=? WHERE id=1", (str(exc),))
             if start_background:
-                self.background = threading.Thread(
-                    target=self._loop, name="semantic-index", daemon=True
-                )
-                self.background.start()
+                self.start_background()
 
-    def _new_encoder(self, profile):
+    def start_background(self):
+        if self.available and self.background is None:
+            self.background = threading.Thread(
+                target=self._loop, name="semantic-index", daemon=True
+            )
+            self.background.start()
+
+    def _new_encoder(self, profile, settings=None):
         from telegram_search.inference.bundles import BundleStore
         from telegram_search.inference.e5 import E5Encoder
 
         spec = model_spec(profile)
+        settings = settings or self.db.settings
         return E5Encoder(
-            spec, BundleStore(self.db.workspace).verify(spec), threads=self.db.settings.cpu_threads
+            spec,
+            BundleStore(self.db.workspace).verify(spec),
+            threads=settings.cpu_threads,
+            device=settings.device,
+            search_device=settings.search_device,
+            gpu_device_id=settings.gpu_device_id,
+            gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
         )
 
     def _load_existing(self):
@@ -64,6 +75,7 @@ class SemanticService:
             ).fetchone()
         if row:
             encoder = self._new_encoder(row["profile"])
+            encoder.adopt_space(row["manifest_json"])
             if (
                 encoder.space_id != row["id"]
                 or serialize(encoder.space_manifest) != row["manifest_json"]
@@ -125,7 +137,9 @@ class SemanticService:
         self, profile="small", *, reindex=False, offline=False, repair=False, local_bundle=None
     ):
         if not self.available:
-            raise UserError("Установите CPU runtime: uv sync --locked --extra semantic.")
+            raise UserError(
+                "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
+            )
         spec = model_spec(profile)
         with self.lock:
             if self.preparation and self.preparation.is_alive():
@@ -327,30 +341,38 @@ class SemanticService:
         while not self.stop.is_set():
             try:
                 self.cleanup()
-                if self.encoder:
-                    with self.db.connect() as conn:
-                        state = conn.execute(
-                            "SELECT enabled,paused FROM semantic_state WHERE id=1"
-                        ).fetchone()
-                        work = conn.execute(
-                            "SELECT id FROM index_work WHERE state='pending' "
-                            "ORDER BY created_at,id LIMIT 1"
-                        ).fetchone()
-                    if state[0] and not state[1] and work and not self.preparing_encoder.is_set():
-                        SegmentWorker(
-                            self.db,
-                            self.encoder,
-                            self._vector_store(),
-                            self.lock,
-                            batch_size=self.db.settings.embedding_batch,
-                            should_stop=lambda: (
-                                self.stop.is_set() or self.preparing_encoder.is_set()
-                            ),
-                        ).run(work[0])
+                worker = None
+                with self.lock:
+                    encoder = self.encoder
+                    if encoder is not None:
+                        with self.db.connect() as conn:
+                            state = conn.execute(
+                                "SELECT enabled,paused FROM semantic_state WHERE id=1"
+                            ).fetchone()
+                            work = conn.execute(
+                                "SELECT id FROM index_work WHERE state='pending' "
+                                "ORDER BY created_at,id LIMIT 1"
+                            ).fetchone()
+                        if (
+                            state[0]
+                            and not state[1]
+                            and work
+                            and not self.preparing_encoder.is_set()
+                        ):
+                            worker = self._worker(encoder)
+                if encoder:
+                    if worker:
+                        worker.run(work[0])
                         continue
+                    if (
+                        hasattr(encoder, "unload_index")
+                        and encoder.session is not None
+                        and (state[1] or time.monotonic() - encoder.last_index_used > 5)
+                    ):
+                        encoder.unload_index()
                     if time.monotonic() - self.last_used > self.db.settings.idle_unload_seconds:
                         with self.lock:
-                            self.encoder.unload()
+                            encoder.unload()
                             self.query_cache.clear()
             except Exception:
                 with self.db.connect() as conn:
@@ -360,6 +382,18 @@ class SemanticService:
                     )
             self.wake.wait(1)
             self.wake.clear()
+
+    def _worker(self, encoder):
+        return SegmentWorker(
+            self.db,
+            encoder,
+            self._vector_store(),
+            self.lock,
+            batch_size=self.db.settings.embedding_batch,
+            should_stop=lambda: (
+                self.stop.is_set() or self.preparing_encoder.is_set() or self.encoder is not encoder
+            ),
+        )
 
     def shutdown(self):
         self.stop.set()

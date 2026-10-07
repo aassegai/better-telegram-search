@@ -210,6 +210,9 @@ def test_clip_image_vectors_use_separate_space_and_prefilter(db, importer, tmp_p
     job = load(importer, photo_export(tmp_path / "source"))
     semantic, media = services(db, importer)
     media.clip = SimpleNamespace(
+        execution=SimpleNamespace(
+            info=lambda: {"device": "cpu", "provider": "CPUExecutionProvider"}
+        ),
         space_id="a" * 64,
         encode_images=lambda data: np.tile(np.eye(1, 512, dtype=np.float32), (len(data), 1)),
         encode_text=lambda texts: np.eye(1, 512, dtype=np.float32),

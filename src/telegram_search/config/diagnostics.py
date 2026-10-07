@@ -31,7 +31,7 @@ def doctor(db: Database) -> dict:
         "sqlite": sqlite3.sqlite_version,
         "fts5": True,
         "database_check": check,
-        "device": "cpu",
+        "device": db.settings.device,
         "models_loaded": 0,
         "dense_available": False,
         "ocr_available": False,
@@ -46,5 +46,5 @@ def doctor(db: Database) -> dict:
         "imports": imports,
         "schema_version": schema_version,
         "pending_index_segments": pending,
-        "hardware": hardware_info(db.workspace),
+        "hardware": hardware_info(db.workspace, device=db.settings.device),
     }

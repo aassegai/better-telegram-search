@@ -16,11 +16,12 @@ publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
 
 
-@pytest.fixture
-def release_case(monkeypatch):
+@pytest.fixture(params=["0.1.0", "0.3.0"])
+def release_case(monkeypatch, request):
+    release_version = request.param
     request = {
         "repository": "synthetic/repository",
-        "tag": "v0.1.0",
+        "tag": "v" + release_version,
         "build_commit": "a" * 40,
         "release_commit": "b" * 40,
         "build_run_id": "123",
@@ -39,8 +40,8 @@ def release_case(monkeypatch):
         "assets": [],
     }
     files, patches, written = {}, [], []
-    for platform, extension in publisher.PLATFORMS.items():
-        prefix = "better-telegram-search-0.1.0-" + platform
+    for platform, extension in publisher.platforms(request).items():
+        prefix = "better-telegram-search-" + release_version + "-" + platform
         archive = prefix + "." + extension
         payload = b"Public synthetic archive"
         build = {
@@ -49,13 +50,18 @@ def release_case(monkeypatch):
             "bytes": len(payload),
             "checks": dict.fromkeys(publisher.CHECKS, True),
         }
+        if release_version == "0.3.0":
+            build["checks"].update(dict.fromkeys(publisher.NEW_CHECKS, True))
+        if platform.endswith("-gpu"):
+            build["checks"]["cuda_libraries"] = True
         report["builds"][platform] = build
-        system, arch = platform.split("-", 1)
+        system, arch = platform.removesuffix("-gpu").split("-", 1)
         manifest = {
             "commit": request["build_commit"],
             "source_dirty": False,
             "platform": system,
             "arch": arch,
+            "variant": "gpu" if platform.endswith("-gpu") else "cpu",
             "artifact": archive,
             "sha256": build["sha256"],
             "bytes": build["bytes"],
@@ -132,7 +138,9 @@ def release_case(monkeypatch):
 def test_publication_verifies_files_before_promoting_and_retry_is_idempotent(release_case):
     request, _, _, _, patches, written = release_case
     result = publisher.publish(request)
-    assert result["state"] == "published" and result["archives_verified"] == 5
+    assert result["state"] == "published" and result["archives_verified"] == len(
+        publisher.platforms(request)
+    )
     assert len(patches) == 1 and patches[0]["target_commitish"] == request["release_commit"]
     assert patches[0]["draft"] is False and patches[0]["body"] == request["notes"]
     assert written[0][2]["draft"] is False
@@ -171,7 +179,9 @@ def test_archive_without_github_digest_is_downloaded_and_hashed(release_case):
     request, report, release, _, _, _ = release_case
     for item in release["assets"]:
         item["digest"] = None
-    assert len(publisher.verify_assets(release, report, request)) == 15
+    assert len(publisher.verify_assets(release, report, request)) == 3 * len(
+        publisher.platforms(request)
+    )
 
 
 def test_concurrent_creation_of_conflicting_tag_does_not_publish(release_case, monkeypatch):

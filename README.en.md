@@ -6,7 +6,7 @@ A desktop app for searching your Telegram Desktop conversation archives. Find a
 message by keywords or meaning, a photo by its description, or text inside an
 image, then read the surrounding messages. Filter by conversation, author, and date.
 
-The app runs locally on CPU. Your conversations stay on your computer; semantic
+The app runs locally on CPU or GPU. Your conversations stay on your computer; semantic
 search and photo search use ONNX Runtime.
 
 ## Quickstart
@@ -28,6 +28,19 @@ Your browser opens automatically at `http://127.0.0.1:8765`.
 Use the **RU / EN** slider at the top to select English. Your choice is saved in
 this browser. Messages and search queries keep their original language.
 
+For NVIDIA on Windows/Linux x64, choose an archive ending in `-gpu`. Torch and a
+separate CUDA installation are unnecessary; a compatible NVIDIA driver is required.
+Set **Indexing device → GPU** and **Search query device → CPU** in settings.
+Click **Apply device**, then resume indexing.
+Both devices use one index, preserving completed chunks and progress.
+GPU sessions are unloaded when indexing is paused or finished.
+macOS supports CoreML when the model passes its CPU compatibility check.
+
+From 0.3.0 onwards, use **Settings → Application updates** to check, download,
+and **Update and restart**. Upgrade from 0.2.0 manually the first time: pause text
+and media indexing, fully close the old app, and launch 0.3.0 with the same workspace.
+Select GPU indexing and resume; completed CPU chunks do not need rebuilding.
+
 ### Run from source
 
 Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/), and
@@ -44,6 +57,16 @@ uv run --no-sync telegram-search run
 
 For subsequent launches, run the last command. Source installations store their
 data in `workspace/`; packaged builds use your OS's application data directory.
+
+For NVIDIA, use a separate environment instead of the CPU extra:
+
+```sh
+UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr
+UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv run --no-sync telegram-search run
+```
+
+In PowerShell, set `$env:UV_PROJECT_ENVIRONMENT = 'workspace/gpu-env'` first, then
+run the commands without the environment prefix. [Device details](docs/gpu-and-updates.en.md).
 
 ### Your first search
 

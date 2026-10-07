@@ -5,6 +5,11 @@ import sys
 def main():
     multiprocessing.freeze_support()
     # Dispatch before loading the server: sys.executable is the bootloader in a bundle.
+    if len(sys.argv) == 4 and sys.argv[1] in {"--internal-update", "--internal-recover"}:
+        from telegram_search.updates.installer import main as update
+
+        update(sys.argv[2], sys.argv[3], recover=sys.argv[1] == "--internal-recover")
+        return
     if len(sys.argv) == 3 and sys.argv[1] == "--internal-browser":
         from telegram_search.config.browser import browser_worker
 

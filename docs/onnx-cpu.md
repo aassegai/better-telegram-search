@@ -1,4 +1,6 @@
-# CPU ONNX runtime
+# ONNX runtime (CPU baseline)
+
+> CPU baseline; устройства 0.3.0 описаны в [GPU и обновления](gpu-and-updates.md).
 
 Пользовательский проект управляется uv и `uv.lock`; optional extra `semantic` содержит
 ONNX Runtime, tokenizers, NumPy, Hugging Face Hub, LanceDB и PyArrow. Torch,
@@ -30,9 +32,9 @@ Embedding space включает полный manifest, preprocessing/postproces
 
 ## Ресурсы
 
-Разрешён только `CPUExecutionProvider`: intra-op 4, inter-op 1, sequential execution.
-CUDA/CoreML не выбираются. Программа не пробует запускать GPU. Диагностика показывает
-OS/архитектуру, RAM/диск, CPU cores и доступные ORT providers; selected provider всегда CPU.
+По умолчанию используется `CPUExecutionProvider`: intra-op 4, inter-op 1, sequential execution.
+CUDA/CoreML выбираются явно в настройках 0.3.0; поиск на CPU не запускает GPU-сессию. Диагностика показывает
+OS/архитектуру, RAM/диск, CPU cores и доступные ORT providers; по умолчанию выбран CPU.
 В пользовательском runtime отключена ORT telemetry.
 
 Одна активная CPU session, bounded query cache (64), batch по умолчанию 4.
@@ -67,4 +69,4 @@ uv run --no-sync python validate_e5.py --workspace ../workspace --profile base -
 CPU safetensors/reference tokenizer. Не запускайте validation через основную `.venv`.
 Фактически проверен Linux x86_64 CPU; Windows x64 и macOS ARM имеют подходящие wheels
 в lock и отдельный semantic CI job, но на физических устройствах здесь не проверялись.
-GPU/CoreML в эту реализацию не входят.
+GPU/CoreML и независимые устройства индексации/поиска добавлены в 0.3.0; см. [описание](gpu-and-updates.md).

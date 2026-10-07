@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -16,7 +17,7 @@ from telegram_search.storage.database import Database
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Локальный поиск по Telegram Desktop (CPU)")
+    parser = argparse.ArgumentParser(description="Локальный поиск по Telegram Desktop (ONNX)")
     parser.add_argument("--workspace", type=Path, default=default_workspace())
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("setup", "doctor", "rebuild", "compact"):
@@ -54,21 +55,28 @@ def main() -> None:
         args.workspace = args.run_workspace
     db = Database(args.workspace)
     try:
+        if args.command == "run" and os.environ.get("BTS_UPDATE_HEALTHCHECK"):
+            from telegram_search.updates.installer import wait_for_startup
+
+            wait_for_startup(args.workspace, os.environ["BTS_UPDATE_HEALTHCHECK"])
         db.initialize()
         if args.command == "run":
             from telegram_search.backend.api import create_app
 
             if not 1 <= args.port <= 65535:
                 raise UserError("Порт должен быть от 1 до 65535.")
+            app = create_app(args.workspace, args.frontend)
             server = uvicorn.Server(
                 uvicorn.Config(
-                    create_app(args.workspace, args.frontend),
+                    app,
                     host="127.0.0.1",
                     port=args.port,
                     workers=1,
                     access_log=False,
                 )
             )
+            app.state.update_shutdown = lambda: setattr(server, "should_exit", True)
+            app.state.update_port = args.port
             if not args.no_browser:
 
                 def open_when_ready():

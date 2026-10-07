@@ -52,8 +52,8 @@ jobs:
         run: |
           tag="build-${BTS_BUILD_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           gh release create "$tag" --draft --target "$GITHUB_SHA" \
-            --title "CPU builds $BTS_BUILD_VERSION ($GITHUB_RUN_NUMBER)" \
-            --notes "Unpublished native CPU builds. Each archive includes its SHA-256 and offline smoke report. No Telegram exports or E5/CLIP weights are included."
+            --title "Native builds $BTS_BUILD_VERSION ($GITHUB_RUN_NUMBER)" \
+            --notes "Unpublished native CPU and NVIDIA GPU builds. Each archive includes its SHA-256 and offline smoke report. No Telegram exports or E5/CLIP weights are included."
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           BTS_RELEASE_TAG="$tag" BTS_BUILD_RESULT=pending python3 scripts/report_builds.py
   build:
@@ -67,22 +67,43 @@ jobs:
           - os: ubuntu-22.04
             arch: x86_64
             name: linux-x86_64
+            extra: semantic
+            variant: cpu
           - os: ubuntu-22.04-arm
             arch: arm64
             name: linux-arm64
+            extra: semantic
+            variant: cpu
           - os: windows-2022
             arch: x86_64
             name: win32-x86_64
+            extra: semantic
+            variant: cpu
           - os: macos-15
             arch: arm64
             name: darwin-arm64
+            extra: semantic
+            variant: cpu
           - os: macos-15-intel
             arch: x86_64
             name: darwin-x86_64
+            extra: semantic
+            variant: cpu
+          - os: ubuntu-22.04
+            arch: x86_64
+            name: linux-x86_64-gpu
+            extra: gpu
+            variant: gpu
+          - os: windows-2022
+            arch: x86_64
+            name: win32-x86_64-gpu
+            extra: gpu
+            variant: gpu
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       UV_PROJECT_ENVIRONMENT: workspace/build-env
+      BTS_RUNTIME_EXTRA: ${{ matrix.extra }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -93,18 +114,19 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: uv sync --locked --no-dev --group bundle --extra semantic --extra ocr --python 3.12 --python-preference only-managed
+      - run: uv sync --locked --no-dev --group bundle --extra '${{ matrix.extra }}' --extra ocr --python 3.12 --python-preference only-managed
       - run: npm ci
         working-directory: frontend
       - name: Build and verify the extracted native archive
         shell: bash
         env:
           BTS_EXPECTED_ARCH: ${{ matrix.arch }}
+          BTS_BUILD_VARIANT: ${{ matrix.variant }}
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            workspace/build-env/Scripts/python.exe scripts/build_app.py --expected-arch "$BTS_EXPECTED_ARCH"
+            workspace/build-env/Scripts/python.exe scripts/build_app.py --expected-arch "$BTS_EXPECTED_ARCH" --variant "$BTS_BUILD_VARIANT"
           else
-            workspace/build-env/bin/python scripts/build_app.py --expected-arch "$BTS_EXPECTED_ARCH"
+            workspace/build-env/bin/python scripts/build_app.py --expected-arch "$BTS_EXPECTED_ARCH" --variant "$BTS_BUILD_VARIANT"
           fi
       - name: Stage verified packages in the unpublished release
         shell: bash
