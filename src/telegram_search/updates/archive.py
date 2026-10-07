@@ -76,7 +76,9 @@ def extract(archive, destination, *, platform, max_bytes=MAX_UNPACKED):
         else:
             with zipfile.ZipFile(archive) as incoming:
                 for member in incoming.infolist():
-                    path = target(member.filename, member.file_size)
+                    # ZipInfo normalizes backslashes on Windows and truncates NULs.
+                    # Validate the original stored name before either transformation.
+                    path = target(member.orig_filename, member.file_size)
                     mode = member.external_attr >> 16
                     if member.is_dir():
                         path.mkdir(parents=True, exist_ok=True)

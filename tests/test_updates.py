@@ -148,7 +148,10 @@ def test_network_rejects_untrusted_origins_and_redirects(url):
 def zip_case(path, entries):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, value in entries:
-            archive.writestr(name, value)
+            entry = zipfile.ZipInfo()
+            entry.filename = entry.orig_filename = name
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(entry, value)
 
 
 @pytest.mark.parametrize(
@@ -159,6 +162,7 @@ def zip_case(path, entries):
         "C:/outside",
         "BetterTelegramSearch/../../outside",
         "BetterTelegramSearch\\outside",
+        "BetterTelegramSearch/safe\x00hidden",
     ],
 )
 def test_archive_traversal_does_not_write_outside_staging(tmp_path, name):

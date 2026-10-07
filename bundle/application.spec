@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from bundle.native_layout import windows_nvidia_binaries
 
 repo = Path(SPECPATH).parent
 version = tomllib.loads((repo / "pyproject.toml").read_text())["project"]["version"]
@@ -21,6 +22,7 @@ datas = [
 ]
 datas += collect_data_files("telegram_search", includes=["**/*.json", "**/*.sql"])
 binaries = []
+nvidia_dlls = set()
 for package in ("onnxruntime", "pyarrow", "lancedb", "tesserocr"):
     binaries += collect_dynamic_libs(package)
 for distribution in importlib.metadata.distributions():
@@ -28,6 +30,8 @@ for distribution in importlib.metadata.distributions():
         for file in distribution.files or []:
             if ".so" in file.name or file.suffix == ".dll":
                 binaries.append((str(distribution.locate_file(file)), "."))
+                if file.suffix == ".dll":
+                    nvidia_dlls.add(file.name)
     for file in distribution.files or []:
         if file.name == "METADATA" and file.parent.name.endswith(".dist-info"):
             datas.append((str(distribution.locate_file(file)), file.parent.name))
@@ -53,6 +57,10 @@ a = Analysis(
               "pytest", "IPython", "matplotlib", "tkinter"],
     noarchive=False,
 )
+if sys.platform == "win32":
+    # Dependency analysis adds namespace copies of DLLs already collected at
+    # the top level. Windows has no deduplicating symlinks; retain one copy.
+    a.binaries = windows_nvidia_binaries(a.binaries, nvidia_dlls)
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name="telegram-search",

@@ -28,7 +28,12 @@ def test_frozen_paths_and_worker_dispatch(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "windows"))
     assert runtime.default_workspace() == tmp_path / "windows/BetterTelegramSearch/workspace"
     monkeypatch.setattr(sys, "platform", "darwin")
-    assert "Library/Application Support" in str(runtime.default_workspace())
+    assert runtime.default_workspace().parts[-4:] == (
+        "Library",
+        "Application Support",
+        "BetterTelegramSearch",
+        "workspace",
+    )
 
 
 def test_source_worker_remains_a_python_module(monkeypatch):
