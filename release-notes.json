@@ -1,8 +1,37 @@
 {
   "state": "updated",
-  "tag": "v0.1.1",
-  "url": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.1.1",
-  "heading_removed": true,
-  "body_sha256": "b4d4a6b5fec7df454ecc2245727f80aeb7f5391274241a3521d123e39a915e47",
-  "run_id": "37442529910"
+  "releases": [
+    {
+      "state": "updated",
+      "tag": "v0.1.0",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.1.0",
+      "operation": "replace_body",
+      "body_sha256": "1c236493597f75ea0f02f0715bdd2830b41eb08f2fe9580fd44991ad66e703d3",
+      "run_id": "37576064901"
+    },
+    {
+      "state": "updated",
+      "tag": "v0.1.1",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.1.1",
+      "operation": "replace_body",
+      "body_sha256": "6fca367accdb653757de0b4795bc7d0aee6a5cf82f7497bd20c7c4bb721c5a26",
+      "run_id": "37576064901"
+    },
+    {
+      "state": "updated",
+      "tag": "v0.2.0",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.2.0",
+      "operation": "replace_body",
+      "body_sha256": "082d44b4ef5d89485a256b7028f06b3a44f7e23009c480deaac2589af22c3e11",
+      "run_id": "37576064901"
+    },
+    {
+      "state": "updated",
+      "tag": "v0.3.0",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.3.0",
+      "operation": "replace_body",
+      "body_sha256": "39b81b1990d01c52c050d393c92ec009552a0664334309e7525cdc64ab61e0dc",
+      "run_id": "37576064901"
+    }
+  ]
 }
