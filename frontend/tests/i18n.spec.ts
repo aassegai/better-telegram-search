@@ -85,6 +85,11 @@ test('keyboard language slider persists and preserves search state and original 
 });
 
 test('open settings switch languages without losing edits and translate backend errors', async ({ page }) => {
+  // This scenario checks translated model controls independently of installed ML extras.
+  await page.route('**/api/semantic', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ json: { ...await response.json(), runtime_installed: true } });
+  });
   await page.goto('/');
   await page.getByRole('button', { name: '⚙ Настройки и диагностика' }).click();
   await page.getByLabel('Количество результатов', { exact: true }).fill('7');

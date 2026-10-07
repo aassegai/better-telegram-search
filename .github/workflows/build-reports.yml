@@ -2,7 +2,7 @@ name: Completed build diagnostics
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: [Portable builds]
+    workflows: [Portable builds, Checks]
     types: [completed]
   push:
     branches: [main]

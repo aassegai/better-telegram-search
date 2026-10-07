@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from telegram_search.config.settings import Settings
-from telegram_search.inference.providers import CPU, CUDA, Execution
+from telegram_search.inference.providers import COREML, CPU, CUDA, Execution
 from telegram_search.shared.errors import UserError
 
 
@@ -42,6 +42,8 @@ def test_runtime_cannot_silently_fall_back_and_cuda_disables_tf32(monkeypatch):
     import sys
 
     from telegram_search.inference import providers
+
+    monkeypatch.setattr(providers.sys, "platform", "linux")
 
     requests = []
 
@@ -142,7 +144,7 @@ def test_lazy_gpu_selection_does_not_probe_or_load_cuda_on_cpu_search_startup(mo
 
     monkeypatch.setitem(sys.modules, "onnxruntime", SimpleNamespace())
     gpu = Execution("gpu", probe=False)
-    assert gpu.provider == CUDA
+    assert gpu.provider == (COREML if sys.platform == "darwin" else CUDA)
 
 
 def test_queries_use_cpu_sessions_and_unloading_index_keeps_query_session(tmp_path, monkeypatch):
