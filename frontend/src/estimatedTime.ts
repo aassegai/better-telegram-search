@@ -1,7 +1,7 @@
 import { t } from './i18n';
 
-export function estimatedTime(seconds: number | null | undefined): string {
-  if (seconds == null) return t('Оценка появится после первых батчей.');
+export function estimatedTime(seconds: number | null | undefined, unknown = t('Оценка появится после первых батчей.')): string {
+  if (seconds == null) return unknown;
   if (seconds <= 0) return t('Индексация завершена.');
   const minutes = Math.ceil(seconds / 60);
   if (minutes < 60) return t('Осталось примерно {p0} мин.', { p0: minutes });

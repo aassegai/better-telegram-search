@@ -10,6 +10,8 @@ async function mockIndex(page: import('@playwright/test').Page, ocrOnly = false)
         estimated_remaining_seconds: 7200 },
       media: { ...value.media, images_enabled: ocrOnly ? 0 : 1, ocr_enabled: 1,
         ocr_runtime_installed: true, paused: 1, batch_size: 1,
+        ocr_ready: 20, ocr_failed: 5, ocr_nonempty_ready: 15, ocr_dense_ready: 8,
+        ocr_dense_available: true, ocr_estimated_remaining_seconds: 1800,
         images_ready: 10, total_photos: 100, images_estimated_remaining_seconds: 600 },
     } });
   });
@@ -70,8 +72,48 @@ test('OCR can pause and resume before CLIP has been prepared', async ({ page }) 
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
-  await page.getByText('Текст на изображениях · OCR', { exact: true }).click();
   await page.getByRole('button', { name: 'Продолжить OCR', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
   expect(action).toBe('resume');
 });
+
+test('OCR recognition and semantic progress are visible with chat-scoped ETA and errors', async ({ page }) => {
+  await mockIndex(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const ocr = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+  await expect(ocr).toBeVisible();
+  await expect(ocr).toContainText('Обработано: 25 / 100');
+  await expect(ocr).toContainText('На паузе');
+  await expect(ocr).toContainText('Осталось примерно 30 мин.');
+  await expect(ocr).toContainText('OCR с ошибкой: 5');
+  await expect(ocr.getByRole('progressbar', { name: 'Прогресс распознавания OCR', exact: true })).toHaveAttribute('value', '25');
+  await expect(ocr.getByRole('progressbar', { name: 'Прогресс распознавания OCR', exact: true })).toHaveAttribute('max', '100');
+  await expect(ocr.getByRole('progressbar', { name: 'Прогресс смысловой индексации OCR', exact: true })).toHaveAttribute('value', '8');
+  await expect(ocr.getByRole('progressbar', { name: 'Прогресс смысловой индексации OCR', exact: true })).toHaveAttribute('max', '15');
+  await page.getByRole('slider').press('End');
+  const english = page.getByRole('region', { name: 'Text in images · OCR' });
+  await expect(english).toContainText('Processed: 25 / 100');
+  await expect(english).toContainText('About 30 min remaining.');
+  await expect(english).toContainText('Semantic OCR: 8 / 15 containing text');
+});
+
+for (const done of [false, true]) {
+  test(`OCR ${done ? 'completed recognition keeps unfinished semantic progress visible' : 'unknown ETA avoids a fabricated remaining time'}`, async ({ page }) => {
+    await page.route('**/api/chats/*/index', async route => {
+      const response = await route.fetch();
+      const value = await response.json();
+      await route.fulfill({ json: { ...value, media: { ...value.media,
+        ocr_enabled: 1, images_enabled: 0, paused: 0, total_photos: 100,
+        ocr_ready: done ? 100 : 0, ocr_failed: 0, ocr_dense_ready: 8,
+        ocr_nonempty_ready: 15, ocr_dense_available: true,
+        ocr_estimated_remaining_seconds: done ? 0 : null,
+      } } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+    const ocr = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+    await expect(ocr).toContainText(done ? 'Распознавание завершено.' : 'Оценка появится после первых изображений.');
+    await expect(ocr).toContainText('OCR по смыслу: 8 / 15 с текстом');
+  });
+}

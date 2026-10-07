@@ -386,5 +386,14 @@
   "фото": "photos",
   "фотографий": "photos",
   "← Более ранние": "← Earlier messages",
-  "⚙ Настройки и диагностика": "⚙ Settings and diagnostics"
+  "⚙ Настройки и диагностика": "⚙ Settings and diagnostics",
+  "Текст на изображениях": "Text in images",
+  "Обработано: {p0} / {p1}": "Processed: {p0} / {p1}",
+  "Завершено с ошибками": "Completed with errors",
+  "Распознавание": "Recognizing",
+  "Прогресс распознавания OCR": "OCR recognition progress",
+  "Распознавание завершено.": "Recognition completed.",
+  "Оценка появится после первых изображений.": "The estimate will appear after the first images.",
+  "OCR по смыслу: {p0} / {p1} с текстом": "Semantic OCR: {p0} / {p1} containing text",
+  "Прогресс смысловой индексации OCR": "Semantic OCR indexing progress"
 }

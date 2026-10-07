@@ -10,6 +10,12 @@ def provider(encoder):
     return getattr(execution, "provider", None) or execution.info().get("provider", "cpu")
 
 
+def rate_space(encoder):
+    if hasattr(encoder, "space_id"):
+        return encoder.space_id
+    return f"{encoder.version}:threads={getattr(encoder, 'threads', 1)}"
+
+
 def record_rate(conn, kind, encoder, units, seconds):
     if units <= 0 or seconds <= 0:
         return
@@ -18,7 +24,7 @@ def record_rate(conn, kind, encoder, units, seconds):
         "ON CONFLICT(kind,space_id,provider) DO UPDATE SET "
         "seconds_per_unit=index_rates.seconds_per_unit*0.8+excluded.seconds_per_unit*0.2,"
         "batches=index_rates.batches+1",
-        (kind, encoder.space_id, provider(encoder), seconds / units),
+        (kind, rate_space(encoder), provider(encoder), seconds / units),
     )
 
 
@@ -31,17 +37,23 @@ class Estimates:
         row = conn.execute(
             "SELECT seconds_per_unit,batches FROM index_rates "
             "WHERE kind=? AND space_id=? AND provider=?",
-            (kind, encoder.space_id, provider(encoder)),
+            (kind, rate_space(encoder), provider(encoder)),
         ).fetchone()
         return row[0] if row and row[1] >= 2 else None
 
     def images(self, encoder, remaining):
+        return self.media("clip", encoder, remaining)
+
+    def ocr(self, engine, remaining):
+        return self.media("ocr", engine, remaining)
+
+    def media(self, kind, encoder, remaining):
         if remaining <= 0:
             return 0.0
         if not encoder:
             return None
         with self.db.connect() as conn:
-            rate = self.rate(conn, "clip", encoder)
+            rate = self.rate(conn, kind, encoder)
         return round(rate * remaining, 1) if rate is not None else None
 
     def text(self, encoder, chat_id=None):

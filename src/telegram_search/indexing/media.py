@@ -23,6 +23,7 @@ class MediaService:
         self.resource_error = None
         self.image_limits = {}
         self.ocr_staging_ids = set()
+        self.ocr_completed = 0
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.preparation = None
@@ -214,7 +215,8 @@ class MediaService:
             ocr_dense = conn.execute(
                 "SELECT COUNT(DISTINCT e.sha256) FROM media_embeddings e "
                 "WHERE kind='ocr' AND space_id=? AND ocr_version=? AND EXISTS "
-                "(SELECT 1 FROM media_refs r WHERE r.sha256=e.sha256" + refs + ")",
+                "(SELECT 1 FROM media_refs r WHERE r.sha256=e.sha256 "
+                "AND r.status='ready' AND r.kind='photo'" + refs + ")",
                 (
                     self.semantic.encoder.space_id if self.semantic.encoder else "",
                     self.ocr.version if self.ocr else "",
@@ -239,6 +241,10 @@ class MediaService:
             "ocr_failed": failed,
             "ocr_dense_ready": ocr_dense,
             "ocr_nonempty_ready": nonempty,
+            "ocr_dense_available": self.semantic.encoder is not None,
+            "ocr_estimated_remaining_seconds": self.semantic.estimates.ocr(
+                self.ocr, total - ready - failed
+            ),
             "images_ready": images,
             "images_failed": images_failed,
             "images_estimated_remaining_seconds": self.semantic.estimates.images(
@@ -314,6 +320,7 @@ class MediaService:
         except UserError as exc:
             result = {"text": "", "confidence": None}
             state, error = "failed", str(exc)
+        published = False
         with self.lock, self.db.connect() as conn:
             if self.ocr is engine and self._current(conn, sha):
                 conn.execute(
@@ -332,7 +339,35 @@ class MediaService:
                         error,
                     ),
                 )
+                published = True
+        if published:
+            self.ocr_completed += 1
         return True
+
+    def _index_cycle(self):
+        started = time.monotonic()
+        engine, completed = self.ocr, self.ocr_completed
+        try:
+            worked = self._ocr_one()
+            images_worked = self._image_batch()
+            worked |= images_worked
+            worked |= self._ocr_embeddings()
+            if not images_worked and self.clip and hasattr(self.clip, "unload_index"):
+                self.clip.unload_index()
+            return worked
+        finally:
+            # OCR shares the media worker with CLIP and E5. Measure a whole cycle
+            # so its ETA includes that work and time spent waiting for compute.
+            with self.lock:
+                if self.ocr is engine and self.ocr_completed > completed:
+                    with self.db.connect() as conn:
+                        record_rate(
+                            conn,
+                            "ocr",
+                            engine,
+                            self.ocr_completed - completed,
+                            time.monotonic() - started,
+                        )
 
     def _loop(self):
         while not self.stop.is_set():
@@ -353,12 +388,7 @@ class MediaService:
                         )
                     else:
                         self.resource_error = None
-                        worked = self._ocr_one()
-                        images_worked = self._image_batch()
-                        worked |= images_worked
-                        worked |= self._ocr_embeddings()
-                        if not images_worked and self.clip and hasattr(self.clip, "unload_index"):
-                            self.clip.unload_index()
+                        worked = self._index_cycle()
                         if worked:
                             continue
             except Exception:

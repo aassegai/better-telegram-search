@@ -68,6 +68,82 @@ def test_ocr_deduplicates_reimports_and_alternative_chats(db, importer, tmp_path
         assert conn.execute("SELECT COUNT(*) FROM media_vector_cleanup").fetchone()[0] == 1
 
 
+def test_ocr_eta_uses_whole_cycles_and_preserves_progress_on_restart(
+    db, importer, tmp_path, monkeypatch
+):
+    chats = []
+    for i, color in enumerate(("red", "blue", "green")):
+        stream = io.BytesIO()
+        Image.new("RGB", (64, 32), color).save(stream, format="PNG")
+        chats.append(
+            load(
+                importer,
+                photo_export(tmp_path / color, chat_id=100 + i, photo_data=stream.getvalue()),
+            )["chat_id"]
+        )
+    _, media = services(db, importer)
+    fake_ocr(media)
+    clock = [0]
+    monkeypatch.setattr("telegram_search.indexing.media.time.monotonic", lambda: clock[0])
+
+    def stage(seconds, result):
+        clock[0] += seconds
+        return result
+
+    media.ocr.recognize = lambda data: stage(2, {"text": "тест", "confidence": 90})
+    monkeypatch.setattr(media, "_image_batch", lambda: stage(8, False))
+    monkeypatch.setattr(media, "_ocr_embeddings", lambda: stage(5, False))
+    assert media._index_cycle()
+    assert media.status()["ocr_estimated_remaining_seconds"] is None
+    assert media._index_cycle()
+    status = media.status()
+    assert status["ocr_ready"] == 2 and status["total_photos"] == 3
+    assert status["ocr_estimated_remaining_seconds"] == 15
+    for chat in chats:
+        scoped = media.status(chat)
+        assert scoped["total_photos"] == 1
+        assert scoped["ocr_estimated_remaining_seconds"] == (1 - scoped["ocr_ready"]) * 15
+
+    _, restarted = services(db, importer)
+    fake_ocr(restarted)
+    assert restarted.status()["ocr_ready"] == 2
+    assert restarted.status()["ocr_estimated_remaining_seconds"] == 15
+    restarted.ocr.threads = 2
+    assert restarted.status()["ocr_estimated_remaining_seconds"] is None
+    restarted.ocr.version = "different-recognition-model"
+    assert restarted.status()["ocr_ready"] == 0
+    assert restarted.status()["ocr_estimated_remaining_seconds"] is None
+
+
+def test_ocr_failed_items_finish_the_queue_but_paused_results_do_not_advance_it(
+    db, importer, tmp_path, monkeypatch
+):
+    load(importer, photo_export(tmp_path / "source"))
+    _, media = services(db, importer)
+    fake_ocr(media)
+
+    def failed(data):
+        raise UserError("synthetic timeout")
+
+    media.ocr.recognize = failed
+    assert media._index_cycle()
+    status = media.status()
+    assert status["ocr_failed"] == 1 and status["ocr_ready"] == 0
+    assert status["ocr_estimated_remaining_seconds"] == 0
+    media.control("retry")
+
+    def pause(data):
+        media.control("pause")
+        return {"text": "не публиковать", "confidence": 90}
+
+    media.ocr.recognize = pause
+    assert media._index_cycle()
+    status = media.status()
+    assert status["ocr_failed"] == 0 and status["ocr_ready"] == 0
+    with db.connect() as conn:
+        assert conn.execute("SELECT batches FROM index_rates WHERE kind='ocr'").fetchone()[0] == 1
+
+
 def test_media_publication_does_not_resurrect_deleted_chat(db, importer, tmp_path):
     job = load(importer, photo_export(tmp_path / "source"))
     semantic, media = services(db, importer)

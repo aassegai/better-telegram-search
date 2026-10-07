@@ -4,6 +4,7 @@ import { api } from './api';
 import type { MediaStatus } from './types';
 import { useDialogOperation } from './useDialogOperation';
 import IndexCard from './IndexCard';
+import OcrIndexCard from './OcrIndexCard';
 import type { Mutation } from './IndexCard';
 
 type Source = { id: number; chat_name: string; path: string; available: boolean; media_refs: number; ready_refs: number };
@@ -71,13 +72,8 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         {[media.error, media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
         {media.missing_refs > 0 && <p className="warning">{t('Недоступных фотографий в источниках: ')}{media.missing_refs}</p>}
         {(media.images_failed ?? 0) > 0 && <p className="warning">{t('Фотографий с ошибкой: {p0}', { p0: media.images_failed ?? 0 })}</p>}
-        <details className="index-advanced"><summary>{t('Текст на изображениях · OCR')}</summary>
-          <p>{t('Готово: {p0} / {p1}', { p0: media.ocr_ready, p1: media.total_photos })}{t(' · OCR по смыслу: ')}{media.ocr_dense_ready}</p>
-          {media.ocr_failed > 0 && <p className="warning">{t('OCR с ошибкой: ')}{media.ocr_failed}</p>}
-          {media.ocr_enabled === 1 && media.images_enabled !== 1 && <button disabled={busy || preparing} onClick={() => control(media.paused ? 'resume' : 'pause')}>
-            {media.paused ? t('Продолжить OCR') : t('Пауза OCR')}</button>}
-        </details>
       </IndexCard>}
+      {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={control} />}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>
     </>}
     {!indexing && <>
