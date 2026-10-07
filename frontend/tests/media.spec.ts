@@ -126,3 +126,66 @@ test('empty selection blocks search and select-all controls stay locked during a
   await expect(page.getByText('Совпадений пока нет')).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'OCR', exact: true })).toBeEnabled();
 });
+
+test('result ranks preserve API order and show signed CLIP cosine rather than a probability', async ({ page }) => {
+  const matches = [20, 30, 10].map((id, index) => ({ ...hit, message_id: id,
+    matched_by: ['image'], result_type: 'image', ocr_text: null, image_similarity: [0.75, 0, -0.125][index],
+    messages: hit.messages.map(message => ({ ...message, message_id: id, media: [] })) }));
+  await page.route('**/api/search?**', route => route.fulfill({ json: {
+    results: matches, effective_mode: 'images', warnings: [], has_more: false, limit: 20,
+  } }));
+  await page.goto('/');
+  await page.getByRole('checkbox', { name: 'Текст', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
+  await page.getByLabel('Поисковый запрос').fill('stick figure comic');
+  await page.getByRole('button', { name: 'Найти', exact: true }).click();
+  await expect(page.locator('.result-ranking')).toHaveText([
+    'Результат #1Сходство CLIP: 0,7500',
+    'Результат #2Сходство CLIP: 0,0000',
+    'Результат #3Сходство CLIP: -0,1250',
+  ]);
+  await expect(page.locator('.result-header small')).toHaveText(['Совпадение в #20', 'Совпадение в #30', 'Совпадение в #10']);
+  await expect(page.locator('.result-ranking span[title]').first()).toHaveAttribute('title', /это не вероятность/);
+  await page.getByRole('slider').press('End');
+  await expect(page.locator('.result-ranking').first()).toHaveText('Result #1CLIP similarity: 0.7500');
+  await expect(page.locator('.result-ranking').last()).toHaveText('Result #3CLIP similarity: -0.1250');
+});
+
+test('images open in the search page and Escape preserves the underlying context', async ({ page, context }) => {
+  await page.route('**/api/media/999', route => route.fulfill({ contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6WQAAAABJRU5ErkJggg==', 'base64') }));
+  await page.route('**/api/search?**', route => route.fulfill({ json: {
+    results: [hit], effective_mode: 'mixed', warnings: [], has_more: false,
+  } }));
+  await page.route('**/api/chats/synthetic/context/**', route => route.fulfill({ json: { messages: hit.messages } }));
+  await page.goto('/');
+  await page.getByLabel('Поисковый запрос').fill('comic');
+  await page.getByRole('button', { name: 'Найти', exact: true }).click();
+  const photo = page.getByRole('button', { name: 'Открыть изображение', exact: true });
+  await photo.click();
+  const viewer = page.getByRole('dialog', { name: 'Просмотр изображения' });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByRole('img')).toHaveJSProperty('naturalWidth', 1);
+  expect(context.pages()).toHaveLength(1);
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(photo).toBeFocused();
+  await expect(page.getByLabel('Поисковый запрос')).toHaveValue('comic');
+  await expect(page.locator('.result-card')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Открыть контекст' }).click();
+  const conversation = page.getByRole('dialog', { name: hit.chat_name });
+  await conversation.getByRole('button', { name: 'Открыть изображение' }).click();
+  await expect(viewer).toBeVisible();
+  // Escape dismisses only the top image; the conversation remains open.
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+  await expect(conversation).toBeVisible();
+  await conversation.getByRole('button', { name: 'Открыть изображение' }).click();
+  await viewer.getByRole('button', { name: 'Закрыть изображение' }).click();
+  await expect(viewer).toHaveCount(0);
+  await conversation.getByRole('button', { name: 'Открыть изображение' }).click();
+  await viewer.click({ position: { x: 2, y: 2 } });
+  await expect(viewer).toHaveCount(0);
+  await expect(conversation).toBeVisible();
+  expect(context.pages()).toHaveLength(1);
+});

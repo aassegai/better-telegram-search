@@ -100,7 +100,8 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .context-tag { background: var(--surface-soft, #f0f0e9); border-radius: 3px; padding: 1px 4px; font-size: 9px; color: var(--text-muted, #8e947e); }
 .context-button { display: flex; width: 100%; align-items: center; justify-content: space-between; background: transparent; border: 0; padding: 13px 19px; color: var(--text-secondary, #61835b); font-size: 11px; }
 .context-button:hover { background: var(--surface-soft, #f6f9f0); }
-.photo-link { display: block; margin-top: 10px; }
+.photo-link { display: block; width: 100%; margin-top: 10px; padding: 0; border: 0; background: transparent; cursor: zoom-in; text-align: left; }
+.photo-link:focus-visible { outline: 2px solid var(--accent, #68a271); outline-offset: 4px; border-radius: 7px; }
 .photo-link img { display: block; max-width: min(100%, 300px); max-height: 230px; object-fit: contain; border-radius: 7px; }
 .missing-photo, .no-results, .more-note { font-size: 12px; color: var(--text-muted, #929c87); padding: 17px 0; }
 .overlay { position: fixed; inset: 0; background: var(--overlay, #112b2366); z-index: 10; display: flex; justify-content: center; align-items: center; padding: 24px; backdrop-filter: blur(4px); }
@@ -244,3 +245,17 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .index-errors > strong { display: block; font-size: 14px; }
 .index-errors p { margin: 7px 0; }
 .index-errors button { margin-top: 5px; max-width: 100%; }
+
+.result-ranking { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 18px 2px; font-size: 11px; color: var(--text-secondary, #496959); font-variant-numeric: tabular-nums; }
+.dialog-shell { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; max-width: 100%; max-height: 100%; margin: 0; padding: 64px 24px 24px; border: 0; background: transparent; color: var(--text, #234232); overflow: hidden; }
+.dialog-shell[open] { display: flex; align-items: center; justify-content: center; }
+.dialog-shell::backdrop { background: var(--overlay, #112b2366); backdrop-filter: blur(4px); }
+.settings-overlay { padding-top: 64px; }
+.dialog-frame { position: relative; width: 520px; max-width: 100%; min-height: 0; }
+.dialog-frame > .modal { width: 100%; max-height: calc(100vh - 88px); max-height: calc(100dvh - 88px); }
+.dialog-frame > .dialog-close { top: -52px; right: 0; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line, #dce5d5); border-radius: 50%; background: var(--surface, #fafbf7); color: var(--text, #234232); box-shadow: 0 4px 18px #0f291d33; font-size: 28px; cursor: pointer; }
+.image-dialog .dialog-frame { width: min(1200px, 100%); }
+.image-dialog .modal { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; }
+.image-dialog img { display: block; max-width: 100%; max-height: calc(100vh - 160px); max-height: calc(100dvh - 160px); object-fit: contain; }
+.image-dialog .image-caption { margin: 0; font-size: 12px; }
+@media (max-width: 700px) { .dialog-shell { padding-inline: 12px; } }

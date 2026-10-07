@@ -10,6 +10,9 @@ import WorkspacePanel from './WorkspacePanel';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
+import SettingsDialog from './SettingsDialog';
+import ImageViewer from './ImageViewer';
+import type { OpenImage } from './ImageViewer';
 import { useTheme } from './theme';
 import './theme.css';
 import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchModality, SemanticStatus } from './types';
@@ -34,7 +37,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
     words.has(normalize(part)) ? <mark key={i}>{part}</mark> : part)}</>;
 }
 
-function MessageRow({ message, anchor, query = '' }: { message: Message; anchor: number; query?: string }) {
+function MessageRow({ message, anchor, query = '', onOpenImage }: { message: Message; anchor: number; query?: string; onOpenImage: (image: OpenImage) => void }) {
   const photo = message.media.find(media => media.kind === 'photo');
   const [failed, setFailed] = useState(false);
   return <div className={`message ${message.message_id === anchor ? 'anchor' : ''}`}>
@@ -46,9 +49,9 @@ function MessageRow({ message, anchor, query = '' }: { message: Message; anchor:
     {message.reply_to && <div className="message-note">{t("Ответ на #")}{message.reply_to}</div>}
     <div className="message-text"><Highlight text={message.text || message.action || t('Сообщение без текста')} query={query} /></div>
     {photo && (photo.status === 'ready' && !failed ?
-      <a className="photo-link" href={`/api/media/${photo.id}`} target="_blank" rel="noreferrer">
+      <button type="button" className="photo-link" aria-label={t('Открыть изображение')} onClick={() => onOpenImage({ id: photo.id, messageId: message.message_id })}>
         <img loading="lazy" src={`/api/media/${photo.id}`} alt={t("Фотография из сообщения")} onError={() => setFailed(true)} />
-      </a> : <div className="missing-photo">{t("Изображение недоступно в папке источника")}</div>)}
+      </button> : <div className="missing-photo">{t("Изображение недоступно в папке источника")}</div>)}
     {message.media.some(media => media.kind === 'attachment') && <div className="message-note">{t("В исходном экспорте есть вложение")}</div>}
   </div>;
 }
@@ -88,6 +91,7 @@ export default function App() {
   const [indexChat, setIndexChat] = useState<Chat | null>(null);
   const [conflictJob, setConflictJob] = useState<Job | null>(null);
   const [context, setContext] = useState<{ hit: Hit; messages: Message[] } | null>(null);
+  const [openImage, setOpenImage] = useState<OpenImage | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
   const authorsVersion = jobs.map(job => `${job.id}:${job.processed}:${job.state}:${job.pending_conflicts}`).join('|');
@@ -343,10 +347,15 @@ export default function App() {
         </section> : <section className="results" aria-live="polite">
           <div className="results-heading"><h2>{hits.length ? t("Найдено фрагментов: {p0}{p1}", { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{onlyImages ? t('По описанию · CLIP') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · E5') : t('По словам · BM25')}</span></div>
           {!hits.length && <div className="no-results">{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</div>}
-          <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map(hit => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
+          <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? t('Опорное сообщение фрагмента') : t('Совпадение в')} #{hit.message_id}</small></div>
+            <div className="result-ranking"><span>{t('Результат #{p0}', { p0: index + 1 })}</span>
+              {hit.image_similarity != null && Number.isFinite(hit.image_similarity) && <span title={t('Сходство изображения с описанием: от −1 до 1. Чем выше, тем ближе совпадение; это не вероятность.')}>
+                {t('Сходство CLIP: {p0}', { p0: hit.image_similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 }) })}
+              </span>}
+            </div>
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => t(reasons[reason])).join(' · ')}</div>}
-            {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} />)}
+            {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}
             {hit.matched_parts?.some(part => !hit.messages.some(message => message.message_id === part.message_id)) && <p className="baseline-note">{t("Показана часть найденного фрагмента. Другие сообщения доступны через «Открыть контекст».")}</p>}
             {hit.ocr_text && <details className="ocr-evidence"><summary>{t("Распознанный текст")}{hit.ocr_confidence != null ? t(" · уверенность OCR {p0} / 100", { p0: Math.round(hit.ocr_confidence) }) : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>{t("Распознавание может содержать ошибки. Откройте фотографию для проверки.")}</p></details>}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<span>↗</span></button>
@@ -358,21 +367,21 @@ export default function App() {
 
     {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
-    {indexChat && <div className="overlay"><ChatIndexDialog onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} /></div>}
-    {modal === 'settings' && <div className="overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <button className="close" aria-label={t("Закрыть")} onClick={() => setModal(null)}>×</button>
+    {indexChat && <ChatIndexDialog onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
+    {modal === 'settings' && <SettingsDialog titleId="modal-title" onClose={() => setModal(null)}>
       <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
       {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
       <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
-    </section></div>}
+    </SettingsDialog>}
 
     {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">
       <button className="close" aria-label={t("Закрыть контекст")} onClick={closeContext}>×</button><div className="eyebrow">{t("КОНТЕКСТ ДИАЛОГА")}</div><h2 id="context-title">{context.hit.chat_name}</h2>
       <div className="context-nav"><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[0].message_id)}>{t("← Более ранние")}</button><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[context.messages.length - 1].message_id)}>{t("Более поздние →")}</button></div>
-      <div className="context-messages">{context.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={context.hit.message_id} query={submitted} />)}</div>
+      <div className="context-messages">{context.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={context.hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}</div>
     </section></div>}
+    {openImage && <ImageViewer key={`${openImage.id}/${openImage.messageId}`} image={openImage} onClose={() => setOpenImage(null)} />}
   </div>;
 }

@@ -42,7 +42,7 @@ class MediaSearch:
             found = self.semantic._vector_store().exact_filtered(
                 space, dimension, vector, eligible, maximum, predicate="utc_day = 'media'"
             )
-        return [item["id"] for item in found]
+        return found
 
     def search(
         self, query, filters, *, kind, exact=False, mode="words", limit=100, chunk_size=None
@@ -50,6 +50,7 @@ class MediaSearch:
         limit, chunk_size = search_options(self.db.settings, limit, chunk_size)
         engine, clip, encoder = self.media.ocr, self.media.clip, self.semantic.encoder
         warnings, lexical, dense = [], [], []
+        image_similarities = {}
         if kind == "images":
             if exact:
                 return [], [
@@ -100,7 +101,11 @@ class MediaSearch:
             ):
                 return [], ["Индекс изменился во время поиска. Повторите запрос."]
             if kind == "images":
-                dense = self._dense(space, dimension, vector, "image", filters)
+                matches = self._dense(space, dimension, vector, "image", filters)
+                dense = [item["id"] for item in matches]
+                image_similarities = {
+                    item["id"]: max(-1.0, min(1.0, 1.0 - item["_distance"])) for item in matches
+                }
                 version = None
             else:
                 version = engine.version
@@ -134,7 +139,10 @@ class MediaSearch:
                             )
                         ]
                 if vector is not None:
-                    dense = self._dense(space, dimension, vector, "ocr", filters, version)
+                    dense = [
+                        item["id"]
+                        for item in self._dense(space, dimension, vector, "ocr", filters, version)
+                    ]
             candidates = {}
             with self.db.connect() as conn:
                 for channel, keys in (
@@ -192,6 +200,8 @@ class MediaSearch:
                             if channel not in hit["matched_by"]:
                                 hit["matched_by"].append(channel)
                                 hit["score"] += 1 / (self.db.settings.rrf_k + rank)
+                            if channel == "image":
+                                hit["image_similarity"] = image_similarities[key]
                             if channel == "ocr_meaning" and "ocr_range" not in hit:
                                 hit["ocr_range"] = {
                                     "char_start": evidence["char_start"],
@@ -268,7 +278,13 @@ class UnifiedSearch:
                 current["matched_by"] = list(
                     dict.fromkeys([*current["matched_by"], *hit.get("matched_by", [])])
                 )
-                for name in ("media_id", "ocr_text", "ocr_confidence", "ocr_range"):
+                for name in (
+                    "media_id",
+                    "image_similarity",
+                    "ocr_text",
+                    "ocr_confidence",
+                    "ocr_range",
+                ):
                     if hit.get(name) is not None:
                         current[name] = hit[name]
         hits = sorted(

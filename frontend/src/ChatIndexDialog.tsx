@@ -5,6 +5,7 @@ import type { Chat, MediaStatus, SemanticStatus } from './types';
 import TextIndexPanel from './TextIndexPanel';
 import WorkspacePanel from './WorkspacePanel';
 import SourcePanel from './SourcePanel';
+import SettingsDialog from './SettingsDialog';
 
 type Status = { semantic: SemanticStatus; media: MediaStatus };
 
@@ -33,8 +34,7 @@ export default function ChatIndexDialog({ chat, onClose, onModels }: { chat: Cha
     const timer = window.setInterval(() => void poll(), 2000);
     return () => { alive = false; window.clearInterval(timer); };
   }, [chat.id]);
-  return <section className="modal" role="dialog" aria-modal="true" aria-labelledby="chat-index-title">
-    <button className="close" aria-label={t('Закрыть')} onClick={onClose}>×</button>
+  return <SettingsDialog titleId="chat-index-title" onClose={onClose}>
     <div className="eyebrow">{t('ИНДЕКСАЦИЯ ДИАЛОГА')}</div><h2 id="chat-index-title">{chat.name}</h2>
     {error && <p className="error" role="alert">{t(error)}</p>}
     <TextIndexPanel onModels={onModels} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} status={status?.semantic ?? null}
@@ -42,5 +42,5 @@ export default function ChatIndexDialog({ chat, onClose, onModels }: { chat: Cha
     <WorkspacePanel onModels={onModels} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} indexing media={status?.media ?? null}
       onMediaChange={media => setStatus(value => value ? { ...value, media } : value)} />
     <SourcePanel chatId={chat.id} />
-  </section>;
+  </SettingsDialog>;
 }

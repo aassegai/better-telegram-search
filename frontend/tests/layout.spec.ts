@@ -69,3 +69,39 @@ for (const width of [320, 390]) {
     await expect(settings).toBeInViewport({ ratio: 1 });
   });
 }
+
+for (const viewport of [{ width: 1280, height: 720 }, { width: 900, height: 400 }, { width: 320, height: 700 }]) {
+  test(`settings close stays outside the scrolling panel at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    const settings = page.getByRole('button', { name: 'Настройки', exact: true });
+    await settings.click();
+    const dialog = page.getByRole('dialog', { name: 'Настройки и диагностика' });
+    const panel = dialog.locator('.modal');
+    const close = dialog.getByRole('button', { name: 'Закрыть', exact: true });
+    await expect(panel.getByRole('heading', { name: 'Обновления приложения' })).toBeAttached();
+    const initial = (await close.boundingBox())!;
+    const bounds = (await panel.boundingBox())!;
+    expect(initial.y + initial.height).toBeLessThanOrEqual(bounds.y);
+    await panel.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    expect(await panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await expect(close).toBeInViewport({ ratio: 1 });
+    expect((await close.boundingBox())!.y).toBeCloseTo(initial.y, 1);
+    await close.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(settings).toBeFocused();
+    await page.getByRole('button', { name: /Настройки индексации / }).first().click();
+    const index = page.getByRole('dialog');
+    await expect(index.locator('.index-card')).toHaveCount(3);
+    const indexClose = index.getByRole('button', { name: 'Закрыть', exact: true });
+    const indexInitial = (await indexClose.boundingBox())!;
+    const indexBounds = (await index.locator('.modal').boundingBox())!;
+    expect(indexInitial.y + indexInitial.height).toBeLessThanOrEqual(indexBounds.y);
+    await index.locator('.modal').evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await expect(indexClose).toBeInViewport({ ratio: 1 });
+    expect((await indexClose.boundingBox())!.y).toBeCloseTo(indexInitial.y, 1);
+    await page.keyboard.press('Escape');
+    await expect(index).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+  });
+}

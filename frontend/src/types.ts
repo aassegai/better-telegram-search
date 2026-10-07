@@ -16,6 +16,7 @@ export type Hit = {
   matched_by?: ('words' | 'meaning' | 'image' | 'ocr_words' | 'ocr_meaning')[];
   result_type?: 'text' | 'image' | 'ocr';
   media_id?: number;
+  image_similarity?: number;
   ocr_text?: string | null;
   ocr_confidence?: number | null;
   ocr_range?: { char_start: number; char_end: number };

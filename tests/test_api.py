@@ -199,7 +199,11 @@ def test_multimodal_api_merges_evidence_and_preserves_filters(client, tmp_path, 
         encode_text=lambda _: [[0.0] * 512],
         unload=lambda: None,
     )
-    monkeypatch.setattr(client.app.state.search.media, "_dense", lambda *args: ["synthetic-image"])
+    monkeypatch.setattr(
+        client.app.state.search.media,
+        "_dense",
+        lambda *args: [{"id": "synthetic-image", "_distance": 1.0}],
+    )
     for selected in (["text", "ocr"], ["images", "ocr"], ["text", "images", "ocr"]):
         params = [("q", "заказ"), ("chunk_size", 1), *[("modality", kind) for kind in selected]]
         response = client.get("/api/search", params=params)
@@ -210,6 +214,10 @@ def test_multimodal_api_merges_evidence_and_preserves_filters(client, tmp_path, 
         expected = {"text": "words", "images": "image", "ocr": "ocr_words"}
         assert set(photo_hit["matched_by"]) == {expected[kind] for kind in selected}
         assert photo_hit["ocr_text"] == "заказ 12345" and photo_hit["media_id"] is not None
+        if "images" in selected:
+            assert photo_hit["image_similarity"] == 0.0
+        else:
+            assert "image_similarity" not in photo_hit
         assert len(photo_hit["messages"]) == 1
         assert len({(hit["chat_id"], hit["message_id"]) for hit in result["results"]}) == len(
             result["results"]

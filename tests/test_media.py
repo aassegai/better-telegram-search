@@ -310,6 +310,50 @@ def test_clip_image_vectors_use_separate_space_and_prefilter(db, importer, tmp_p
     assert semantic._vector_store().table(media.clip.space_id, 512).count_rows() == 0
 
 
+def test_image_cosine_scores_preserve_rank_and_survive_combined_search(db, importer, tmp_path):
+    np = pytest.importorskip("numpy")
+    source = tmp_path / "synthetic-ranking"
+    source.mkdir()
+    messages = []
+    for mid, color in ((10, "red"), (20, "blue"), (30, "green")):
+        Image.new("RGB", (64, 64), color).save(source / f"{mid}.png")
+        messages.append(message(mid=mid, text="ranking", photo=f"{mid}.png"))
+    load(importer, export(source, messages))
+    semantic, media = services(db, importer)
+    media.clip = SimpleNamespace(
+        execution=SimpleNamespace(info=lambda: {"device": "cpu"}),
+        space_id="synthetic-ranking",
+        encode_text=lambda texts: np.eye(1, 512, dtype=np.float32),
+    )
+    similarities = {10: -0.5, 20: 1.0, 30: 0.0}
+    with db.connect() as conn:
+        refs = conn.execute(
+            "SELECT message_id,sha256 FROM media_refs ORDER BY message_id"
+        ).fetchall()
+    vectors = np.zeros((len(refs), 512), dtype=np.float32)
+    for index, ref in enumerate(refs):
+        similarity = similarities[ref["message_id"]]
+        vectors[index, :2] = similarity, np.sqrt(1 - similarity**2)
+    media._publish(media.clip.space_id, 512, "image", [ref["sha256"] for ref in refs], vectors)
+    search = MediaSearch(db, media, semantic, importer.lifecycle_lock)
+    hits, warnings = search.search("ranking", Filters(), kind="images")
+    assert not warnings and [hit["message_id"] for hit in hits] == [20, 30, 10]
+    assert [hit["image_similarity"] for hit in hits] == pytest.approx([1.0, 0.0, -0.5])
+    combined = UnifiedSearch(HybridSearch(db, semantic, importer.lifecycle_lock), search)
+    for modalities in (["images"], ["text", "images"]):
+        result = combined.search("ranking", Filters(), False, 20, "words", modalities=modalities)
+        assert len(result["results"]) == 3
+        for hit in result["results"]:
+            assert hit["image_similarity"] == pytest.approx(similarities[hit["message_id"]])
+        assert [hit["score"] for hit in result["results"]] == sorted(
+            [hit["score"] for hit in result["results"]], reverse=True
+        )
+        if modalities == ["images"]:
+            assert [hit["message_id"] for hit in result["results"]] == [20, 30, 10]
+        else:
+            assert any({"words", "image"} <= set(hit["matched_by"]) for hit in result["results"])
+
+
 def test_media_scan_rejects_unpublished_vectors_and_other_ocr_versions_before_top_k(
     db, importer, tmp_path
 ):

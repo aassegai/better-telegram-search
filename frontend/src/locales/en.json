@@ -414,5 +414,12 @@
   "Смысловой OCR с ошибкой: {p0}": "Semantic OCR errors: {p0}",
   "Успешно распознано: {p0}": "Successfully recognized: {p0}",
   "Требуется повтор": "Retry required",
-  "Обработка завершена. Ошибки нужно повторить.": "Processing finished. Failed tasks need to be retried."
+  "Обработка завершена. Ошибки нужно повторить.": "Processing finished. Failed tasks need to be retried.",
+  "Результат #{p0}": "Result #{p0}",
+  "Сходство CLIP: {p0}": "CLIP similarity: {p0}",
+  "Сходство изображения с описанием: от −1 до 1. Чем выше, тем ближе совпадение; это не вероятность.": "Cosine similarity between the image and description: −1 to 1. Higher means a closer match; this is not a probability.",
+  "Открыть изображение": "Open image",
+  "Просмотр изображения": "Image viewer",
+  "Закрыть изображение": "Close image",
+  "Сообщение #{p0}": "Message #{p0}"
 }
