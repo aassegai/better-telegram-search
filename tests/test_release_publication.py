@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -344,3 +345,132 @@ def test_request_uses_its_committed_revision_and_rejects_application_changes(
             publisher.load_request()
     else:
         assert publisher.load_request()["release_commit"] == "b" * 40
+
+
+@pytest.fixture
+def native_retry(monkeypatch):
+    request = {
+        "repository": "synthetic/repository",
+        "build_commit": "a" * 40,
+        "build_run_id": "123",
+        "retry_failed_builds": True,
+    }
+    run = {
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "head_sha": request["build_commit"],
+        "head_repository": {"full_name": request["repository"]},
+        "head_branch": "main",
+        "path": ".github/workflows/builds.yml@main",
+    }
+    monkeypatch.setattr(publisher.time, "sleep", lambda seconds: None)
+    return request, run
+
+
+def test_retry_requires_an_explicit_boolean_request(monkeypatch):
+    monkeypatch.setattr(publisher, "api", lambda *a, **kw: pytest.fail("Unexpected API call"))
+    publisher.retry_native_build({})
+    publisher.retry_native_build({"retry_failed_builds": False})
+    with pytest.raises(ValueError, match="retry flag"):
+        publisher.retry_native_build({"retry_failed_builds": "true"})
+
+
+def test_native_retry_only_requeues_failed_jobs_and_waits_for_the_new_attempt(
+    native_retry, monkeypatch
+):
+    request, failed = native_retry
+    runs = iter(
+        [
+            failed,
+            failed,
+            {**failed, "status": "in_progress", "conclusion": None, "run_attempt": 2},
+            {**failed, "conclusion": "success", "run_attempt": 2},
+        ]
+    )
+    writes = []
+
+    def api(endpoint, *, method="GET", **kwargs):
+        if method == "POST":
+            writes.append(endpoint)
+            return None  # GitHub's 201 response has an empty body.
+        return next(runs)
+
+    monkeypatch.setattr(publisher, "api", api)
+    publisher.retry_native_build(request)
+    assert writes == ["repos/synthetic/repository/actions/runs/123/rerun-failed-jobs"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"head_sha": "b" * 40},
+        {"head_repository": {"full_name": "other/repository"}},
+        {"head_branch": "untrusted"},
+        {"path": ".github/workflows/other.yml"},
+        {"run_attempt": 2},
+        {"conclusion": "cancelled"},
+    ],
+)
+def test_retry_rejects_wrong_provenance_and_exhausted_attempts(native_retry, monkeypatch, change):
+    request, run = native_retry
+
+    def api(endpoint, *, method="GET", **kwargs):
+        assert method == "GET", "Rejected builds must never be requeued"
+        return {**run, **change}
+
+    monkeypatch.setattr(publisher, "api", api)
+    with pytest.raises(ValueError):
+        publisher.retry_native_build(request)
+
+
+def test_retry_can_await_an_already_running_second_attempt(native_retry, monkeypatch):
+    request, run = native_retry
+    runs = iter(
+        [
+            {**run, "status": "in_progress", "conclusion": None, "run_attempt": 2},
+            {**run, "conclusion": "success", "run_attempt": 2},
+        ]
+    )
+
+    def api(endpoint, *, method="GET", **kwargs):
+        assert method == "GET"
+        return next(runs)
+
+    monkeypatch.setattr(publisher, "api", api)
+    publisher.retry_native_build(request)
+
+
+@pytest.mark.parametrize("result", ["timeout", "failure"])
+def test_retry_failure_or_timeout_never_starts_a_third_attempt(native_retry, monkeypatch, result):
+    request, run = native_retry
+    writes = []
+    reads = []
+
+    def api(endpoint, *, method="GET", **kwargs):
+        if method == "POST":
+            writes.append(endpoint)
+            return None
+        reads.append(endpoint)
+        return {**run, "run_attempt": 1 if len(reads) == 1 else 2}
+
+    monkeypatch.setattr(publisher, "api", api)
+    with pytest.raises(TimeoutError if result == "timeout" else ValueError):
+        publisher.retry_native_build(request, timeout_seconds=0 if result == "timeout" else 600)
+    assert len(writes) == 1
+
+
+def test_api_accepts_empty_successful_rerun_response(monkeypatch):
+    monkeypatch.setattr(
+        publisher.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert (
+        publisher.api(
+            "repos/synthetic/repository/actions/runs/123/rerun-failed-jobs",
+            method="POST",
+            payload={},
+        )
+        is None
+    )

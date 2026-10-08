@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -77,7 +78,7 @@ def api(endpoint, *, payload=None, method="GET", missing=False):
         if missing and "(HTTP 404)" in result.stderr:
             return None
         raise RuntimeError("GitHub API failed: " + result.stderr[:1000])
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if result.stdout.strip() else None
 
 
 def git(*args):
@@ -370,22 +371,64 @@ def verify_assets(release, report, request):
     return assets
 
 
+def verify_native_run(run, request):
+    require(run["head_sha"] == request["build_commit"], "Wrong build source")
+    require(
+        run["head_repository"]["full_name"] == request["repository"]
+        and run["head_branch"] == "main"
+        and run["path"].split("@", 1)[0] == ".github/workflows/builds.yml",
+        "Wrong build workflow",
+    )
+
+
+def retry_native_build(request, *, timeout_seconds=600):
+    """An explicit release request may retry failed native jobs once, never all jobs.
+
+    Source and workflow provenance are checked before the write. Publication
+    still requires the complete successful report and unchanged verified assets.
+    """
+    retry = request.get("retry_failed_builds", False)
+    require(type(retry) is bool, "Invalid native retry flag")
+    if not retry:
+        return
+    endpoint = f"repos/{request['repository']}/actions/runs/{request['build_run_id']}"
+    run = api(endpoint)
+    verify_native_run(run, request)
+    if run["status"] == "completed" and run["conclusion"] == "success":
+        return
+    if run["status"] == "completed":
+        require(
+            run["conclusion"] == "failure" and run["run_attempt"] == 1,
+            "Native build retry exhausted or run not retryable",
+        )
+        # https://docs.github.com/rest/actions/workflow-runs#re-run-failed-jobs-from-a-workflow-run
+        api(endpoint + "/rerun-failed-jobs", method="POST", payload={})
+        print("Retry requested for failed native build jobs", flush=True)
+    else:
+        require(run["run_attempt"] == 2, "Only an existing retry may be awaited")
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        time.sleep(10)
+        run = api(endpoint)
+        verify_native_run(run, request)
+        # GitHub can briefly return the previous completed attempt after POST.
+        if run["status"] == "completed" and run["run_attempt"] >= 2:
+            require(run["conclusion"] == "success", "Retried native build failed")
+            return
+    raise TimeoutError("Native build retry exceeded its time budget")
+
+
 def publish(request):
     repository = request["repository"]
     report, _ = read_report(repository, "latest.json")
     verify_build(report, request)
     run = api(f"repos/{repository}/actions/runs/{request['build_run_id']}")
+    verify_native_run(run, request)
     require(
         run["status"] == "completed"
         and run["conclusion"] == "success"
         and run["head_sha"] == request["build_commit"],
         "Build run not successful",
-    )
-    require(
-        run["head_repository"]["full_name"] == repository
-        and run["head_branch"] == "main"
-        and run["path"].split("@", 1)[0] == ".github/workflows/builds.yml",
-        "Wrong build workflow",
     )
     releases = api(f"repos/{repository}/releases?per_page=100")
     candidates = [
@@ -499,6 +542,7 @@ def main():
         },
     )
     try:
+        retry_native_build(request)
         result = publish(request)
     except Exception as exc:
         write_report(
