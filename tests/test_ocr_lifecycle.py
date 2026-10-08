@@ -12,7 +12,6 @@ import pytest
 from test_media import services
 from test_ocr_queue import photos
 
-from telegram_search.inference.clip import ClipEncoder
 from telegram_search.inference.ocr_pool import CpuOcrPool
 from telegram_search.inference.ocr_process import OcrProcess
 
@@ -132,6 +131,9 @@ def test_memory_throttle_can_release_idle_model_then_resume(db, importer):
 
 
 def test_clip_idle_eviction_preserves_recent_or_busy_query_session():
+    pytest.importorskip("numpy")
+    from telegram_search.inference.clip import ClipEncoder
+
     encoder = ClipEncoder.__new__(ClipEncoder)
     encoder.lock = threading.RLock()
     encoder.sessions = {"query": object(), "image": object()}
