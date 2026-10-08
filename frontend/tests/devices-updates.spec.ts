@@ -117,8 +117,10 @@ test('OCR hybrid selects Paddle, preserves progress and shares a single pause', 
   await ocr.getByLabel('Устройство распознавания', { exact: true }).selectOption('hybrid');
   await expect(ocr.getByLabel('Модель OCR', { exact: true })).toHaveValue('paddle');
   await expect(ocr.getByText('CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.')).toBeVisible();
-  for (const model of ['E5', 'CLIP']) {
-    await expect(page.getByRole('region', { name: `Устройства ${model}`, exact: true }).locator('option[value=hybrid]')).toHaveCount(0);
+  for (const name of ['Устройства текстовой модели', 'Устройства визуальной модели']) {
+    const region = page.getByRole('region', { name, exact: true });
+    await expect(region).toBeVisible();
+    await expect(region.locator('option[value=hybrid]')).toHaveCount(0);
   }
   await ocr.getByRole('button', { name: 'Применить устройство', exact: true }).click();
   await expect(ocr.getByLabel('Устройство распознавания', { exact: true })).toHaveValue('hybrid');

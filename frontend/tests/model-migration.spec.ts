@@ -5,7 +5,7 @@ for (const english of [false, true]) {
     if (english) await page.addInitScript(() => localStorage.setItem('bts.language', 'en'));
     await page.route('**/api/semantic', async route => {
       const response = await route.fetch(); const status = await response.json();
-      await route.fulfill({ json: { ...status, enabled: 1, profile: 'small', preparation_state: 'ready' } });
+      await route.fulfill({ json: { ...status, runtime_installed: true, enabled: 1, profile: 'small', preparation_state: 'ready' } });
     });
     await page.route('**/api/media-index', async route => {
       const response = await route.fetch(); const status = await response.json();
