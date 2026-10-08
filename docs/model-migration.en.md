@@ -70,6 +70,12 @@ repeated queries may use the cache. Run `scripts/benchmark_semantic.py
 --profile berta --workspace <workspace with model> --output <local report>`.
 These numbers do not predict latency or relevance on a large personal archive.
 
+On the same text corpus, Giga raised nDCG@10 to 1.0 while retaining Recall@10 = 1.0.
+Meaning/hybrid search p95 was 318.53/92.16 ms; the first cold rerank took 13.81 s,
+and peak process RSS was 3.42 GiB. Repeated queries reused query/candidate caches;
+up to 50 text fragments were reranked. This small synthetic experiment does not
+guarantee a relevance improvement on real chats.
+
 Only SigLIP 2 on ORT 1.23.2 disables `LayerNormFusion` and
 `SimplifiedLayerNormFusion` to avoid a CPU optimizer crash. CUDA/CoreML were not
 run in this task. Before activation, the application compares public probes on the
