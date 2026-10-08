@@ -1,6 +1,14 @@
+import pytest
 from conftest import export, load, message
 
-from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
+from telegram_search.search.lexical import (
+    ContextService,
+    Filters,
+    SearchService,
+    date_bound,
+    fts_query,
+)
+from telegram_search.shared.errors import UserError
 
 
 def test_russian_normalization_literal_query_and_phrase(importer, db, tmp_path):
@@ -44,6 +52,76 @@ def test_combined_filters_apply_to_one_anchor(importer, db, tmp_path):
     assert len(hits) == 1 and hits[0]["message_id"] == 2
     assert hits[0]["messages"][0]["matches_filters"] is False
     assert hits[0]["messages"][1]["matches_filters"] is True
+
+
+@pytest.mark.parametrize(
+    ("text", "query"),
+    [
+        ("жёлтый велосипед", "ЭТО всё про ЖЁЛТЫЙ велосипед"),
+        ("red bicycle", "where is the red bicycle"),
+        ("red bicycle", "it's a red bicycle"),
+        ("red bicycle", "it’s a red bicycle"),
+        ("C R S T D 42", "the C and R S T D 42"),
+    ],
+)
+def test_keyword_search_skips_function_words_but_requires_all_content_terms(
+    importer, db, tmp_path, text, query
+):
+    load(
+        importer,
+        export(tmp_path / "source", [message(1, text), message(2, "red scooter жёлтый самокат")]),
+    )
+    result = SearchService(db).search(query, chunk_size=1)
+    assert [hit["message_id"] for hit in result["results"]] == [1]
+
+
+@pytest.mark.parametrize("query", ["и в это", "the and is", "it's", "it’s"])
+def test_all_stop_word_queries_are_empty_but_can_be_searched_as_exact_phrases(
+    importer, db, tmp_path, query
+):
+    load(importer, export(tmp_path / "source", [message(1, query)]))
+    search = SearchService(db)
+    assert not search.search(query)["results"]
+    assert not search.search(query)["has_more"]
+    assert search.search(query, exact=True)["results"][0]["message_id"] == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "other", "query"),
+    [
+        ("не велосипед", "велосипед", "это не велосипед"),
+        ("без сахара", "сахара", "это без сахара"),
+        ("not bicycle", "bicycle", "this is not a bicycle"),
+        ("never swim", "swim", "i never swim"),
+        ("can't swim", "can swim", "i can't swim"),
+        ("O'Reilly books", "Reilly books", "the O'Reilly books"),
+    ],
+)
+def test_keyword_search_preserves_negations_and_apostrophized_names(
+    importer, db, tmp_path, text, other, query
+):
+    load(importer, export(tmp_path / "source", [message(1, text), message(2, other)]))
+    result = SearchService(db).search(query, chunk_size=1)
+    assert [hit["message_id"] for hit in result["results"]] == [1]
+
+
+def test_exact_phrase_keeps_stop_words_between_content_words(importer, db, tmp_path):
+    load(
+        importer,
+        export(tmp_path / "source", [message(1, "cat in the box"), message(2, "cat box")]),
+    )
+    search = SearchService(db)
+    assert len(search.search("cat in the box", chunk_size=1)["results"]) == 2
+    assert [
+        hit["message_id"]
+        for hit in search.search("cat in the box", exact=True, chunk_size=1)["results"]
+    ] == [1]
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_query_word_limit_applies_before_removing_stop_words(exact):
+    with pytest.raises(UserError, match="Слишком много слов"):
+        fts_query("the " * 101, exact)
 
 
 def test_context_order_and_overlapping_window_dedup(importer, db, tmp_path):

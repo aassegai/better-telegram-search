@@ -103,6 +103,11 @@ run the commands without the environment prefix. [Device details](docs/gpu-and-u
    while the semantic index is being built. Combine **Text**, **Images**, and
    **OCR** under **Search in**, or select **Exact phrase** when needed.
 
+Keyword search skips common Russian and English function words (`и`, `в`, `это`,
+`the`, `and`, `is`), including in OCR and the keyword branch of the combined mode.
+Negations are preserved. A query consisting entirely of stop words has no keyword
+matches; select **Exact phrase** to search for those words literally.
+
 Preparing E5/CLIP/PaddleOCR downloads the models; subsequent searches work offline.
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from telegram_search.search.presentation import search_options
+from telegram_search.search.stopwords import keyword_terms
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
 from telegram_search.storage.database import Database
@@ -77,6 +78,9 @@ def fts_query(query: str, exact: bool) -> str | None:
         raise UserError("Слишком много слов в запросе.")
     if exact:
         return '"' + normalized.replace('"', '""') + '"'
+    words = keyword_terms(normalized)
+    if not words:
+        return None
     # Treat every term as literal text; never accept FTS operators from the input.
     return " AND ".join('"' + word + '"' for word in words)
 

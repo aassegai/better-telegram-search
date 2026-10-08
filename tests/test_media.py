@@ -68,6 +68,27 @@ def test_ocr_deduplicates_reimports_and_alternative_chats(db, importer, tmp_path
         assert conn.execute("SELECT COUNT(*) FROM media_vector_cleanup").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize(
+    ("text", "query"),
+    [
+        ("Стоимость ремонта 12345 рублей", "это про стоимость и ремонта 12345"),
+        ("red bicycle", "where is the red bicycle"),
+    ],
+)
+def test_ocr_keyword_search_uses_the_same_stop_word_filter(db, importer, tmp_path, text, query):
+    load(importer, photo_export(tmp_path / "source"))
+    semantic, media = services(db, importer)
+    fake_ocr(media, text=text)
+    assert media._ocr_one()
+    search = MediaSearch(db, media, semantic, importer.lifecycle_lock)
+    hits, warnings = search.search(query, Filters(), kind="ocr", chunk_size=1)
+    assert not warnings
+    assert len(hits) == 1 and hits[0]["matched_by"] == ["ocr_words"]
+    assert not search.search("the and и в это", Filters(), kind="ocr")[0]
+    assert not search.search(query, Filters(), kind="ocr", exact=True)[0]
+    assert search.search(text, Filters(), kind="ocr", exact=True)[0]
+
+
 def test_ocr_eta_measures_its_own_queue_and_preserves_progress_on_restart(
     db, importer, tmp_path, monkeypatch
 ):

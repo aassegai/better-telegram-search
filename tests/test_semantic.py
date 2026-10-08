@@ -365,6 +365,27 @@ def test_small_chunk_display_keeps_query_evidence_and_filter_witness(db, importe
         assert len(filtered["messages"]) == 1 and filtered["messages"][0]["matches_filters"]
 
 
+def test_hybrid_skips_stop_words_for_fts_and_anchor_but_encodes_original_query(
+    db, importer, tmp_path
+):
+    _, service, worker, work = setup_index(
+        db, importer, tmp_path, ["обычная реплика"] * 7 + ["уникальный ремонт"]
+    )
+    assert worker.run(work)["state"] == "done"
+    received = []
+    worker.encoder.on_encode = received.extend
+    search = HybridSearch(db, service, importer.lifecycle_lock)
+    query = "что это за ремонт"
+    hit = search.search(query, mode="hybrid", chunk_size=1)["results"][0]
+    assert set(hit["matched_by"]) == {"words", "meaning"}
+    assert hit["message_id"] == 8
+    assert received == [query]
+    stop_words = "the and и это"
+    results = search.search(stop_words, mode="hybrid")["results"]
+    assert results and all(hit["matched_by"] == ["meaning"] for hit in results)
+    assert received == [query, stop_words]
+
+
 def test_model_activation_preserves_user_pause(db, importer, tmp_path):
     _, service, _, _ = setup_index(db, importer, tmp_path)
     service.control("pause")
