@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -12,12 +13,14 @@ import uuid
 from pathlib import Path
 
 import psutil
+from filelock import FileLock, Timeout
 
 from telegram_search import __version__
 from telegram_search.config.runtime import frozen
 from telegram_search.shared.errors import UserError
 from telegram_search.updates import network
 from telegram_search.updates.archive import executable, extract
+from telegram_search.updates.cleanup import cleanup_updates
 from telegram_search.updates.installer import (
     application_root,
     atomic_json,
@@ -32,6 +35,8 @@ from telegram_search.updates.installer import (
 )
 from telegram_search.updates.manifest import required_checks, select_release, validate_manifest
 
+logger = logging.getLogger(__name__)
+
 
 class UpdateService:
     def __init__(self, workspace, shutdown=None):
@@ -41,8 +46,14 @@ class UpdateService:
             raise UserError("Папка обновлений должна находиться внутри workspace.")
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self.maintenance_lock = threading.RLock()
+        maintenance_path = self.root / ".maintenance.lock"
+        if maintenance_path.is_symlink():
+            raise UserError("Недопустимый файл блокировки обновлений.")
+        self.maintenance_file_lock = FileLock(maintenance_path, timeout=0)
         self.stop = threading.Event()
         self.task = None
+        self.cleanup_task = None
         self.shutdown_callback = shutdown
         self.selected = None
         self.product = None
@@ -168,7 +179,8 @@ class UpdateService:
 
             def work():
                 try:
-                    function(*args)
+                    with self.maintenance_lock, self.maintenance_file_lock:
+                        function(*args)
                 except Exception as exc:
                     self._set(
                         state="failed",
@@ -176,6 +188,8 @@ class UpdateService:
                         if isinstance(exc, UserError)
                         else "Не удалось обновить приложение. Проверьте сеть и свободное место.",
                     )
+                finally:
+                    self.start_cleanup()
 
             self.task = threading.Thread(target=work, name="app-update", daemon=True)
             self.task.start()
@@ -331,69 +345,47 @@ class UpdateService:
             self._set(completed_bytes=completed, total_bytes=completed)
 
     def _cleanup_cache(self):
-        """Keep one rollback snapshot; never touch an active copied helper."""
-        current = self.data.get("installation_nonce")
-        installation = application_root()
-        snapshots = []
-        for directory in self.root.iterdir():
-            if directory.is_symlink() or not re.fullmatch(r"[a-f0-9]{32}", directory.name):
-                continue
-            snapshot = directory / "backup.sqlite"
-            if snapshot.is_file() and (
-                committed(self.status_path, directory.name)
-                or self.data.get("rollback_nonce") == directory.name
-            ):
-                snapshots.append((snapshot.stat().st_mtime_ns, directory.name))
-        retained = max(snapshots)[1] if snapshots else None
-        for directory in self.root.iterdir():
-            if directory.name == current and not (
-                self.data.get("commit_nonce") == current
-                or self.data.get("rollback_nonce") == current
-            ):
-                continue
+        with self.maintenance_lock, self.maintenance_file_lock:
+            protected = set()
+            for path in (self.archive, self.product):
+                if path is not None and path.is_relative_to(self.root):
+                    protected.add(self.root / path.relative_to(self.root).parts[0])
+            return cleanup_updates(
+                self.workspace,
+                application_root(),
+                current=self.data.get("installation_nonce"),
+                protected=protected,
+                stopped=self.stop.is_set,
+            )
+
+    def start_cleanup(self):
+        """Do not hold API/status locks while removing potentially large builds."""
+        with self.lock:
             if (
-                directory.is_symlink()
-                or not directory.is_dir()
-                or not re.fullmatch(r"[a-f0-9]{32}", directory.name)
+                self.stop.is_set()
+                or self.recovery_required
+                or (self.cleanup_task and self.cleanup_task.is_alive())
+                or self.data["state"] == "installing"
             ):
-                continue
-            try:
-                handshake = directory / "handshake.json"
-                if handshake.is_file():
-                    value = json.loads(handshake.read_text())
-                    process = psutil.Process(value["pid"])
-                    if (
-                        abs(process.create_time() - value["created"]) < 0.01
-                        and process.is_running()
-                    ):
-                        continue
-            except psutil.NoSuchProcess:
-                pass
-            except (OSError, ValueError, KeyError, TypeError, psutil.AccessDenied):
-                continue
-            path = directory / "plan.json"
-            if path.is_file() and installation:
-                try:
-                    plan = json.loads(path.read_text())
-                    if plan["target"] == str(installation) and plan["nonce"] == directory.name:
-                        recovery_path(plan).unlink(missing_ok=True)
-                        if directory.name not in {current, retained}:
-                            backup = installation.parent / (".bts-backup-" + directory.name)
-                            failed = installation.with_name(
-                                installation.name + ".failed-" + directory.name
-                            )
-                            for folder in (backup, failed):
-                                if folder.is_dir() and not folder.is_symlink():
-                                    shutil.rmtree(folder)
-                except (ValueError, OSError, KeyError):
-                    continue
-            if directory.name in {current, retained}:
-                for name in ("helper", "verified"):
-                    folder = directory / name
-                    if folder.is_dir() and not folder.is_symlink():
-                        shutil.rmtree(folder)
-            else:
-                shutil.rmtree(directory)
+                return
+
+            def work():
+                deadline = time.monotonic() + 300
+                while not self.stop.is_set() and time.monotonic() < deadline:
+                    # Downloads and install preparation own their staging files.
+                    if self.maintenance_lock.acquire(blocking=False):
+                        try:
+                            if not self._cleanup_cache():
+                                return
+                        except (OSError, Timeout):
+                            logger.debug("Update cleanup deferred", exc_info=True)
+                        finally:
+                            self.maintenance_lock.release()
+                    if self.stop.wait(2):
+                        return
+
+            self.cleanup_task = threading.Thread(target=work, name="update-cleanup", daemon=True)
+            self.cleanup_task.start()
 
     def install(self, port):
         with self.lock:
@@ -484,6 +476,19 @@ class UpdateService:
             if self.process and self.process.poll() is None:
                 self.process.terminate()
                 self.process.wait(timeout=15)
+            transaction = directory / "transaction.json"
+            backup = target.parent / (".bts-backup-" + nonce)
+            if (
+                (directory / "plan.json").is_file()
+                and not transaction.exists()
+                and not backup.exists()
+                and not backup.is_symlink()
+                and target.is_dir()
+            ):
+                # The helper is stopped and never began replacing the app.
+                # Distinguish this discarded preparation from an interrupted
+                # installation whose recovery files must remain intact.
+                atomic_json(transaction, {"phase": "aborted"})
             if stage.exists():
                 shutil.rmtree(stage)
             if "plan" in locals():
@@ -494,3 +499,5 @@ class UpdateService:
         self.stop.set()
         if self.task:
             self.task.join(timeout=35)
+        if self.cleanup_task:
+            self.cleanup_task.join(timeout=5)

@@ -149,6 +149,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 and not os.environ.get("BTS_DISABLE_UPDATE_CHECK")
             ):
                 updates.check()
+            if not verification_nonce:
+                updates.start_cleanup()
             yield
         finally:
             verification_stop.set()
@@ -348,6 +350,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             app.state.update_verifying = False
             app.state.semantic.start_background()
             app.state.media.start_background()
+        app.state.updates.start_cleanup()
         return {"confirmed": True}
 
     @app.get("/api/sources")

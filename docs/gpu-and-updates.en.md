@@ -54,7 +54,11 @@ If startup fails, the helper restores the old app and database. If the helper
 itself was interrupted while replacing folders, close app processes and run
 `Recover-BetterTelegramSearch-….cmd` (Windows) or `.sh` (Linux/macOS), created beside
 the application folder. It validates the plan, restores the previous folder,
-and launches it. It never rolls back a confirmed update. After success, the next
-update check removes temporary files and older backups, keeping one previous
-build and its database snapshot. Updates require a writable application folder
+and launches it. It never rolls back a confirmed update. After a successful update,
+background cleanup waits for the helper to exit, then removes downloaded archives,
+extracted copies, temporary and failed builds, and older backups. One previous
+build with its database/settings snapshot is retained. Cleanup also runs at startup
+and on update checks; locked Windows files are retried later. Incomplete installations
+are preserved for recovery. The database, exports, indexes, models, and shared GPU
+library cache are preserved. Updates require a writable application folder
 and disk space for the archive, extracted files, helper, and backups.
