@@ -4,6 +4,7 @@ permissions:
   contents: read
 jobs:
   backend:
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -21,6 +22,7 @@ jobs:
       - run: uv run python scripts/check_repository.py
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -37,10 +39,12 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
+        timeout-minutes: 5
         working-directory: frontend
       - run: npm test
         working-directory: frontend
   semantic:
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -51,5 +55,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: uv sync --locked --extra semantic --extra ocr
-      - run: uv run --no-sync pytest tests/test_chunks.py tests/test_inference.py tests/test_semantic.py tests/test_ocr_onnx.py tests/test_model_devices.py
+      - run: uv run --no-sync pytest tests/test_chunks.py tests/test_chunking_policy.py tests/test_chunking_migration.py tests/test_inference.py tests/test_semantic.py tests/test_ocr_onnx.py tests/test_model_devices.py tests/test_encoder_migration.py
       - run: uv run --no-sync python -c "import importlib.util; assert importlib.util.find_spec('torch') is None; assert importlib.util.find_spec('sentence_transformers') is None"
