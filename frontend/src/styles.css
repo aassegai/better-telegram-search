@@ -163,7 +163,7 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .device-panel, .update-panel { border-top: 1px solid var(--line, #dce3d4); margin-top: 24px; padding-top: 12px; font-size: 13px; }
 .device-panel h3, .update-panel h3 { font-size: 16px; margin: 8px 0 14px; }
 .device-panel label, .update-panel label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--text-secondary, #63755d); }
-.device-panel select, .update-panel select { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line, #d5dfcc); border-radius: 8px; background: var(--surface, #fff); color: var(--text, #304f39); font: inherit; }
+.device-panel select, .update-panel select, .model-setup select { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line, #d5dfcc); border-radius: 8px; background: var(--surface, #fff); color: var(--text, #304f39); font: inherit; }
 .device-panel .resource-fields { gap: 16px; }
 .device-panel > p { margin: 12px 0; line-height: 1.6; }
 .device-panel button, .update-panel button { border: 1px solid var(--line, #cbd9bf); border-radius: 8px; padding: 10px 13px; background: var(--surface-soft, #eaf0e3); color: var(--text-secondary, #345d40); font: inherit; }

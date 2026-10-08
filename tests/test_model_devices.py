@@ -302,6 +302,9 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_region_batch")
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_paused")
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_paused")
+        conn.execute("DROP TABLE rerank_state")
+        conn.execute("ALTER TABLE media_state DROP COLUMN visual_profile")
+        conn.execute("ALTER TABLE media_state DROP COLUMN visual_space_id")
         # Reconstruct the pre-v6 schema, including removal of later optional
         # source/search migrations before replaying all migrations.
         for row in conn.execute(

@@ -32,7 +32,7 @@ def masked_mean_normalize(hidden: np.ndarray, attention_mask: np.ndarray) -> np.
 
 
 class E5Encoder:
-    """Pinned local ONNX FP32 inference on an explicitly selected device."""
+    """Manifest-driven text inference; the legacy name preserves public integrations."""
 
     def __init__(
         self,
@@ -79,7 +79,7 @@ class E5Encoder:
             "backend": "onnxruntime",
             "version": runtime_version(),
             "tokenizers_version": importlib.metadata.version("tokenizers"),
-            "dtype": "float32",
+            "dtype": spec.manifest.get("runtime_dtype", "float32"),
             "provider": self.execution.provider,
         }
         # Reference format stays compatible with 0.2.0 CPU spaces. Actual devices
@@ -125,7 +125,10 @@ class E5Encoder:
             or not set(inputs).issubset(self.spec.manifest["allowed_inputs"])
             or any(item.type != "tensor(int64)" for item in inputs.values())
             or self.spec.manifest["output_name"] not in outputs
-            or outputs[self.spec.manifest["output_name"]].type != "tensor(float)"
+            or outputs[self.spec.manifest["output_name"]].type
+            != {"float16": "tensor(float16)", "float32": "tensor(float)"}[
+                self.spec.manifest["output_dtype"]
+            ]
         ):
             raise UserError("Контракт upstream ONNX-модели не совпадает с manifest.")
         setattr(self, attribute, session)
@@ -153,10 +156,18 @@ class E5Encoder:
             )
             feed = {item.name: inputs[item.name] for item in candidate.get_inputs()}
             output = [self.spec.manifest["output_name"]]
-            check_vectors(
-                masked_mean_normalize(reference.run(output, feed)[0], inputs["attention_mask"]),
-                masked_mean_normalize(candidate.run(output, feed)[0], inputs["attention_mask"]),
-            )
+            try:
+                check_vectors(
+                    masked_mean_normalize(reference.run(output, feed)[0], inputs["attention_mask"]),
+                    masked_mean_normalize(candidate.run(output, feed)[0], inputs["attention_mask"]),
+                    **self.spec.manifest.get("device_tolerance", {}),
+                )
+            except UserError:
+                raise
+            except Exception as exc:
+                raise UserError(
+                    "Не удалось проверить точность модели на выбранном устройстве."
+                ) from exc
 
     def prepare_text(self, texts, purpose):
         if purpose not in {"query", "passage"} or not 1 <= len(texts) <= 128:
@@ -259,6 +270,12 @@ class E5Encoder:
             **self.runtime,
             **self.execution.info(),
             "model_id": self.spec.model_id,
+            "precision": self.spec.manifest["precision"],
+            "weight_dtype": self.spec.manifest.get("weight_dtype", "float32"),
+            "output_dtype": self.spec.manifest["output_dtype"],
+            "storage_dtype": "float32",
+            "fp32_islands": self.spec.manifest.get("fp32_islands", []),
+            "cpu_execution": self.spec.manifest.get("cpu_execution"),
             "revision": self.spec.revision,
             "embedding_space": self.space_id,
             "dimension": self.spec.dimension,

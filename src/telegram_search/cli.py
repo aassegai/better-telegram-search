@@ -38,7 +38,7 @@ def main() -> None:
         "--preview", action="store_true", help="Только проверить, без изменения сообщений"
     )
     prepare = commands.add_parser("prepare-model")
-    prepare.add_argument("--profile", choices=["small", "base"], default="small")
+    prepare.add_argument("--profile", choices=["small", "base", "berta"])
     prepare.add_argument("--reindex", action="store_true")
     prepare.add_argument("--offline", action="store_true")
     prepare.add_argument("--repair", action="store_true")
@@ -48,6 +48,8 @@ def main() -> None:
     media = commands.add_parser("prepare-media")
     media.add_argument("--kind", choices=["ocr", "images"], required=True)
     media.add_argument("--offline", action="store_true")
+    media.add_argument("--profile", choices=["clip", "siglip2"])
+    media.add_argument("--reindex", action="store_true")
     media_index = commands.add_parser("index-media")
     media_index.add_argument("--retry", action="store_true")
     args = parser.parse_args()

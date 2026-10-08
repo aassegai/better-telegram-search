@@ -4,7 +4,7 @@ import { t } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
 
 type Device = 'cpu' | 'auto' | 'gpu' | 'hybrid';
-type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string> };
+type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string | string[]> };
 type Execution = { warning: string | null };
 
 export default function DevicePanel({ model, profile, onChange }: {
@@ -31,8 +31,9 @@ export default function DevicePanel({ model, profile, onChange }: {
       setNotice(t('Устройства сохранены.')); await onChange(current);
     }
   });
-  const paths = profile && settings?.profile_paths?.[profile] ? [settings.profile_paths[profile]] : settings?.paths;
-  return <section className="device-panel" aria-label={t('Устройства {p0}', { p0: model.toUpperCase() })}>
+  const chosenPaths = profile && settings?.profile_paths?.[profile];
+  const paths = chosenPaths ? (Array.isArray(chosenPaths) ? chosenPaths : [chosenPaths]) : settings?.paths;
+  return <section className="device-panel" aria-label={t(model === 'e5' ? 'Устройства текстовой модели' : model === 'clip' ? 'Устройства визуальной модели' : 'Устройства OCR')}>
     {settings && <>
       {model === 'ocr' && <label>{t('Модель OCR')}<select aria-label={t('Модель OCR')} disabled={op.busy} value={settings.engine}
         onChange={event => setSettings({ ...settings, engine: event.target.value as ModelSettings['engine'],

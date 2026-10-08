@@ -1,0 +1,4 @@
+{
+  "tag": "model-bundles-v1",
+  "models": ["berta", "giga"]
+}

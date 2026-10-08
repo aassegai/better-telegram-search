@@ -23,16 +23,27 @@ class ModelTokenizer:
         with self.lock:
             return len(self.tokenizer.encode(text, add_special_tokens=True).ids)
 
-    def batch(self, texts: list[str], limit: int = 512):
+    def batch(self, texts: list[str], limit: int = 512, *, fixed_length=None, truncate=False):
         import numpy as np
 
         with self.lock:
-            encodings = self.tokenizer.encode_batch(texts, add_special_tokens=True)
+            # Truncation is opt-in for the bounded reranker only. Restore tokenizer
+            # state before releasing the lock; chunk counting never truncates.
+            if truncate:
+                self.tokenizer.enable_truncation(max_length=limit)
+            try:
+                encodings = self.tokenizer.encode_batch(texts, add_special_tokens=True)
+            finally:
+                self.tokenizer.no_truncation()
         length = max((len(item.ids) for item in encodings), default=0)
         if length > limit:
             raise UserError(
                 "Текст превышает лимит модели. Уточните запрос или пересоберите chunks."
             )
+        if fixed_length is not None:
+            if length > fixed_length or fixed_length > limit:
+                raise UserError("Недопустимая длина входа модели.")
+            length = fixed_length
         shape = (len(encodings), length)
         ids = np.full(shape, self.pad_id, dtype=np.int64)
         mask = np.zeros(shape, dtype=np.int64)

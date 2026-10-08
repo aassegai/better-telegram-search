@@ -10,7 +10,7 @@ type Result = SemanticStatus | { semantic: SemanticStatus };
 export default function SemanticPanel({ status, onChange, chatId, onStart, onEnd, pending }: Mutation & {
   status: SemanticStatus | null; onChange: (status: SemanticStatus) => void; chatId?: string;
 }) {
-  const [profile, setProfile] = useState(status?.profile || 'small');
+  const [profile, setProfile] = useState(status?.profile || 'berta');
   const chosenProfile = useRef(false);
   useEffect(() => {
     if (status?.profile && !chosenProfile.current) setProfile(status.profile);
@@ -37,7 +37,7 @@ export default function SemanticPanel({ status, onChange, chatId, onStart, onEnd
   const prepare = () => operate('prepare', { profile, reindex, offline, repair, local_bundle: localBundle || null });
   if (!status) return <p>{t('Проверяем…')}</p>;
   return <section className="model-setup semantic-panel">
-    <h3>{t('Модель текста · E5')}</h3>
+    <h3>{t('Модель текста')}</h3>
     <DevicePanel model="e5" profile={profile} onChange={async current => {
       const value = await api<SemanticStatus>('/api/semantic'); if (current()) onChange(value);
     }} />
@@ -48,7 +48,7 @@ export default function SemanticPanel({ status, onChange, chatId, onStart, onEnd
     {status.error && <p className="warning" role="alert">{t(status.error)}</p>}
     {op.error && <p className="error" role="alert">{t(op.error)}</p>}
       <label>{t('Модель')}<select aria-label={t('Модель смыслового поиска')} value={profile} disabled={busy || preparing} onChange={event => { chosenProfile.current = true; setProfile(event.target.value); }}>
-        {status.profiles.map(item => <option value={item.profile} key={item.profile}>{item.profile === 'small' ? t('E5 small — рекомендуется') : t('E5 base — больше памяти')} · {(item.download_bytes / 1024 ** 2).toFixed(0)}{t(' МиБ')}</option>)}
+        {status.profiles.map(item => <option value={item.profile} key={item.profile}>{item.profile === 'berta' ? t('BERTA FP16 — рекомендуется') : item.profile === 'small' ? 'E5 small · legacy' : 'E5 base · legacy'} · {(item.download_bytes / 1024 ** 2).toFixed(0)}{t(' МиБ')}</option>)}
       </select></label>
       <div className="semantic-options">
         <label><input type="checkbox" checked={reindex} disabled={busy || preparing} onChange={event => setReindex(event.target.checked)} />{t('Разрешить переиндексацию всех диалогов при смене модели')}</label>

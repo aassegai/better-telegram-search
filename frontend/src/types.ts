@@ -31,6 +31,8 @@ export type Hit = {
 };
 
 export type MediaStatus = {
+  visual_profile?: 'clip' | 'siglip2';
+  visual_profiles?: { profile: string; download_bytes: number }[];
   ocr_batch_size?: number; ocr_region_batch_size?: number;
   ocr_dense_paused?: boolean | number;
   ocr_dense_estimated_remaining_seconds?: number | null;

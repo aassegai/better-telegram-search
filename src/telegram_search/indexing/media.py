@@ -119,7 +119,7 @@ class MediaService(MediaImages):
         engine.rate_settings = (settings.ocr_batch_size, settings.ocr_region_batch_size, 1)
         return engine
 
-    def _new_clip(self, settings=None):
+    def _new_clip(self, settings=None, profile=None, *, adopt_existing=True):
         try:
             from telegram_search.inference.clip import ClipEncoder
         except ImportError as exc:
@@ -128,7 +128,20 @@ class MediaService(MediaImages):
             ) from exc
 
         settings = settings or self.db.settings
-        encoder = ClipEncoder(
+        if profile is None:
+            with self.db.connect() as conn:
+                profile = conn.execute(
+                    "SELECT visual_profile FROM media_state WHERE id=1"
+                ).fetchone()[0]
+        if profile == "siglip2":
+            from telegram_search.inference.siglip import SiglipEncoder
+
+            adapter = SiglipEncoder
+        elif profile == "clip":
+            adapter = ClipEncoder
+        else:
+            raise UserError("Неизвестный профиль визуальной модели.")
+        encoder = adapter(
             self.db.workspace,
             threads=settings.cpu_threads,
             device=settings.model_device("clip"),
@@ -142,6 +155,13 @@ class MediaService(MediaImages):
                 "GROUP BY space_id ORDER BY count DESC,space_id"
             ).fetchall()
         compatible = encoder.compatible_spaces()
+        with self.db.connect() as conn:
+            active = conn.execute(
+                "SELECT visual_space_id,visual_profile FROM media_state WHERE id=1"
+            ).fetchone()
+        if adopt_existing and active[0] and active[1] == profile:
+            encoder.adopt_space(active[0])
+            return encoder
         for row in spaces:
             if row["space_id"] in compatible:
                 encoder.adopt_space(row["space_id"])
@@ -162,10 +182,21 @@ class MediaService(MediaImages):
             with self.db.connect() as conn:
                 conn.execute("UPDATE media_state SET error=? WHERE id=1", (str(exc),))
 
-    def prepare(self, kind, *, offline=False):
+    def prepare(self, kind, *, offline=False, profile=None, reindex=False):
         if kind not in {"ocr", "images"}:
             raise UserError("Неизвестная модель медиа.")
         with self.lock:
+            if kind == "images":
+                from telegram_search.config.model_registry import visual_specs
+
+                with self.db.connect() as conn:
+                    state = conn.execute(
+                        "SELECT images_enabled,visual_profile FROM media_state WHERE id=1"
+                    ).fetchone()
+                profile = profile or (state[1] if state[0] else "siglip2")
+                visual_specs(profile)
+                if state[0] and state[1] != profile and not reindex:
+                    raise UserError("Подтвердите переиндексацию при смене визуальной модели.")
             if self.preparation and self.preparation.is_alive():
                 raise UserError("Подготовка медиа уже выполняется.")
             if self.semantic.preparation and self.semantic.preparation.is_alive():
@@ -175,44 +206,48 @@ class MediaService(MediaImages):
                     "UPDATE media_state SET preparation_state='preparing',error=NULL WHERE id=1"
                 )
             self.preparation = threading.Thread(
-                target=self._prepare, args=(kind, offline), name="media-model-prepare", daemon=True
+                target=self._prepare,
+                args=(kind, offline, profile, reindex),
+                name="media-model-prepare",
+                daemon=True,
             )
             self.preparation.start()
         return self.status()
 
-    def _prepare(self, kind, offline):
+    def _prepare(self, kind, offline, profile=None, reindex=False):
         engine = None
         try:
             if kind == "ocr":
                 engine = self._new_ocr()
                 engine.prepare(offline=offline)
             else:
-                from telegram_search.config.model_registry import media_registry
+                from telegram_search.config.model_registry import visual_specs
                 from telegram_search.inference.bundles import BundleStore
 
-                for spec in media_registry().values():
+                for spec in visual_specs(profile).values():
                     BundleStore(self.db.workspace).prepare(spec, offline=offline, repair=True)
-                engine = self._new_clip()
+                engine = self._new_clip(profile=profile, adopt_existing=not reindex)
                 engine.check_contract()
             with self.lock:
+                old = self.ocr if kind == "ocr" else self.clip
+                if old and hasattr(old, "unload"):
+                    old.unload()
                 with self.db.connect() as conn:
                     if kind == "ocr":
                         conn.execute("UPDATE media_state SET ocr_enabled=1 WHERE id=1")
                     else:
-                        conn.execute("UPDATE media_state SET images_enabled=1 WHERE id=1")
+                        conn.execute(
+                            "UPDATE media_state SET images_enabled=1,visual_profile=?,"
+                            "visual_space_id=? WHERE id=1",
+                            (profile, engine.space_id),
+                        )
                     conn.execute(
                         "UPDATE media_state SET preparation_state='ready',error=NULL WHERE id=1"
                     )
                 if kind == "ocr":
-                    old = self.ocr
                     self.ocr = engine
-                    if old and hasattr(old, "unload"):
-                        old.unload()
                 else:
-                    old = self.clip
                     self.clip = engine
-                    if old:
-                        old.unload()
         except Exception:
             if (
                 engine
@@ -396,6 +431,7 @@ class MediaService(MediaImages):
         preparation_eta = sum(known) if known and all(eta is not None for eta in known) else None
         return {
             **state,
+            "visual_profiles": self.visual_profiles(),
             "total_photos": total,
             "photo_attachments": attachments,
             "photo_messages": photo_messages,
@@ -446,6 +482,18 @@ class MediaService(MediaImages):
             if clip and hasattr(clip, "query_execution")
             else None,
         }
+
+    @staticmethod
+    def visual_profiles():
+        from telegram_search.config.model_registry import visual_specs
+
+        return [
+            {
+                "profile": key,
+                "download_bytes": sum(spec.download_bytes for spec in visual_specs(key).values()),
+            }
+            for key in ("siglip2", "clip")
+        ]
 
     def _read_photo(self, sha):
         with self.db.connect() as conn:
@@ -819,11 +867,11 @@ class MediaService(MediaImages):
 
         chunks = list(
             ChunkBuilder(
-                encoder.tokenizer, max_messages=1, overlap=0,
+                encoder.tokenizer,
+                max_messages=1,
+                overlap=0,
                 passage_prefix=encoder.spec.manifest.get("passage_prefix", "passage: "),
-            ).build(
-                [SourceMessage(row["sha256"], 1, 0, "OCR", row["text"])], 1, encoder.space_id
-            )
+            ).build([SourceMessage(row["sha256"], 1, 0, "OCR", row["text"])], 1, encoder.space_id)
         )
         ids = {
             chunk.id: hashlib.sha256(serialize([engine.version, chunk.id]).encode()).hexdigest()

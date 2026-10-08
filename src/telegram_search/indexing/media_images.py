@@ -131,7 +131,7 @@ class MediaImages:
                     if self.clip is encoder:
                         self._publish(
                             encoder.space_id,
-                            512,
+                            getattr(encoder, "dimension", 512),
                             "image",
                             hashes,
                             embeddings,

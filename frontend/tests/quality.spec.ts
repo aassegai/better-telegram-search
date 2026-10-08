@@ -4,10 +4,11 @@ test('model settings expose independent devices, GPU OCR and actual local paths;
   const models = await (await page.request.get('/api/models')).json();
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  for (const name of ['E5', 'CLIP', 'OCR']) {
-    const panel = page.getByRole('region', { name: `Устройства ${name}`, exact: true });
+  for (const [key, name, profile] of [['e5', 'Устройства текстовой модели', 'berta'], ['clip', 'Устройства визуальной модели', 'siglip2'], ['ocr', 'Устройства OCR', '']] as const) {
+    const panel = page.getByRole('region', { name, exact: true });
     await expect(panel).toBeVisible();
-    await expect(panel.locator('.model-paths')).toContainText(models[name.toLowerCase()].paths[0]);
+    const chosen = profile ? models[key].profile_paths[profile] : models[key].paths;
+    await expect(panel.locator('.model-paths')).toContainText(Array.isArray(chosen) ? chosen[0] : chosen);
   }
   await expect(page.getByText('Источники', { exact: true })).toHaveCount(0);
   const ocr = page.getByRole('region', { name: 'Устройства OCR', exact: true });
@@ -119,7 +120,7 @@ test('closing settings invalidates the device follow-up response', async ({ page
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByRole('region', { name: 'Устройства CLIP', exact: true })
+  await page.getByRole('region', { name: 'Устройства визуальной модели', exact: true })
     .getByRole('button', { name: 'Применить устройство', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   await page.keyboard.press('Escape');

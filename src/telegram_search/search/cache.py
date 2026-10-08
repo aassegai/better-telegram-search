@@ -20,6 +20,8 @@ class SearchCache:
 
     @staticmethod
     def revision(db):
+        from telegram_search.config.model_registry import rerank_spec, visual_specs
+
         # Finished indexing may add matches without invalidating this ordered snapshot.
         # Archive edits, author exclusions, chat deletion and model/settings changes do.
         with db.connect() as conn:
@@ -33,11 +35,27 @@ class SearchCache:
             )
             media = tuple(
                 conn.execute(
-                    "SELECT ocr_enabled,images_enabled FROM media_state WHERE id=1"
+                    "SELECT ocr_enabled,images_enabled,visual_profile,visual_space_id "
+                    "FROM media_state WHERE id=1"
+                ).fetchone()
+            )
+            rerank = tuple(
+                conn.execute(
+                    "SELECT manifest_id,preparation_state FROM rerank_state WHERE id=1"
                 ).fetchone()
             )
         # Progress, pauses and download counters do not change the meaning of stored hits.
-        fingerprint = [epoch, db.settings.__dict__, model, media]
+        visual = [spec.identity for spec in visual_specs(media[2]).values()]
+        fingerprint = [
+            epoch,
+            db.settings.__dict__,
+            model,
+            media,
+            rerank,
+            visual,
+            rerank_spec().identity,
+            "giga-top50-rrf-v1",
+        ]
         return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()
 
     def _drop(self, token):

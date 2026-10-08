@@ -24,6 +24,7 @@ from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
+from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.cache import SearchCache
@@ -31,6 +32,7 @@ from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 from telegram_search.search.media import MediaSearch, UnifiedSearch
 from telegram_search.search.presentation import search_options
+from telegram_search.search.rerank import SearchReranker
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
@@ -56,7 +58,7 @@ class ConflictResolution(BaseModel):
 
 
 class ModelRequest(BaseModel):
-    profile: Literal["small", "base"] = "small"
+    profile: Literal["small", "base", "berta"] | None = None
     reindex: bool = False
     offline: bool = False
     repair: bool = False
@@ -65,6 +67,12 @@ class ModelRequest(BaseModel):
 
 class MediaModelRequest(BaseModel):
     kind: Literal["ocr", "images"]
+    offline: bool = False
+    profile: Literal["clip", "siglip2"] | None = None
+    reindex: bool = False
+
+
+class RerankRequest(BaseModel):
     offline: bool = False
 
 
@@ -111,7 +119,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = semantic = media = updates = telegram = None
+        importer = semantic = media = updates = telegram = rerank = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -128,6 +136,8 @@ def create_app(
                 db, importer.lifecycle_lock, semantic, start_background=not hold_background
             )
             app.state.media = media
+            rerank = RerankService(db)
+            app.state.rerank = rerank
             app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
             app.state.workspace = WorkspaceService(db, importer, semantic, media)
             telegram = SyncCoordinator(
@@ -141,6 +151,7 @@ def create_app(
             app.state.search = UnifiedSearch(
                 HybridSearch(db, semantic, importer.lifecycle_lock),
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
+                SearchReranker(db, rerank),
             )
             app.state.update_database_check = "checking" if verification_nonce else "ok"
             if verification_nonce:
@@ -183,6 +194,8 @@ def create_app(
                 await telegram.close()
             if media:
                 media.shutdown()
+            if rerank:
+                rerank.shutdown()
             if semantic:
                 semantic.shutdown()
             if importer:
@@ -337,7 +350,17 @@ def create_app(
 
     @app.post("/api/media-index/prepare", status_code=202)
     def prepare_media_model(body: MediaModelRequest):
-        return app.state.chat_indexing.initialize(body.kind, offline=body.offline)
+        return app.state.chat_indexing.initialize(
+            body.kind, offline=body.offline, profile=body.profile, reindex=body.reindex
+        )
+
+    @app.get("/api/rerank")
+    def rerank_status():
+        return app.state.rerank.status()
+
+    @app.post("/api/rerank/prepare", status_code=202)
+    def rerank_prepare(body: RerankRequest):
+        return app.state.rerank.prepare(offline=body.offline)
 
     @app.post("/api/media-index/{action}")
     def media_control(action: Literal["pause", "resume", "retry"]):
@@ -459,7 +482,9 @@ def create_app(
 
     @app.post("/api/chats/{chat_id}/index/media/prepare", status_code=202)
     def chat_prepare_media(chat_id: str, body: MediaModelRequest):
-        return app.state.chat_indexing.prepare(chat_id, body.kind, offline=body.offline)
+        return app.state.chat_indexing.prepare(
+            chat_id, body.kind, offline=body.offline, profile=body.profile, reindex=body.reindex
+        )
 
     @app.post("/api/chats/{chat_id}/index/{kind}/{action}")
     def chat_index_control(

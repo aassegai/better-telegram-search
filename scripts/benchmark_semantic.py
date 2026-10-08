@@ -235,6 +235,6 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=Path("workspace"))
-    parser.add_argument("--profile", choices=["small", "base"], default="small")
+    parser.add_argument("--profile", choices=["small", "base", "berta"], default="small")
     parser.add_argument("--output", type=Path, required=True)
     run(parser.parse_args())

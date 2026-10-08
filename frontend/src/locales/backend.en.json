@@ -273,5 +273,22 @@
   "Выберите не более 500 авторов для исключения из индексации.": "Select up to 500 authors to exclude from indexing.",
   "Выбранный автор не найден в этом диалоге.": "The selected author was not found in this chat.",
   "Кэш поиска истёк. Выполните поиск ещё раз.": "The search cache expired. Run your search again.",
-  "Архив или настройки изменились. Выполните поиск ещё раз.": "The archive or settings changed. Run your search again."
+  "Архив или настройки изменились. Выполните поиск ещё раз.": "The archive or settings changed. Run your search again.",
+  "Неизвестный профиль текстовой модели.": "Unknown text model profile.",
+  "Неизвестный профиль визуальной модели.": "Unknown visual model profile.",
+  "Подтвердите переиндексацию при смене визуальной модели.": "Confirm reindexing before switching visual models.",
+  "Недопустимая настройка переранжирования.": "Invalid reranking setting.",
+  "Giga не подготовлена. Базовый порядок сохранён.": "Giga is not prepared. The base ranking was kept.",
+  "Недостаточно памяти для Giga. Базовый порядок сохранён.": "Not enough memory for Giga. The base ranking was kept.",
+  "Giga вернула недопустимые оценки. Базовый порядок сохранён.": "Giga returned invalid scores. The base ranking was kept.",
+  "Giga недоступна. Базовый порядок сохранён.": "Giga is unavailable. The base ranking was kept.",
+  "Не удалось подготовить Giga. Базовый поиск доступен.": "Could not prepare Giga. Base search remains available.",
+  "Подготовка Giga уже выполняется.": "Giga preparation is already running.",
+  "Giga обработала первые 512 токенов части фрагментов или запроса.": "Giga used the first 512 tokens of some candidates or the query.",
+  "Архив изменился во время поиска. Повторите запрос.": "The archive changed during search. Run the query again.",
+  "Не удалось проверить точность модели на выбранном устройстве.": "Could not validate model precision on the selected device.",
+  "Недопустимая длина входа модели.": "Invalid model input length.",
+  "Контракт SigLIP 2 ONNX не совпадает с manifest.": "The SigLIP 2 ONNX contract does not match its manifest.",
+  "Размерность SigLIP 2 не соответствует manifest.": "SigLIP 2 dimensions do not match the manifest.",
+  "Поиск по описанию фотографий станет доступен после подготовки визуальной модели в настройках.": "Image description search becomes available after preparing the visual model in settings."
 }

@@ -14,7 +14,9 @@ def media_command(db, args):
         media = MediaService(db, lock, semantic, start_background=False)
         try:
             if args.command == "prepare-media":
-                media.prepare(args.kind, offline=args.offline)
+                media.prepare(
+                    args.kind, offline=args.offline, profile=args.profile, reindex=args.reindex
+                )
                 media.preparation.join()
                 if media.status()["preparation_state"] != "ready":
                     raise UserError("Не удалось подготовить модель медиа.")

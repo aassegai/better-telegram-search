@@ -140,15 +140,15 @@ test('result ranks preserve API order and show signed CLIP cosine rather than a 
   await page.getByLabel('Поисковый запрос').fill('stick figure comic');
   await page.getByRole('button', { name: 'Найти', exact: true }).click();
   await expect(page.locator('.result-ranking')).toHaveText([
-    'Результат #1Сходство CLIP: 0,7500',
-    'Результат #2Сходство CLIP: 0,0000',
-    'Результат #3Сходство CLIP: -0,1250',
+    'Результат #1Сходство изображения: 0,7500',
+    'Результат #2Сходство изображения: 0,0000',
+    'Результат #3Сходство изображения: -0,1250',
   ]);
   await expect(page.locator('.result-header small')).toHaveText(['Совпадение в #20', 'Совпадение в #30', 'Совпадение в #10']);
   await expect(page.locator('.result-ranking span[title]').first()).toHaveAttribute('title', /это не вероятность/);
   await page.getByRole('slider').press('End');
-  await expect(page.locator('.result-ranking').first()).toHaveText('Result #1CLIP similarity: 0.7500');
-  await expect(page.locator('.result-ranking').last()).toHaveText('Result #3CLIP similarity: -0.1250');
+  await expect(page.locator('.result-ranking').first()).toHaveText('Result #1Image similarity: 0.7500');
+  await expect(page.locator('.result-ranking').last()).toHaveText('Result #3Image similarity: -0.1250');
 });
 
 test('images open in the search page and Escape preserves the underlying context', async ({ page, context }) => {

@@ -1,0 +1,68 @@
+name: Verified ONNX model bundles
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/model-bundles/v1.json'
+permissions:
+  contents: read
+concurrency:
+  group: model-bundles-v1
+  cancel-in-progress: false
+jobs:
+  export:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [berta, giga]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: tools/model-export/uv.lock
+      - name: Reproduce exact pinned FP16 graph and validate CPU parity
+        env:
+          CUDA_VISIBLE_DEVICES: ''
+          MODEL: ${{ matrix.model }}
+        run: >-
+          uv run --project tools/model-export --locked python tools/model-export/export.py
+          --model "$MODEL" --source "$RUNNER_TEMP/model-sources/$MODEL"
+          --output "$RUNNER_TEMP/model-output"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-${{ matrix.model }}
+          path: |
+            ${{ runner.temp }}/model-output/${{ matrix.model }}-fp16.onnx
+            ${{ runner.temp }}/model-output/${{ matrix.model }}-validation.json
+          if-no-files-found: error
+          retention-days: 3
+  publish:
+    needs: export
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: model-*
+          path: prepared-models
+          merge-multiple: true
+      - name: Verify checksums again and publish model assets as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/model-export/publish.py prepared-models

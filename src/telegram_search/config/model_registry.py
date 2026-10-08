@@ -42,12 +42,28 @@ def model_spec(profile: str) -> ModelSpec:
     try:
         return registry()[profile]
     except KeyError as exc:
-        raise UserError("Неизвестный профиль модели. Выберите small или base.") from exc
+        raise UserError("Неизвестный профиль текстовой модели.") from exc
 
 
 def media_registry() -> dict[str, ModelSpec]:
     manifest = json.loads(files("telegram_search.config").joinpath("media_models.json").read_text())
     return {profile: ModelSpec(profile, value) for profile, value in manifest.items()}
+
+
+def visual_specs(profile="clip") -> dict[str, ModelSpec]:
+    if profile == "clip":
+        return media_registry()
+    if profile == "siglip2":
+        manifest = json.loads(
+            files("telegram_search.config").joinpath("siglip2_model.json").read_text()
+        )
+        return {profile: ModelSpec(profile, manifest)}
+    raise UserError("Неизвестный профиль визуальной модели.")
+
+
+def rerank_spec() -> ModelSpec:
+    manifest = json.loads(files("telegram_search.config").joinpath("rerank_model.json").read_text())
+    return ModelSpec("giga", manifest)
 
 
 def ocr_spec() -> ModelSpec:

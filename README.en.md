@@ -132,3 +132,5 @@ Preparing E5/CLIP/PaddleOCR downloads the models; subsequent searches work offli
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.
+
+[Models and reindexing](docs/model-migration.en.md)

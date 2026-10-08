@@ -230,7 +230,7 @@ class ChatIndexing:
                 column = "ocr_paused" if kind == "ocr" else "media_paused"
                 state = service.status()
                 first = not state["ocr_enabled" if kind == "ocr" else "images_enabled"]
-                service.prepare(kind, offline=options.get("offline", False))
+                service.prepare(kind, **options)
             if first:
                 with self.db.connect() as conn:
                     conn.execute(f"UPDATE chats SET {column}=1")
@@ -247,7 +247,7 @@ class ChatIndexing:
                         conn.execute("UPDATE chats SET text_paused=1 WHERE id<>?", (chat_id,))
             else:
                 state = self.media.status()
-                self.media.prepare(kind, offline=options.get("offline", False))
+                self.media.prepare(kind, **options)
                 if not state["ocr_enabled" if kind == "ocr" else "images_enabled"]:
                     with self.db.connect() as conn:
                         column = "ocr_paused" if kind == "ocr" else "media_paused"

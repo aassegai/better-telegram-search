@@ -134,5 +134,93 @@
         "sha256": "9d129cb0b912b55c7b5378f976a9c35ae4796c80466b659ad63930d8ca090fca"
       }
     ]
+  },
+  "berta": {
+    "schema_version": 2,
+    "bundle_version": 1,
+    "runtime": "onnxruntime",
+    "runtime_dtype": "mixed-fp16",
+    "precision": "mixed-fp16",
+    "weight_dtype": "float16",
+    "storage_dtype": "float32",
+    "pooling_dtype": "float32",
+    "normalization": "l2",
+    "opset": 17,
+    "validated_runtime_versions": [
+      "1.23.2",
+      "1.30.0"
+    ],
+    "verified_platforms": [
+      "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.23.2",
+      "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+    ],
+    "unverified_providers": [
+      "CUDAExecutionProvider",
+      "CoreMLExecutionProvider"
+    ],
+    "cpu_execution": "ORT CPU precision casts; FP16 weights do not imply native FP16 arithmetic",
+    "device_tolerance": {
+      "max_abs": 0.001,
+      "min_cosine": 0.99999
+    },
+    "role": "text",
+    "allowed_inputs": [
+      "input_ids",
+      "attention_mask",
+      "token_type_ids"
+    ],
+    "required_inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "output_name": "last_hidden_state",
+    "input_dtype": "int64",
+    "output_dtype": "float16",
+    "pooling": "masked-mean",
+    "max_length": 512,
+    "chunk_max_tokens": 480,
+    "postprocessing_version": "masked-mean-l2-fp32-v1",
+    "preprocessing_version": "telegram-windows-v1",
+    "license": "MIT",
+    "model_id": "sergeyzh/BERTA",
+    "revision": "914c8c8aed14042ed890fc2c662d5e9e66b2faa7",
+    "tokenizer_revision": "914c8c8aed14042ed890fc2c662d5e9e66b2faa7",
+    "dimension": 768,
+    "query_prefix": "search_query: ",
+    "passage_prefix": "search_document: ",
+    "fp32_islands": [
+      "Softmax",
+      "LayerNormalization"
+    ],
+    "export_recipe": "tools/model-export/export.py",
+    "source": "https://huggingface.co/sergeyzh/BERTA/tree/914c8c8aed14042ed890fc2c662d5e9e66b2faa7",
+    "files": [
+      {
+        "name": "onnx/model.onnx",
+        "bytes": 255878550,
+        "sha256": "8fb66d5068904b68e2a273a256fd5e7240f64c9e2ba3f17f7081e66ea47ab731",
+        "url": "https://github.com/aassegai/better-telegram-search/releases/download/model-bundles-v1/berta-fp16.onnx"
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 1394518,
+        "sha256": "0cd034217c56f7eae87ee4914d07de120dd0c9afb76598df1c920bbefa413919"
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 1521,
+        "sha256": "77de3e532e122ec8110727132ef56966ddeef97b597b9fda2cd2d1504c82b712"
+      },
+      {
+        "name": "config.json",
+        "bytes": 878,
+        "sha256": "0195d3ac1fa9da65be2cf80eb45f93babff7061fd063587e83bfc947e82cf2d4"
+      },
+      {
+        "name": "README.md",
+        "bytes": 11425,
+        "sha256": "54e1fdef1ece46de98f443262766f42e550f2a4d5dd3e32e0ca1c98d8e9ea425"
+      }
+    ]
   }
 }

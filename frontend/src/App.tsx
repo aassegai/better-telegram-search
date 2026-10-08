@@ -7,6 +7,7 @@ import ConflictDialog from './ConflictDialog';
 import ChatIndexDialog from './ChatIndexDialog';
 import TelegramPanel from './TelegramPanel';
 import SemanticPanel from './SemanticPanel';
+import RerankPanel from './RerankPanel';
 import WorkspacePanel from './WorkspacePanel';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
@@ -30,7 +31,7 @@ const stateNames: Record<string, string> = {
 };
 const reasons: Record<string, string> = { words: 'Совпали слова', meaning: 'Близкий смысл', image: 'Фотография по описанию', ocr_words: 'Слова на фотографии', ocr_meaning: 'Смысл текста на фотографии' };
 type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
-  limit: number; search_id?: string | null; next_offset?: number | null; cached_results?: number };
+  rerank_applied?: boolean; limit: number; search_id?: string | null; next_offset?: number | null; cached_results?: number };
 
 const allModalities: SearchModality[] = ['text', 'images', 'ocr'];
 const modalityLabels: Record<SearchModality, string> = { text: 'Текст', images: 'Изображения', ocr: 'OCR' };
@@ -81,6 +82,7 @@ export default function App() {
   const [mode, setMode] = useState('hybrid');
   const [effectiveMode, setEffectiveMode] = useState('words');
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [reranked, setReranked] = useState(false);
   const [semantic, setSemantic] = useState<SemanticStatus | null>(null);
   const [media, setMedia] = useState<MediaStatus | null>(null);
   const [modalities, setModalities] = useState<SearchModality[]>(allModalities);
@@ -196,7 +198,7 @@ export default function App() {
 
   const changeModalities = (next: SearchModality[]) => {
     searchVersion.current++; setLoadingMore(false); setSearchId(null); setNextOffset(null);
-    setModalities(next); setHits(null); setWarnings([]); setHasMore(false); closeContext();
+    setModalities(next); setHits(null); setReranked(false); setWarnings([]); setHasMore(false); closeContext();
   };
 
   async function search(event: FormEvent) {
@@ -218,7 +220,7 @@ export default function App() {
       setSearchId(result.search_id ?? null); setNextOffset(result.next_offset ?? null);
       setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
       setSubmittedLimit(result.limit ?? 20);
-      setEffectiveMode(result.effective_mode); setWarnings(result.warnings);
+      setEffectiveMode(result.effective_mode); setWarnings(result.warnings); setReranked(Boolean(result.rerank_applied));
       setSearchFilters(params.toString());
       setSubmittedModalities([...modalities]);
     } catch (error) { if (version === searchVersion.current) reportError(error); }
@@ -265,7 +267,7 @@ export default function App() {
       if (!window.confirm(t("Удалить «{p0}» и его индекс из приложения? {p1} сообщений, {p2} КиБ текста. Кэш {p3} вложений удалится; общих вложений {p4}. Точное освобождение места зависит от уплотнения индекса. Исходный экспорт сохранится.", { p0: chat.name, p1: estimate.messages, p2: (estimate.message_text_bytes / 1024).toFixed(1), p3: estimate.exclusive_media, p4: estimate.shared_media }))) return;
       await api(`/api/chats/${chat.id}`, { method: 'DELETE' });
       searchVersion.current++; setSearchId(null); setNextOffset(null); setLoadingMore(false); setPagingError('');
-      setSelected(null); setHits(null); closeContext(); await refresh();
+      setSelected(null); setHits(null); setReranked(false); closeContext(); await refresh();
     } catch (error) { reportError(error); }
     finally { setDeleting(false); }
   }
@@ -369,6 +371,7 @@ export default function App() {
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}
+        {reranked && hits !== null && !busy && <p className="baseline-note" role="status">{t('Порядок текста и OCR уточнён Giga')}</p>}
         {warnings.map(warning => <p className="warning" role="status" key={warning}>{t(warning)}</p>)}
 
         {hits === null ? <section className="welcome">
@@ -377,13 +380,13 @@ export default function App() {
           <div className="stats"><div><strong>{messageCount.toLocaleString(uiLocale())}</strong><span>{t("сообщений")}</span></div><div><strong>{chats.length}</strong><span>{t("диалогов")}</span></div><div><strong>{photoCount}</strong><span>{t("фотографий")}</span></div></div>
           <div className="baseline-note">{t('Слова и смысл — базовый режим. Подготовьте модели в общих настройках.')}</div>
         </section> : <section className="results" aria-live="polite">
-          <div className="results-heading"><h2>{hits.length ? t("Найдено фрагментов: {p0}{p1}", { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{onlyImages ? t('По описанию · CLIP') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · E5') : t('По словам · BM25')}</span></div>
+          <div className="results-heading"><h2>{hits.length ? t("Найдено фрагментов: {p0}{p1}", { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · векторы') : t('По словам · BM25')}</span></div>
           {!hits.length && <div className="no-results">{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</div>}
           <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? t('Опорное сообщение фрагмента') : t('Совпадение в')} #{hit.message_id}</small></div>
             <div className="result-ranking"><span>{t('Результат #{p0}', { p0: index + 1 })}</span>
               {hit.image_similarity != null && Number.isFinite(hit.image_similarity) && <span title={t('Сходство изображения с описанием: от −1 до 1. Чем выше, тем ближе совпадение; это не вероятность.')}>
-                {t('Сходство CLIP: {p0}', { p0: hit.image_similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 }) })}
+                {t('Сходство изображения: {p0}', { p0: hit.image_similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 }) })}
               </span>}
             </div>
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => t(reasons[reason])).join(' · ')}</div>}
@@ -412,6 +415,7 @@ export default function App() {
       {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
       <SemanticPanel status={semantic} onChange={setSemantic} />
+      <RerankPanel />
       <WorkspacePanel media={media} onMediaChange={setMedia} />
       <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
     </SettingsDialog>}

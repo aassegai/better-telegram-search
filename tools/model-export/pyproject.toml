@@ -1,0 +1,11 @@
+[project]
+name = "telegram-search-model-export"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["torch==2.8.0", "transformers==4.57.0", "onnx==1.19.1", "onnxruntime==1.30.0", "numpy>=1.26,<3", "pillow>=11,<13", "sentencepiece==0.2.1"]
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

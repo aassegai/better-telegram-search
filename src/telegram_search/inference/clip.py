@@ -21,6 +21,7 @@ from telegram_search.shared.text import serialize
 
 
 def normalize(values):
+    values = values.astype(np.float32, copy=False)
     norms = np.linalg.norm(values, axis=1, keepdims=True)
     if not np.isfinite(values).all() or np.any(norms <= 0):
         raise UserError("CLIP вернул недопустимый embedding.")
@@ -59,6 +60,9 @@ def image_tensor(data: bytes, config: dict):
 
 class ClipEncoder:
     """Multilingual DistilBERT + learned projection paired with original CLIP ViT-B/32."""
+
+    profile = "clip"
+    dimension = 512
 
     def __init__(
         self,

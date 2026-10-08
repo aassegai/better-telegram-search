@@ -130,13 +130,15 @@ class WorkspaceService:
         return asdict(self.db.settings)
 
     def models(self):
-        from telegram_search.config.model_registry import media_registry, ocr_spec, registry
+        from telegram_search.config.model_registry import ocr_spec, registry, visual_specs
         from telegram_search.inference.bundles import BundleStore
 
         settings = self.db.settings
         store = BundleStore(self.db.workspace)
         text = registry()
-        profile = self.semantic.status().get("profile") or "small"
+        profile = self.semantic.status().get("profile") or "berta"
+        with self.db.connect() as conn:
+            visual = conn.execute("SELECT visual_profile FROM media_state WHERE id=1").fetchone()[0]
         ocr_path = (
             store.path(ocr_spec())
             if settings.ocr_engine == "paddle"
@@ -152,7 +154,11 @@ class WorkspaceService:
             "clip": {
                 "device": settings.model_device("clip"),
                 "search_device": settings.model_device("clip", query=True),
-                "paths": [str(store.path(spec)) for spec in media_registry().values()],
+                "paths": [str(store.path(spec)) for spec in visual_specs(visual).values()],
+                "profile_paths": {
+                    key: [str(store.path(spec)) for spec in visual_specs(key).values()]
+                    for key in ("clip", "siglip2")
+                },
             },
             "ocr": {
                 "device": settings.ocr_device,
@@ -162,7 +168,7 @@ class WorkspaceService:
         }
 
     def update_settings(self, values):
-        display_keys = {"search_result_limit", "display_chunk_size"}
+        display_keys = {"search_result_limit", "display_chunk_size", "giga_rerank_enabled"}
         allowed = {
             "cpu_threads",
             "embedding_batch",
@@ -391,7 +397,11 @@ class WorkspaceService:
                     new_encoder.encode_text(["Проверка локальной индексации"], "passage")
                     new_encoder.unload_index()
                 if old_clip:
-                    new_clip = self.media._new_clip(candidate)
+                    new_clip = (
+                        self.media._new_clip(candidate, adopt_existing=False)
+                        if reindex
+                        else (self.media._new_clip(candidate))
+                    )
                     if new_clip.space_id != old_clip.space_id and not reindex:
                         raise UserError(
                             "Подтвердите перестроение семантических индексов при смене устройства."
@@ -414,21 +424,27 @@ class WorkspaceService:
                 candidate.save(self.db.workspace)
                 saved = True
 
-                def save_ocr(conn):
-                    conn.execute(
-                        "UPDATE media_state SET ocr_enabled=?,error=NULL WHERE id=1",
-                        (int(new_ocr is not None),),
-                    )
+                def save_models(conn):
+                    if change_ocr:
+                        conn.execute(
+                            "UPDATE media_state SET ocr_enabled=?,error=NULL WHERE id=1",
+                            (int(new_ocr is not None),),
+                        )
+                    if new_clip:
+                        conn.execute(
+                            "UPDATE media_state SET visual_profile=?,visual_space_id=? WHERE id=1",
+                            (getattr(new_clip, "profile", "clip"), new_clip.space_id),
+                        )
 
                 if new_encoder:
                     self.semantic.activate(
                         new_encoder,
                         reindex=reindex and new_encoder.space_id != active["active_space_id"],
-                        before_commit=save_ocr if change_ocr else None,
+                        before_commit=save_models if change_ocr or new_clip else None,
                     )
-                elif change_ocr:
+                elif change_ocr or new_clip:
                     with self.db.connect() as conn:
-                        save_ocr(conn)
+                        save_models(conn)
                 # No model pointer is published until all SQLite changes commit.
                 self.db.settings = candidate
                 self.semantic.query_cache.clear()

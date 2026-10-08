@@ -60,10 +60,10 @@ class MediaSearch:
             if not clip:
                 return [], [
                     "Поиск по описанию фотографий станет доступен "
-                    "после подготовки CLIP в настройках."
+                    "после подготовки визуальной модели в настройках."
                 ]
             vector = clip.encode_text([query])[0]
-            space, dimension = clip.space_id, 512
+            space, dimension = clip.space_id, getattr(clip, "dimension", 512)
         else:
             if not engine:
                 return [], [
@@ -199,8 +199,8 @@ class MediaSearch:
 
 
 class UnifiedSearch:
-    def __init__(self, text, media):
-        self.text, self.media = text, media
+    def __init__(self, text, media, reranker=None):
+        self.text, self.media, self.reranker = text, media, reranker
 
     def search(
         self, query, filters, exact, limit, mode, tab="text", chunk_size=None, *, modalities=None
@@ -222,6 +222,36 @@ class UnifiedSearch:
         tab = selected[0] if len(selected) == 1 else "all"
         result = {"results": [], "warnings": [], "effective_mode": mode, "has_more": False}
         branches = []
+        rerank_branches = []
+
+        def rerank(hits, kind):
+            if self.reranker is None:
+                return hits
+            hits, metadata = self.reranker.apply(query, hits, kind, filters, exact=exact)
+            rerank_branches.append(metadata)
+            if metadata["reason"] and metadata["reason"] not in {
+                "disabled",
+                "images_only",
+                "exact_phrase",
+                "no_candidates",
+            }:
+                result["warnings"].append(metadata["reason"])
+            if metadata.get("truncated_candidates") or metadata.get("query_truncated"):
+                result["warnings"].append(
+                    "Giga обработала первые 512 токенов части фрагментов или запроса."
+                )
+            return hits
+
+        def rerank_status():
+            applied = any(item["applied"] for item in rerank_branches)
+            return {
+                "rerank_applied": applied,
+                "rerank_branches": rerank_branches,
+                "rerank_reason": None
+                if applied
+                else next((item["reason"] for item in rerank_branches), "disabled"),
+            }
+
         if "text" in selected:
             try:
                 result = self.text.search(
@@ -234,8 +264,9 @@ class UnifiedSearch:
             else:
                 for hit in result["results"]:
                     hit["result_type"] = "text"
+                result["results"] = rerank(result["results"], "text")
                 if tab == "text":
-                    return {**result, "tab": tab, "modalities": list(selected)}
+                    return {**result, "tab": tab, "modalities": list(selected), **rerank_status()}
                 branches.append(result["results"])
         for kind in ("images", "ocr"):
             if kind not in selected:
@@ -246,7 +277,7 @@ class UnifiedSearch:
                 )
             except UserError as exc:
                 hits, warnings = [], [str(exc)]
-            branches.append(hits)
+            branches.append(rerank(hits, kind))
             result["warnings"].extend(warnings)
         combined = {}
         for branch in branches:
@@ -297,4 +328,5 @@ class UnifiedSearch:
                 else "words"
             )
         result["coverage"] = self.media.media.status()
+        result.update(rerank_status())
         return result

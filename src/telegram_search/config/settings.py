@@ -38,6 +38,7 @@ class Settings:
     memory_limit_mib: int = 4096
     search_result_limit: int = 20
     display_chunk_size: int = 10
+    giga_rerank_enabled: bool = False
 
     def model_device(self, model, *, query=False):
         if model == "ocr":
@@ -63,6 +64,8 @@ class Settings:
 
     def validate(self) -> None:
         settings = self
+        if type(settings.giga_rerank_enabled) is not bool:
+            raise UserError("Недопустимая настройка переранжирования.")
         for name in ("e5_device", "e5_search_device", "clip_device", "clip_search_device"):
             value = getattr(settings, name)
             if value is not None and (

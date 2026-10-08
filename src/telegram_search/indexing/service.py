@@ -152,13 +152,12 @@ class SemanticService:
         self.wake.set()
 
     def prepare(
-        self, profile="small", *, reindex=False, offline=False, repair=False, local_bundle=None
+        self, profile=None, *, reindex=False, offline=False, repair=False, local_bundle=None
     ):
         if not self.available:
             raise UserError(
                 "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
             )
-        spec = model_spec(profile)
         with self.lock:
             if self.preparation and self.preparation.is_alive():
                 raise UserError("Подготовка модели уже выполняется.")
@@ -167,6 +166,8 @@ class SemanticService:
                     "SELECT e.profile FROM embedding_spaces e JOIN semantic_state s "
                     "ON s.active_space_id=e.id"
                 ).fetchone()
+                profile = profile or (current[0] if current else "berta")
+                spec = model_spec(profile)
                 if current and current[0] != profile and not reindex:
                     raise UserError("Подтвердите переиндексацию при смене модели.")
                 conn.execute(

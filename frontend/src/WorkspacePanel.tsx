@@ -1,5 +1,5 @@
 import { t } from './i18n';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import type { MediaStatus } from './types';
 import { useDialogOperation } from './useDialogOperation';
@@ -24,6 +24,12 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
   const [settings, setSettings] = useState<Record<string, number> | null>(null);
   const [sizes, setSizes] = useState<Sizes | null>(null);
   const [offline, setOffline] = useState(false);
+  const [visualProfile, setVisualProfile] = useState(media?.images_enabled ? media.visual_profile ?? 'clip' : 'siglip2');
+  const chosenVisual = useRef(false);
+  const [reindex, setReindex] = useState(false);
+  useEffect(() => {
+    if (!chosenVisual.current && media?.images_enabled) setVisualProfile(media.visual_profile ?? 'clip');
+  }, [media?.images_enabled, media?.visual_profile]);
   const [ocrOffline, setOcrOffline] = useState(false);
   const [notice, setNotice] = useState('');
   const op = useDialogOperation();
@@ -39,7 +45,7 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
   const prepare = (kind: 'ocr' | 'images') => void op.run(async current => {
     onStart?.();
     try {
-      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/media/prepare` : '/api/media-index/prepare', { method: 'POST', body: JSON.stringify({ kind, offline: kind === 'ocr' ? ocrOffline : offline }) });
+      const value = await api(chatId ? `/api/chats/${encodeURIComponent(chatId)}/index/media/prepare` : '/api/media-index/prepare', { method: 'POST', body: JSON.stringify({ kind, offline: kind === 'ocr' ? ocrOffline : offline, ...(kind === 'images' ? { profile: visualProfile, reindex } : {}) }) });
       if (current()) accept(value);
     } finally { onEnd?.(); }
   });
@@ -62,7 +68,7 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
   };
   return <section className="workspace-panel">
     {indexing && <>
-      {media && <IndexCard title={t('Изображения')} model="CLIP" ready={media.images_ready} total={media.total_photos}
+      {media && <IndexCard title={t('Изображения')} model={media.visual_profile === 'siglip2' ? 'SigLIP 2' : 'CLIP'} ready={media.images_ready} total={media.total_photos}
         paused={Boolean(media.paused)} enabled={media.images_enabled === 1} preparing={preparing}
         failed={media.images_failed ?? 0}
         blocked={(media.images_failed ?? 0) > 0 && (Boolean(media.paused) || media.images_ready + (media.images_failed ?? 0) >= media.total_photos)}
@@ -79,16 +85,22 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         <p>{t('Уникальных доступных изображений: {p0}', { p0: media.total_photos })}</p>
         {media.photo_attachments != null && <p>{t('Вложений: {p0}. Сообщений с фото: {p1}.', { p0: media.photo_attachments, p1: media.photo_messages ?? 0 })}</p>}
         <p>{t('Вся подготовка: ')}{estimatedTime(media.preparation_estimated_remaining_seconds, t('Оценка появится, когда будет известна вся очередь смыслового OCR.'))}</p>
-        {(['ocr', 'clip', 'ocr_dense'] as const).map(stage => { const queue = media.queues?.[stage]; return queue && <p key={stage}>{stage === 'ocr' ? 'OCR' : stage === 'clip' ? 'CLIP' : 'OCR → E5'}: {t('В очереди: {p0}', { p0: queue.pending })} · {queue.units_per_minute == null ? t('Измеряем скорость…') : t('{p0} изобр./мин.', { p0: queue.units_per_minute })}</p>; })}
+        {(['ocr', 'clip', 'ocr_dense'] as const).map(stage => { const queue = media.queues?.[stage]; return queue && <p key={stage}>{stage === 'ocr' ? 'OCR' : stage === 'clip' ? (media.visual_profile === 'siglip2' ? 'SigLIP 2' : 'CLIP') : t('OCR → текстовая модель')}: {t('В очереди: {p0}', { p0: queue.pending })} · {queue.units_per_minute == null ? t('Измеряем скорость…') : t('{p0} изобр./мин.', { p0: queue.units_per_minute })}</p>; })}
         <small>{t('Скорость измеряется по активной подготовке приложения. Общая оценка — сумма этапов; параллельная работа может закончиться раньше.')}</small>
       </details>}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>
     </>}
     {!indexing && <>
-    <section className="model-setup"><h3>{t('Модель изображений · CLIP')}</h3>
-      <DevicePanel model="clip" onChange={refreshDevice} />
+    <section className="model-setup"><h3>{t('Модель изображений')}</h3>
+      <DevicePanel model="clip" profile={visualProfile} onChange={refreshDevice} />
+      <label>{t('Визуальная модель')}<select aria-label={t('Визуальная модель')} value={visualProfile} disabled={busy || preparing}
+        onChange={event => { chosenVisual.current = true; setVisualProfile(event.target.value as 'clip' | 'siglip2'); }}>
+        <option value="siglip2">SigLIP 2 FP16 · 224 · {t('Рекомендуется')}</option><option value="clip">CLIP · legacy</option>
+      </select></label>
+      {media?.visual_profiles?.find(item => item.profile === visualProfile) && <small>{t('Размер загрузки: {p0} МиБ', { p0: ((media.visual_profiles.find(item => item.profile === visualProfile)?.download_bytes ?? 0) / 1024 ** 2).toFixed(0) })}</small>}
+      <label><input type="checkbox" checked={reindex} disabled={busy || preparing} onChange={event => setReindex(event.target.checked)} />{t('Перестроить индекс изображений при смене модели; кэш OCR сохранится')}</label>
       <label><input type="checkbox" checked={offline} disabled={busy || preparing} onChange={event => setOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>
-      <button disabled={busy || preparing} onClick={() => prepare('images')}>{t('Подготовить CLIP')}</button>
+      <button disabled={busy || preparing || Boolean(media?.images_enabled && (media.visual_profile ?? 'clip') !== visualProfile && !reindex)} onClick={() => prepare('images')}>{t('Подготовить модель изображений')}</button>
       {preparing && <p role="status">{t('Подготавливаем…')}</p>}
       {media?.error && <p className="warning" role="alert">{t(media.error)}</p>}
     </section>

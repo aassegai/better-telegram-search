@@ -27,7 +27,7 @@ test('GPU indexing and CPU queries are independent and do not request reindexing
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  const devices = page.getByRole('region', { name: 'Устройства E5', exact: true });
+  const devices = page.getByRole('region', { name: 'Устройства текстовой модели', exact: true });
   await devices.getByLabel('Устройство для индексации', { exact: true }).selectOption('gpu');
   await expect(devices.getByLabel('Устройство для поиска', { exact: true })).toHaveValue('cpu');
   await expect(devices.locator('select')).toHaveCount(2);
@@ -35,10 +35,10 @@ test('GPU indexing and CPU queries are independent and do not request reindexing
   await devices.getByRole('button', { name: 'Применить устройство', exact: true }).click();
   await expect(page.getByText('Устройства сохранены.')).toBeVisible();
   await page.getByRole('slider').press('End');
-  const english = page.getByRole('region', { name: 'E5 devices', exact: true });
+  const english = page.getByRole('region', { name: 'Text model devices', exact: true });
   await expect(english.getByLabel('Indexing device', { exact: true })).toHaveValue('gpu');
   await expect(english.getByLabel('Search device', { exact: true })).toHaveValue('cpu');
-  await expect(page.getByRole('region', { name: 'CLIP devices', exact: true }).getByLabel('Indexing device')).toHaveValue('cpu');
+  await expect(page.getByRole('region', { name: 'Visual model devices', exact: true }).getByLabel('Indexing device')).toHaveValue('cpu');
 });
 
 test('changing update variant requires a new check and release notes remain escaped', async ({ page }) => {

@@ -22,7 +22,7 @@ export default function TextIndexPanel({ status, onChange, chatId, onStart, onEn
   const active = status.works.some(work => ['pending', 'running'].includes(work.state) && work.count > 0);
   const indexError = status.index_error ?? status.error;
   const blocked = failed > 0 && (Boolean(status.paused) || !active);
-  return <IndexCard title={t('Текст')} model="E5" ready={status.ready_segments} total={status.total_segments}
+  return <IndexCard title={t('Текст')} model={status.profile === 'berta' ? 'BERTA' : 'E5'} ready={status.ready_segments} total={status.total_segments}
     paused={Boolean(status.paused)} enabled={status.enabled === 1}
     preparing={['downloading', 'preparing'].includes(status.preparation_state)}
     blocked={blocked} failed={failed}

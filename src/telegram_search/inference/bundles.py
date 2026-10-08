@@ -53,6 +53,49 @@ class BundleStore:
             ) from exc
         return path
 
+    def _release_file(self, item, *, offline, report):
+        """Content-addressed cache for our verified, public export artifacts."""
+        from telegram_search.updates.network import REPOSITORY, open_url
+
+        url = item["url"]
+        prefix = f"https://github.com/{REPOSITORY}/releases/download/"
+        if not url.startswith(prefix) or "/../" in url:
+            raise UserError("Недопустимый источник ONNX-модели.")
+        cache = self.root / "downloads"
+        if cache.is_symlink() or not cache.resolve().is_relative_to(self.root.resolve()):
+            raise UserError("Недопустимая папка кэша модели.")
+        cache.mkdir(exist_ok=True)
+        target = cache / item["sha256"]
+        if target.is_symlink():
+            raise UserError("Файл модели не должен быть символьной ссылкой.")
+        if target.is_file():
+            if target.stat().st_size == item["bytes"] and checksum(target) == item["sha256"]:
+                return target
+            if offline:
+                raise UserError("Локальный ONNX-кэш повреждён. Повторите загрузку.")
+            target.unlink()
+        if offline:
+            raise UserError("ONNX-модель отсутствует в локальном кэше.")
+        fd, temporary = tempfile.mkstemp(dir=cache, prefix=".download-")
+        try:
+            with os.fdopen(fd, "wb") as out, open_url(url) as response:
+                count = 0
+                while block := response.read(min(1024**2, item["bytes"] - count + 1)):
+                    count += len(block)
+                    if count > item["bytes"]:
+                        raise UserError("ONNX-файл превышает закреплённый размер.")
+                    out.write(block)
+                    report(count)
+                out.flush()
+                os.fsync(out.fileno())
+            downloaded = Path(temporary)
+            if count != item["bytes"] or checksum(downloaded) != item["sha256"]:
+                raise UserError("Проверка целостности ONNX-модели не прошла.")
+            os.replace(downloaded, target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+        return target
+
     def prepare(
         self,
         spec: ModelSpec,
@@ -140,11 +183,13 @@ class BundleStore:
                             source = (
                                 local / item["name"]
                                 if local
+                                else self._release_file(item, offline=offline, report=report_bytes)
+                                if "url" in item
                                 else Path(
                                     hf_hub_download(
-                                        spec.model_id,
-                                        item["name"],
-                                        revision=spec.revision,
+                                        item.get("repo_id", spec.model_id),
+                                        item.get("filename", item["name"]),
+                                        revision=item.get("revision", spec.revision),
                                         cache_dir=self.root / "hub",
                                         local_files_only=offline,
                                         token=False,

@@ -1,0 +1,41 @@
+{
+  "model_id": "ai-sage/Giga-Embeddings-instruct-480M-0826",
+  "revision": "1763d603adac8057bd6482a708001b0ed2e0a903",
+  "files": [
+    {
+      "name": "tokenizer.json",
+      "bytes": 10728166,
+      "sha256": "0870f9c0f06a677f7e939e7765ae3a5d9582f2a6d7e7258176ecd1a3eab96cef"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 212,
+      "sha256": "57981f331fd010c7be87f58e7570b2061dd14d98be53063ad8972e9c4db0b644"
+    },
+    {
+      "name": "config.json",
+      "bytes": 1562,
+      "sha256": "99968b29efb4dafdd3ba88da19677a2b7046b6c761d8f9deb078c4eed49ddfeb"
+    },
+    {
+      "name": "README.md",
+      "bytes": 25812,
+      "sha256": "c02ae1f0cd8fa7fe335ce3d1a9f50b52dd036ba9e936f4fe9025368571e4d972"
+    },
+    {
+      "name": "model.safetensors",
+      "bytes": 967470272,
+      "sha256": "9ce03c6c5ae02baebb42ce3015b6f3e628c5fec7b7745bc2490f6ff961a654a5"
+    },
+    {
+      "name": "modeling_gigarembed.py",
+      "bytes": 4655,
+      "sha256": "2e3160131a46ab8a65649d514a84fc2a2002404c106c2e81548883c062a63418"
+    },
+    {
+      "name": "configuration_gigarembed.py",
+      "bytes": 150,
+      "sha256": "96e135d1ca3ae77d456b7bbc4973d74277b495f3e664e0c12855f2d642e14b5d"
+    }
+  ]
+}

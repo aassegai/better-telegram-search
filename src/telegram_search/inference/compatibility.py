@@ -19,6 +19,7 @@ def compatible_manifest(left, right):
     left, right = copy.deepcopy(left), copy.deepcopy(right)
     for value in (left, right):
         runtime = value.get("runtime", {})
+        model = value.get("model", {})
         if (
             isinstance(runtime, dict)
             and runtime.get("backend") == "onnxruntime"
@@ -27,17 +28,25 @@ def compatible_manifest(left, right):
             and runtime.get("dtype") == "float32"
         ):
             runtime["version"] = "validated-onnx-fp32-v1"
+        elif (
+            isinstance(runtime, dict)
+            and runtime.get("backend") == "onnxruntime"
+            and runtime.get("provider") == "CPUExecutionProvider"
+            and runtime.get("dtype") == "mixed-fp16"
+            and runtime.get("version") in model.get("validated_runtime_versions", ())
+        ):
+            runtime["version"] = "validated-onnx-mixed-fp16-v1"
     return left == right
 
 
-def check_vectors(reference, candidate):
+def check_vectors(reference, candidate, *, max_abs=1e-4, min_cosine=0.99999):
     if (
         reference.shape != candidate.shape
         or reference.ndim != 2
         or not reference.size
         or not np.isfinite(reference).all()
         or not np.isfinite(candidate).all()
-        or np.max(np.abs(reference - candidate)) > 1e-4
-        or np.min(np.sum(reference * candidate, axis=1)) < 0.99999
+        or np.max(np.abs(reference - candidate)) > max_abs
+        or np.min(np.sum(reference * candidate, axis=1)) < min_cosine
     ):
         raise UserError("Результат GPU не прошёл проверку совместимости с CPU. Выберите CPU.")

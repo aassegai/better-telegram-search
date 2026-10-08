@@ -135,7 +135,7 @@ class Execution:
                     ) from exc
                 self.warning = "GPU недоступен: режим Авто использует CPU."
 
-    def session(self, model):
+    def session(self, model, *, disabled_optimizers=None):
         import onnxruntime as ort
 
         providers = [CPU]
@@ -167,8 +167,9 @@ class Execution:
                 raise RuntimeError("provider absent")
             if self.provider == CUDA:
                 preload_cuda()
+            extra = {"disabled_optimizers": disabled_optimizers} if disabled_optimizers else {}
             session = ort.InferenceSession(
-                model, sess_options=options(self.threads), providers=providers
+                model, sess_options=options(self.threads), providers=providers, **extra
             )
             session.disable_fallback()
         except Exception as exc:

@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "bundle_version": 1,
+  "runtime": "onnxruntime",
+  "runtime_dtype": "mixed-fp16",
+  "precision": "mixed-fp16",
+  "weight_dtype": "float16",
+  "storage_dtype": "float32",
+  "pooling_dtype": "float32",
+  "normalization": "l2",
+  "opset": 17,
+  "validated_runtime_versions": [
+    "1.23.2",
+    "1.30.0"
+  ],
+  "verified_platforms": [
+    "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.23.2",
+    "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+  ],
+  "unverified_providers": [
+    "CUDAExecutionProvider",
+    "CoreMLExecutionProvider"
+  ],
+  "cpu_execution": "ORT CPU precision casts; FP16 weights do not imply native FP16 arithmetic",
+  "device_tolerance": {
+    "max_abs": 0.003,
+    "min_cosine": 0.9999
+  },
+  "role": "rerank",
+  "allowed_inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "required_inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "output_name": "last_hidden_state",
+  "input_dtype": "int64",
+  "output_dtype": "float16",
+  "pooling": "masked-mean",
+  "max_length": 512,
+  "chunk_max_tokens": 512,
+  "postprocessing_version": "masked-mean-l2-fp32-v1",
+  "preprocessing_version": "telegram-windows-v1",
+  "license": "MIT",
+  "model_id": "ai-sage/Giga-Embeddings-instruct-480M-0826",
+  "revision": "1763d603adac8057bd6482a708001b0ed2e0a903",
+  "tokenizer_revision": "1763d603adac8057bd6482a708001b0ed2e0a903",
+  "dimension": 1024,
+  "query_prefix": "Instruct: Given a query, retrieve relevant passages\nQuery: ",
+  "passage_prefix": "",
+  "fp32_islands": [
+    "RMSNorm",
+    "attention Softmax",
+    "rotary frequencies"
+  ],
+  "export_recipe": "tools/model-export/export.py",
+  "source": "https://huggingface.co/ai-sage/Giga-Embeddings-instruct-480M-0826/tree/1763d603adac8057bd6482a708001b0ed2e0a903",
+  "files": [
+    {
+      "name": "onnx/model.onnx",
+      "bytes": 968510245,
+      "sha256": "ff22068b014db9727cce8196b22bbe0dddde1dc616fdaffa9a86c73e72f8ba19",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/model-bundles-v1/giga-fp16.onnx"
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 10728166,
+      "sha256": "0870f9c0f06a677f7e939e7765ae3a5d9582f2a6d7e7258176ecd1a3eab96cef"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 212,
+      "sha256": "57981f331fd010c7be87f58e7570b2061dd14d98be53063ad8972e9c4db0b644"
+    },
+    {
+      "name": "config.json",
+      "bytes": 1562,
+      "sha256": "99968b29efb4dafdd3ba88da19677a2b7046b6c761d8f9deb078c4eed49ddfeb"
+    },
+    {
+      "name": "README.md",
+      "bytes": 25812,
+      "sha256": "c02ae1f0cd8fa7fe335ce3d1a9f50b52dd036ba9e936f4fe9025368571e4d972"
+    }
+  ],
+  "attention": "bidirectional-no-cache",
+  "prompt_in_pooling": true
+}

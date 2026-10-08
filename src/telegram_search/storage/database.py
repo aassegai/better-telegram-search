@@ -8,7 +8,7 @@ from telegram_search.config.settings import Settings
 from telegram_search.security.privacy import repository_warning
 from telegram_search.shared.errors import UserError
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def execute_sql(conn, sql: str) -> None:

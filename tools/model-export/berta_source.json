@@ -1,0 +1,31 @@
+{
+  "model_id": "sergeyzh/BERTA",
+  "revision": "914c8c8aed14042ed890fc2c662d5e9e66b2faa7",
+  "files": [
+    {
+      "name": "tokenizer.json",
+      "bytes": 1394518,
+      "sha256": "0cd034217c56f7eae87ee4914d07de120dd0c9afb76598df1c920bbefa413919"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 1521,
+      "sha256": "77de3e532e122ec8110727132ef56966ddeef97b597b9fda2cd2d1504c82b712"
+    },
+    {
+      "name": "config.json",
+      "bytes": 878,
+      "sha256": "0195d3ac1fa9da65be2cf80eb45f93babff7061fd063587e83bfc947e82cf2d4"
+    },
+    {
+      "name": "README.md",
+      "bytes": 11425,
+      "sha256": "54e1fdef1ece46de98f443262766f42e550f2a4d5dd3e32e0ca1c98d8e9ea425"
+    },
+    {
+      "name": "model.safetensors",
+      "bytes": 513402728,
+      "sha256": "96bfcb9b24d99f7501528b8d122610ad25f0f87f212e5debb3fb5afe87aa8888"
+    }
+  ]
+}

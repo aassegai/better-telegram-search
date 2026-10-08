@@ -1,0 +1,100 @@
+{
+  "schema_version": 2,
+  "bundle_version": 1,
+  "runtime": "onnxruntime",
+  "runtime_dtype": "mixed-fp16",
+  "precision": "mixed-fp16",
+  "weight_dtype": "float16",
+  "storage_dtype": "float32",
+  "pooling_dtype": "float32",
+  "normalization": "l2",
+  "opset": 17,
+  "validated_runtime_versions": [
+    "1.23.2",
+    "1.30.0"
+  ],
+  "verified_platforms": [
+    "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.23.2",
+    "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+  ],
+  "unverified_providers": [
+    "CUDAExecutionProvider",
+    "CoreMLExecutionProvider"
+  ],
+  "cpu_execution": "ORT CPU precision casts; FP16 weights do not imply native FP16 arithmetic",
+  "device_tolerance": {
+    "max_abs": 0.001,
+    "min_cosine": 0.99999
+  },
+  "model_id": "google/siglip2-base-patch16-224",
+  "revision": "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2",
+  "tokenizer_revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4",
+  "processor_revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4",
+  "dimension": 768,
+  "role": "visual",
+  "license": "Apache-2.0",
+  "output_name": "pooler_output",
+  "output_dtype": "float32",
+  "text_max_length": 64,
+  "pad_id": 0,
+  "eos_id": 1,
+  "add_bos": false,
+  "image_size": 224,
+  "preprocessing_version": "siglip2-pil-bilinear-exif-direct-224-v1",
+  "postprocessing_version": "pooler-output-l2-fp32-v1",
+  "fp32_islands": [
+    "LayerNormalization",
+    "Softmax",
+    "graph float32 IO and precision casts"
+  ],
+  "files": [
+    {
+      "name": "onnx/text_model_fp16.onnx",
+      "bytes": 564862230,
+      "sha256": "711da56ada0a4aa11c7dd3320df741081a3cae4f0ae1b5e5c6d5b294738d0eb0",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    },
+    {
+      "name": "onnx/vision_model_fp16.onnx",
+      "bytes": 186039516,
+      "sha256": "a1959f7bd3993a607e48839f6d01e25b876fe76afda301b028b78eef68aabd95",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 34363039,
+      "sha256": "cb9140fae3ac5122c972d37adf83e1248471a38147ad76f8215c8872c6fd8322",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 47240,
+      "sha256": "7c3a247599e741bceba1a3fe0285aea88d1044dc1fad2caa1e48cdd9fd25f630",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    },
+    {
+      "name": "preprocessor_config.json",
+      "bytes": 394,
+      "sha256": "9b36b57ebaf20f09bf4c22100ccc21877ea6bfe5aead0c00c59f8af8ccefacfc",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    },
+    {
+      "name": "config.json",
+      "bytes": 435,
+      "sha256": "e43a9f7692d3819886a82cb2097048258d444f123c67d37ec825f9345b019cf2",
+      "repo_id": "onnx-community/siglip2-base-patch16-224-ONNX",
+      "revision": "ba1f3b0843f24bc5417d38e19c37b287d719b2f4"
+    }
+  ],
+  "disabled_optimizers": {
+    "1.23.2": [
+      "SimplifiedLayerNormFusion",
+      "LayerNormFusion"
+    ]
+  }
+}
