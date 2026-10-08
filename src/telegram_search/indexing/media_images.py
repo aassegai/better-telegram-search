@@ -43,7 +43,7 @@ class MediaImages:
             )
             chat = conn.execute(
                 "SELECT c.id,c.image_batch FROM chats c WHERE c.media_paused=0 "
-                "AND EXISTS (SELECT 1 FROM media_refs r WHERE r.chat_id=c.id AND "
+                "AND EXISTS (SELECT 1 FROM indexable_media_refs r WHERE r.chat_id=c.id AND "
                 + pending
                 + ") ORDER BY c.id LIMIT 1",
                 (encoder.space_id, encoder.space_id),
@@ -54,7 +54,7 @@ class MediaImages:
             limit_key = (id(encoder), chat["id"], configured)
             limit = min(configured, self.image_limits.get(limit_key, configured))
             photos = conn.execute(
-                "SELECT DISTINCT r.sha256 FROM media_refs r WHERE r.chat_id=? AND "
+                "SELECT DISTINCT r.sha256 FROM indexable_media_refs r WHERE r.chat_id=? AND "
                 + pending
                 + " ORDER BY r.sha256 LIMIT ?",
                 (chat["id"], encoder.space_id, encoder.space_id, limit),
@@ -80,7 +80,8 @@ class MediaImages:
                 [
                     row[0]
                     for row in conn.execute(
-                        "SELECT DISTINCT r.sha256 FROM media_refs r WHERE r.chat_id=? AND "
+                        "SELECT DISTINCT r.sha256 FROM indexable_media_refs r "
+                        "WHERE r.chat_id=? AND "
                         + pending
                         + f" AND r.sha256 NOT IN ({placeholders}) ORDER BY r.sha256 LIMIT ?",
                         (

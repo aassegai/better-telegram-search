@@ -29,6 +29,9 @@ const stateNames: Record<string, string> = {
   paused: 'Приостановлено', interrupted: 'Прервано', cancelled: 'Отменено', failed: 'Ошибка',
 };
 const reasons: Record<string, string> = { words: 'Совпали слова', meaning: 'Близкий смысл', image: 'Фотография по описанию', ocr_words: 'Слова на фотографии', ocr_meaning: 'Смысл текста на фотографии' };
+type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
+  limit: number; search_id?: string | null; next_offset?: number | null; cached_results?: number };
+
 const allModalities: SearchModality[] = ['text', 'images', 'ocr'];
 const modalityLabels: Record<SearchModality, string> = { text: 'Текст', images: 'Изображения', ocr: 'OCR' };
 
@@ -86,6 +89,11 @@ export default function App() {
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [submittedLimit, setSubmittedLimit] = useState(20);
+  const [searchId, setSearchId] = useState<string | null>(null);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pagingError, setPagingError] = useState('');
+  const searchVersion = useRef(0);
   const [busy, setBusy] = useState(false);
   const [showSearchSettings, setShowSearchSettings] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -187,6 +195,7 @@ export default function App() {
   });
 
   const changeModalities = (next: SearchModality[]) => {
+    searchVersion.current++; setLoadingMore(false); setSearchId(null); setNextOffset(null);
     setModalities(next); setHits(null); setWarnings([]); setHasMore(false); closeContext();
   };
 
@@ -195,7 +204,8 @@ export default function App() {
     if (!query.trim() || busy) return;
     if (!modalities.length) { setError(t('Выберите хотя бы один тип поиска.')); return; }
     if (selected?.length === 0) { setError(t('Выберите хотя бы один диалог.')); return; }
-    setBusy(true); setError('');
+    const version = ++searchVersion.current;
+    setBusy(true); setError(''); setPagingError(''); setLoadingMore(false); closeContext();
     const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode, exclude_deleted: String(excludeDeleted) });
     modalities.forEach(kind => params.append('modality', kind));
     selected?.forEach(id => params.append('chat_id', id));
@@ -203,14 +213,30 @@ export default function App() {
     if (from) params.set('date_from', from);
     if (to) params.set('date_to', to);
     try {
-      const result = await api<{ results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[]; limit: number }>(`/api/search?${params}`);
+      const result = await api<SearchPage>(`/api/search?${params}`);
+      if (version !== searchVersion.current) return;
+      setSearchId(result.search_id ?? null); setNextOffset(result.next_offset ?? null);
       setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
       setSubmittedLimit(result.limit ?? 20);
       setEffectiveMode(result.effective_mode); setWarnings(result.warnings);
       setSearchFilters(params.toString());
       setSubmittedModalities([...modalities]);
-    } catch (error) { reportError(error); }
+    } catch (error) { if (version === searchVersion.current) reportError(error); }
     finally { setBusy(false); }
+  }
+
+  async function showMore() {
+    if (!searchId || nextOffset === null || loadingMore || busy) return;
+    const version = searchVersion.current;
+    setLoadingMore(true); setPagingError('');
+    try {
+      const result = await api<SearchPage>(`/api/search/${encodeURIComponent(searchId)}/page?offset=${nextOffset}&limit=${submittedLimit}`);
+      if (version !== searchVersion.current) return;
+      setHits(current => [...(current ?? []), ...result.results]);
+      setNextOffset(result.next_offset ?? null); setHasMore(result.has_more);
+    } catch (error) {
+      if (version === searchVersion.current) setPagingError(error instanceof Error ? error.message : t('Ошибка соединения.'));
+    } finally { if (version === searchVersion.current) setLoadingMore(false); }
   }
 
   async function openContext(hit: Hit, anchor = hit.message_id) {
@@ -238,7 +264,8 @@ export default function App() {
       const estimate = await api<{ messages: number; message_text_bytes: number; exclusive_media: number; shared_media: number }>(`/api/chats/${chat.id}/deletion-estimate`);
       if (!window.confirm(t("Удалить «{p0}» и его индекс из приложения? {p1} сообщений, {p2} КиБ текста. Кэш {p3} вложений удалится; общих вложений {p4}. Точное освобождение места зависит от уплотнения индекса. Исходный экспорт сохранится.", { p0: chat.name, p1: estimate.messages, p2: (estimate.message_text_bytes / 1024).toFixed(1), p3: estimate.exclusive_media, p4: estimate.shared_media }))) return;
       await api(`/api/chats/${chat.id}`, { method: 'DELETE' });
-      setSelected(null); setHits(null); await refresh();
+      searchVersion.current++; setSearchId(null); setNextOffset(null); setLoadingMore(false); setPagingError('');
+      setSelected(null); setHits(null); closeContext(); await refresh();
     } catch (error) { reportError(error); }
     finally { setDeleting(false); }
   }
@@ -366,7 +393,9 @@ export default function App() {
             {hit.ocr_text && <details className="ocr-evidence"><summary>{t("Распознанный текст")}{hit.ocr_confidence != null ? t(" · уверенность OCR {p0} / 100", { p0: Math.round(hit.ocr_confidence) }) : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>{t("Распознавание может содержать ошибки. Откройте фотографию для проверки.")}</p></details>}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<span>↗</span></button>
           </article>)}</div>
-          {hasMore && <p className="more-note">{t("Показано фрагментов: ")}{hits.length}{t(" из лимита ")}{submittedLimit}{t(". Увеличьте количество результатов в настройках или уточните запрос.")}</p>}
+          {nextOffset !== null && <div className="more-results"><button type="button" className="primary" disabled={busy || loadingMore} onClick={() => void showMore()}>{loadingMore ? t('Загружаем…') : t('Показать ещё')}</button><span className="baseline-note">{t('Следующие результаты загружаются из кэша поиска.')}</span></div>}
+          {pagingError && <p className="error" role="alert">{t(pagingError)}</p>}
+          {hasMore && nextOffset === null && <p className="more-note">{t('Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.', { p0: hits.length })}</p>}
         </section>}
       </div><footer className="main-footer">{t("Сообщения хранятся и обрабатываются на этом компьютере.")}</footer>
     </main>

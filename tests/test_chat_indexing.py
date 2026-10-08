@@ -312,3 +312,85 @@ def test_scoped_pause_inside_inference_keeps_ids_and_does_not_publish(db, import
     assert worker.run(work)["state"] == "done"
     with db.connect() as conn:
         assert ids == [row[0] for row in conn.execute("SELECT id FROM chunks ORDER BY id")]
+
+
+def test_author_exclusion_supersedes_inflight_text_and_rebuilds_without_bot(db, importer, tmp_path):
+    from telegram_search.search.hybrid import HybridSearch
+
+    chat, service, worker, work = setup_index(
+        db, importer, tmp_path, ["поезд человека", "рассылка робота", "поезд человека"]
+    )
+    indexing, media = controls(db, importer, service)
+    try:
+        worker.encoder.on_encode = lambda texts: indexing.settings(
+            chat, {"excluded_author_ids": ["user2"]}
+        )
+        worker.run(work)
+        with db.connect() as conn:
+            row = conn.execute(
+                "SELECT state,chunks_done FROM index_work WHERE id=?", (work,)
+            ).fetchone()
+            assert row["state"] == "superseded" and row["chunks_done"] == 0
+            next_work = conn.execute("SELECT id FROM index_work WHERE state='pending'").fetchone()[
+                0
+            ]
+        worker.encoder.on_encode = None
+        assert worker.run(next_work)["state"] == "done"
+        with db.connect() as conn:
+            assert all("рассылка" not in row[0] for row in conn.execute("SELECT text FROM chunks"))
+        search = HybridSearch(db, service, importer.lifecycle_lock)
+        for mode in ("meaning", "hybrid"):
+            hits = search.search("поезд", mode=mode)["results"]
+            assert hits and all(m["message_id"] != 2 for hit in hits for m in hit["messages"])
+        indexing.settings(chat, {"excluded_author_ids": []})
+        with db.connect() as conn:
+            next_work = conn.execute("SELECT id FROM index_work WHERE state='pending'").fetchone()[
+                0
+            ]
+        assert worker.run(next_work)["state"] == "done"
+        with db.connect() as conn:
+            assert any("рассылка" in row[0] for row in conn.execute("SELECT text FROM chunks"))
+    finally:
+        media.shutdown()
+        service.shutdown()
+
+
+def test_inflight_clip_exclusion_rejects_vectors_and_reinclude_reuses_shared_cache(
+    db, importer, tmp_path, monkeypatch
+):
+    import numpy as np
+    from test_index_exclusions import seed
+
+    chat, service, _, _ = setup_index(db, importer, tmp_path)
+    bot_chat = seed(importer, tmp_path / "bots", 200)
+    indexing, media = controls(db, importer, service)
+    calls = []
+
+    def encode(data):
+        calls.append(len(data))
+        indexing.settings(bot_chat, {"excluded_author_ids": ["bot"]})
+        return np.ones((len(data), 512), dtype=np.float32)
+
+    media.clip = SimpleNamespace(
+        space_id="clip-test",
+        encode_images=encode,
+        unload=lambda: None,
+        execution=SimpleNamespace(info=lambda: {"device": "cpu", "provider": "CPU"}),
+    )
+    monkeypatch.setattr(media, "_read_photo", lambda sha: sha.encode())
+    try:
+        assert media._image_batch()
+        with db.connect() as conn:
+            assert not conn.execute("SELECT 1 FROM media_embeddings").fetchone()
+        assert not media._image_batch()
+        indexing.settings(bot_chat, {"excluded_author_ids": []})
+        media.clip.encode_images = lambda data: np.ones((len(data), 512), dtype=np.float32)
+        assert media._image_batch() and media.status(bot_chat)["images_ready"] == 1
+        indexing.settings(bot_chat, {"excluded_author_ids": ["bot"]})
+        assert media.status(bot_chat)["total_photos"] == 0
+        indexing.settings(bot_chat, {"excluded_author_ids": []})
+        assert media.status(bot_chat)["images_ready"] == 1 and not media._image_batch()
+        assert indexing.status(chat)["excluded_author_ids"] == []
+    finally:
+        media.shutdown()
+        service.shutdown()

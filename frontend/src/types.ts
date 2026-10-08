@@ -3,6 +3,10 @@ export type Chat = {
   date_from: number | null; date_to: number | null;
 };
 export type SearchModality = 'text' | 'images' | 'ocr';
+export type ChatIndexStatus = {
+  semantic: SemanticStatus; media: MediaStatus;
+  excluded_author_ids?: string[]; excluded_messages?: number;
+};
 export type Message = {
   chat_id: string; message_id: number; timestamp: number; author: string;
   text: string; kind: string; action: string | null; reply_to: number | null;

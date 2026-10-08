@@ -26,6 +26,7 @@ from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
+from telegram_search.search.cache import SearchCache
 from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 from telegram_search.search.media import MediaSearch, UnifiedSearch
@@ -136,6 +137,7 @@ def create_app(
             app.state.telegram = telegram
             if not hold_background:
                 telegram.start()
+            app.state.search_cache = SearchCache()
             app.state.search = UnifiedSearch(
                 HybridSearch(db, semantic, importer.lifecycle_lock),
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
@@ -304,10 +306,30 @@ def create_app(
         ):
             raise UserError("Начало периода должно быть раньше конца.")
         limit, chunk_size = search_options(db.settings, limit, chunk_size)
+        with app.state.importer.lifecycle_lock:
+            revision = SearchCache.revision(db)
         result = app.state.search.search(
-            q, filters, exact, limit, mode, tab, chunk_size, modalities=modality
+            q, filters, exact, SearchCache.capacity, mode, tab, chunk_size, modalities=modality
         )
-        return {**result, "limit": limit, "chunk_size": chunk_size}
+        return app.state.search_cache.remember(result, revision, limit, chunk_size)
+
+    @app.get("/api/search/{search_id}/page")
+    def search_page(
+        search_id: str,
+        offset: Annotated[int, Query(ge=0, le=100)],
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ):
+        with app.state.importer.lifecycle_lock:
+            try:
+                return app.state.search_cache.page(
+                    search_id, SearchCache.revision(db), offset, limit
+                )
+            except KeyError:
+                raise HTTPException(410, "Кэш поиска истёк. Выполните поиск ещё раз.") from None
+            except ValueError:
+                raise HTTPException(
+                    409, "Архив или настройки изменились. Выполните поиск ещё раз."
+                ) from None
 
     @app.get("/api/media-index")
     def media_status():

@@ -9,6 +9,8 @@ image, then read the surrounding messages. Filter by conversation, author, and d
 The app runs locally on CPU or GPU. Your conversations stay on your computer; semantic
 search and photo search use ONNX Runtime.
 
+Per-chat indexing settings let you exclude authors, including their messages, images and OCR. **Show more** loads the next results from a cache of up to 100 ranked matches without running the models again.
+
 ## Quickstart
 
 ### Download a ready-to-run build

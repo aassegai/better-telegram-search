@@ -20,13 +20,13 @@ class HybridSearch:
             "c.embedding_space_id=? AND c.generation=s.target_generation "
             "AND s.chunk_generation=s.target_generation "
             "AND s.dense_generation=s.target_generation AND s.embedding_space_id=? "
-            "AND EXISTS(SELECT 1 FROM chunk_parts p JOIN messages m "
+            "AND EXISTS(SELECT 1 FROM chunk_parts p JOIN indexable_messages m "
             "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
             f"WHERE p.chunk_id=c.id AND {where})"
         )
         if filters.exclude_deleted:
             predicate += (
-                " AND NOT EXISTS(SELECT 1 FROM chunk_parts dp JOIN messages dm "
+                " AND NOT EXISTS(SELECT 1 FROM chunk_parts dp JOIN indexable_messages dm "
                 "ON dm.chat_id=dp.chat_id AND dm.message_id=dp.message_id "
                 "WHERE dp.chunk_id=c.id AND dm.remote_deleted=1)"
             )
@@ -154,7 +154,8 @@ class HybridSearch:
                     anchor_params = [match.replace(" AND ", " OR ")]
                 for chunk_id in sorted(scores, key=lambda key: (-scores[key], key)):
                     anchor = conn.execute(
-                        "SELECT m.*,ch.name AS chat_name FROM chunk_parts p JOIN messages m "
+                        "SELECT m.*,ch.name AS chat_name FROM chunk_parts p "
+                        "JOIN indexable_messages m "
                         "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
                         "JOIN chats ch ON ch.id=m.chat_id "
                         f"WHERE p.chunk_id=? AND {witness} "

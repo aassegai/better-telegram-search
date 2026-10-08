@@ -17,7 +17,7 @@ class MediaSearch:
             conn.execute("BEGIN")
             predicate = (
                 "e.space_id=? AND e.kind=? "
-                f"{extra} AND EXISTS (SELECT 1 FROM media_refs r JOIN messages m "
+                f"{extra} AND EXISTS (SELECT 1 FROM media_refs r JOIN indexable_messages m "
                 "ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
                 "WHERE r.sha256=e.sha256 "
                 f"AND r.status='ready' AND r.kind='photo' AND {where})"
@@ -151,7 +151,7 @@ class MediaSearch:
                         where, params = filters.sql("m")
                         refs = conn.execute(
                             "SELECT m.*,c.name AS chat_name,MIN(r.id) AS media_id "
-                            "FROM media_refs r JOIN messages m ON m.chat_id=r.chat_id "
+                            "FROM media_refs r JOIN indexable_messages m ON m.chat_id=r.chat_id "
                             "AND m.message_id=r.message_id JOIN chats c ON c.id=m.chat_id "
                             f"WHERE r.sha256=? AND r.status='ready' AND r.kind='photo' AND {where} "
                             "GROUP BY m.chat_id,m.message_id "

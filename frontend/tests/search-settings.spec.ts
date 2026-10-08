@@ -28,7 +28,9 @@ test('search display settings persist and control result cards and their message
     await page.getByRole('button', { name: 'Найти' }).click();
     await expect(page.locator('.result-card')).toHaveCount(1);
     await expect(page.locator('.result-card .message')).toHaveCount(1);
-    await expect(page.locator('.more-note')).toContainText('из лимита 1');
+    await page.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+    await expect(page.locator('.result-card')).toHaveCount(2);
+    expect(searches).toBe(1);
     await page.reload();
     await page.getByText('Выдача поиска', { exact: true }).click();
     await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('1');

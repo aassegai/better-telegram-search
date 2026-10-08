@@ -91,7 +91,7 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
     where, params = filters.sql("m")
     eligible = (
         "o.version=? AND o.state='ready' AND EXISTS (SELECT 1 FROM media_refs r "
-        "JOIN messages m ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
+        "JOIN indexable_messages m ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
         "WHERE r.sha256=o.sha256 AND r.kind='photo' AND r.status='ready' "
         f"AND {where})"
     )

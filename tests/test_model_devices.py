@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.inference.providers import CPU, CUDA
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
+from telegram_search.storage.database import execute_sql
 
 
 class ExecutionStub:
@@ -302,6 +304,32 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_paused")
         # Reconstruct the pre-v6 schema, including removal of later optional
         # source/search migrations before replaying all migrations.
+        for trigger in (
+            "chats_search_ai",
+            "chats_search_ad",
+            "chats_search_au",
+            "index_excluded_authors_ai",
+            "index_excluded_authors_ad",
+            "messages_ai",
+            "messages_ad",
+            "messages_au",
+        ):
+            conn.execute(f'DROP TRIGGER "{trigger}"')
+        conn.execute("DROP TABLE message_fts")
+        conn.execute("DROP VIEW indexable_media_refs")
+        conn.execute("DROP VIEW indexable_messages")
+        conn.execute("DROP TABLE index_excluded_authors")
+        conn.execute("DROP TABLE search_archive_epoch")
+        schema = (Path(__file__).parents[1] / "src/telegram_search/storage/schema.sql").read_text()
+        execute_sql(
+            conn,
+            schema[
+                schema.index("CREATE VIRTUAL TABLE message_fts") : schema.index(
+                    "CREATE TABLE media_blobs"
+                )
+            ],
+        )
+        conn.execute("INSERT INTO message_fts(message_fts) VALUES('rebuild')")
         for trigger in ("ocr_grams_ai", "ocr_grams_ad", "ocr_grams_au"):
             conn.execute(f'DROP TRIGGER "{trigger}"')
         for table in (

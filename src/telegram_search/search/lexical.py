@@ -154,12 +154,12 @@ class ContextService:
         """Keep the anchor and fill a chronological window, including at chat boundaries."""
         visible = " AND remote_deleted=0" if filters and filters.exclude_deleted else ""
         previous = conn.execute(
-            "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
+            "SELECT * FROM indexable_messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
             f"{visible} ORDER BY timestamp DESC,message_id DESC LIMIT ?",
             (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
         following = conn.execute(
-            "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
+            "SELECT * FROM indexable_messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
             f"{visible} ORDER BY timestamp,message_id LIMIT ?",
             (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
@@ -199,7 +199,7 @@ class SearchService:
             # Stream ranked rows until enough distinct windows survive deduplication.
             rows = conn.execute(
                 "SELECT m.*, c.name AS chat_name,bm25(message_fts) AS lexical_score "
-                "FROM message_fts JOIN messages m ON m.rowid=message_fts.rowid "
+                "FROM message_fts JOIN indexable_messages m ON m.rowid=message_fts.rowid "
                 "JOIN chats c ON c.id=m.chat_id WHERE message_fts MATCH ? "
                 f"AND {where} ORDER BY lexical_score,m.timestamp,m.message_id",
                 (match, *params),

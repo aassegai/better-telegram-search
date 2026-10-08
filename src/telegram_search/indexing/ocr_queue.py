@@ -44,7 +44,8 @@ class OcrQueue:
             if configured:
                 chat = conn.execute(
                     "SELECT c.id,c.ocr_batch,c.ocr_region_batch FROM ocr_work w "
-                    "JOIN media_refs r ON r.sha256=w.sha256 JOIN chats c ON c.id=r.chat_id "
+                    "JOIN indexable_media_refs r ON r.sha256=w.sha256 JOIN "
+                    "chats c ON c.id=r.chat_id "
                     "WHERE w.version=? AND w.state='pending' AND r.kind='photo' "
                     "AND r.status='ready' AND c.ocr_paused=0"
                     + exclusion
@@ -62,7 +63,7 @@ class OcrQueue:
                 scope, parameters = " AND c.id=?", (chat["id"],)
             rows = conn.execute(
                 "SELECT w.sha256 FROM ocr_work w WHERE w.version=? AND w.state='pending' "
-                "AND EXISTS (SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
+                "AND EXISTS (SELECT 1 FROM indexable_media_refs r JOIN chats c ON c.id=r.chat_id "
                 "WHERE r.sha256=w.sha256 AND r.status='ready' AND r.kind='photo' "
                 "AND c.ocr_paused=0" + scope + ")" + exclusion + " ORDER BY w.sha256 LIMIT ?",
                 (version, *parameters, *exclude, min(4, max(1, limit))),

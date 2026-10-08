@@ -1,5 +1,6 @@
 """Per-dialog queues over shared, compatible model and media caches."""
 
+from telegram_search.indexing.exclusions import update_authors, validate_authors
 from telegram_search.shared.errors import UserError
 
 
@@ -13,9 +14,24 @@ class ChatIndexing:
                 "SELECT text_batch,image_batch,ocr_batch,ocr_region_batch FROM chats WHERE id=?",
                 (chat_id,),
             ).fetchone()
+            excluded = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT author_id FROM index_excluded_authors WHERE "
+                    "chat_id=? ORDER BY author_id",
+                    (chat_id,),
+                )
+            ]
+            excluded_messages = conn.execute(
+                "SELECT COUNT(*) FROM messages m JOIN index_excluded_authors x "
+                "ON x.chat_id=m.chat_id AND x.author_id=m.author_id WHERE m.chat_id=?",
+                (chat_id,),
+            ).fetchone()[0]
         if chat is None:
             raise UserError("Диалог не найден.")
         return {
+            "excluded_author_ids": excluded,
+            "excluded_messages": excluded_messages,
             "semantic": {
                 **self.semantic.status(chat_id),
                 "batch_size": chat[0] or self.db.settings.embedding_batch,
@@ -37,16 +53,27 @@ class ChatIndexing:
             "ocr_batch_size": ("ocr_batch", 4),
             "ocr_region_batch_size": ("ocr_region_batch", 32),
         }
-        if not values or set(values) - fields.keys():
+        if not values or set(values) - (fields.keys() | {"excluded_author_ids"}):
             raise UserError("Неизвестные настройки индексации.")
+        authors = (
+            validate_authors(values["excluded_author_ids"])
+            if "excluded_author_ids" in values
+            else None
+        )
         for key, value in values.items():
+            if key == "excluded_author_ids":
+                continue
             if type(value) is not int or not 1 <= value <= fields[key][1]:
                 raise UserError("Недопустимый размер батча индексации.")
         with self.lock, self.db.connect() as conn:
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
                 raise UserError("Диалог не найден.")
             for key, value in values.items():
+                if key == "excluded_author_ids":
+                    continue
                 conn.execute(f"UPDATE chats SET {fields[key][0]}=? WHERE id=?", (value, chat_id))
+            if authors is not None and update_authors(conn, chat_id, authors):
+                self.semantic.estimates.cache.clear()
             if {"ocr_batch_size", "ocr_region_batch_size"} & values.keys():
                 conn.execute("DELETE FROM index_rates WHERE kind='ocr'")
                 self.media.metrics.reset("ocr")
@@ -59,6 +86,8 @@ class ChatIndexing:
                     for key, limit in self.media.image_limits.items()
                     if key[1] != chat_id
                 }
+        self.semantic.wake.set()
+        self.media.wake.set()
         return self.status(chat_id)
 
     def control(self, chat_id, kind, action):

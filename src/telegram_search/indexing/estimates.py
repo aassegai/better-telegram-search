@@ -87,7 +87,8 @@ class Estimates:
             unknown = conn.execute(
                 "SELECT COALESCE(SUM(length(m.text)+length(m.author)+32),0) FROM index_work w "
                 "JOIN index_segments s ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
-                "AND s.target_generation=w.generation JOIN messages m ON m.chat_id=w.chat_id "
+                "AND s.target_generation=w.generation JOIN "
+                "indexable_messages m ON m.chat_id=w.chat_id "
                 "AND m.timestamp>=CAST(strftime('%s',w.utc_day) AS INTEGER) "
                 "AND m.timestamp<CAST(strftime('%s',w.utc_day) AS INTEGER)+86400 "
                 "WHERE w.state IN ('pending','running','failed') AND w.stage='building'" + scope,
@@ -107,7 +108,8 @@ class Estimates:
             canonical = conn.execute(
                 "SELECT COALESCE(SUM(length(m.text)+length(m.author)+32),0) FROM index_work w "
                 "JOIN index_segments s ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
-                "AND s.target_generation=w.generation JOIN messages m ON m.chat_id=w.chat_id "
+                "AND s.target_generation=w.generation JOIN "
+                "indexable_messages m ON m.chat_id=w.chat_id "
                 "AND m.timestamp>=CAST(strftime('%s',w.utc_day) AS INTEGER) "
                 "AND m.timestamp<CAST(strftime('%s',w.utc_day) AS INTEGER)+86400 "
                 "WHERE w.embedding_space_id=? AND w.stage<>'building'" + built_scope,

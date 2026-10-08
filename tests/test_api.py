@@ -317,3 +317,87 @@ def test_preview_and_conflict_contracts_require_token(client, tmp_path):
     with client.app.state.db.connect() as conn:
         for table in ("import_previews", "preview_entries", "index_work", "index_segments"):
             assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_search_cached_top_100_paging_and_exclusion_invalidation(client, tmp_path, monkeypatch):
+    loaded = load(
+        client.app.state.importer,
+        export(
+            tmp_path / "pages",
+            [message(i, "велосипед", author="bot" if i % 2 else "human") for i in range(1, 131)],
+        ),
+    )
+    calls = []
+    original = client.app.state.search.search
+
+    def tracked(*args, **kwargs):
+        calls.append(args[3])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(client.app.state.search, "search", tracked)
+    first = client.get(
+        "/api/search",
+        params={
+            "q": "велосипед",
+            "mode": "words",
+            "limit": 20,
+            "chunk_size": 1,
+        },
+    ).json()
+    assert first["cached_results"] == 100 and first["next_offset"] == 20
+    token = first["search_id"]
+    hits = first["results"]
+    for offset in range(20, 100, 20):
+        response = client.get(f"/api/search/{token}/page", params={"offset": offset, "limit": 20})
+        assert response.status_code == 200
+        page = response.json()
+        hits += page["results"]
+    assert len({hit["message_id"] for hit in hits}) == 100
+    assert calls == [100] and page["next_offset"] is None and page["has_more"]
+    assert client.get(f"/api/search/{token}/page", params={"offset": -1}).status_code == 422
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    url = f"/api/chats/{loaded['chat_id']}/index/settings"
+    assert client.patch(url, json={"excluded_author_ids": ["bot"]}).status_code == 403
+    saved = client.patch(url, json={"excluded_author_ids": ["bot"]}, headers=headers)
+    assert saved.status_code == 200 and saved.json()["excluded_messages"] == 65
+    assert client.get(f"/api/search/{token}/page", params={"offset": 20}).status_code == 409
+    visible = client.get(
+        "/api/search",
+        params={
+            "q": "велосипед",
+            "mode": "words",
+            "limit": 100,
+            "chunk_size": 1,
+        },
+    ).json()["results"]
+    assert len(visible) == 65 and all(hit["message_id"] % 2 == 0 for hit in visible)
+    assert (
+        client.patch(url, json={"excluded_author_ids": ["unknown"]}, headers=headers).status_code
+        == 400
+    )
+    assert client.get(f"/api/chats/{loaded['chat_id']}/index").json()["excluded_author_ids"] == [
+        "bot"
+    ]
+    assert client.get("/api/authors", params={"chat_id": loaded["chat_id"]}).status_code == 200
+    client.app.state.search_cache.entries.clear()
+    assert client.get(f"/api/search/{token}/page", params={"offset": 20}).status_code == 410
+
+
+def test_cached_page_cannot_survive_delete_and_reimport_of_same_chat_id(client, tmp_path):
+    importer = client.app.state.importer
+    first = load(importer, export(tmp_path / "alpha", [message(i, "alpha") for i in range(30)]))
+    cached = client.get(
+        "/api/search",
+        params={
+            "q": "alpha",
+            "mode": "words",
+            "limit": 5,
+            "chunk_size": 1,
+        },
+    ).json()
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    assert client.delete(f"/api/chats/{first['chat_id']}", headers=headers).status_code == 200
+    second = load(importer, export(tmp_path / "beta", [message(i, "beta") for i in range(30)]))
+    assert first["chat_id"] == second["chat_id"]
+    response = client.get(f"/api/search/{cached['search_id']}/page", params={"offset": 5})
+    assert response.status_code == 409

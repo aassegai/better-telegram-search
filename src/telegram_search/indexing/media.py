@@ -276,21 +276,21 @@ class MediaService(MediaImages):
             clause = " AND chat_id=?" if chat_id is not None else ""
             state = dict(conn.execute("SELECT * FROM media_state WHERE id=1").fetchone())
             total = conn.execute(
-                "SELECT COUNT(DISTINCT sha256) FROM media_refs "
+                "SELECT COUNT(DISTINCT sha256) FROM indexable_media_refs "
                 "WHERE kind='photo' AND status='ready'" + clause,
                 args,
             ).fetchone()[0]
             attachments = conn.execute(
-                "SELECT COUNT(*) FROM media_refs WHERE kind='photo'" + clause, args
+                "SELECT COUNT(*) FROM indexable_media_refs WHERE kind='photo'" + clause, args
             ).fetchone()[0]
             photo_messages = conn.execute(
-                "SELECT COUNT(*) FROM (SELECT chat_id,message_id FROM media_refs "
+                "SELECT COUNT(*) FROM (SELECT chat_id,message_id FROM indexable_media_refs "
                 "WHERE kind='photo'" + clause + " GROUP BY chat_id,message_id)",
                 args,
             ).fetchone()[0]
             retries = conn.execute(
                 "SELECT COALESCE(SUM(MAX(w.attempts-1,0)),0) FROM ocr_work w WHERE w.version=? "
-                "AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=w.sha256 "
+                "AND EXISTS (SELECT 1 FROM indexable_media_refs r WHERE r.sha256=w.sha256 "
                 "AND r.kind='photo' AND r.status='ready'" + refs + ")",
                 (ocr.version if ocr else "", *args),
             ).fetchone()[0]
@@ -300,7 +300,8 @@ class MediaService(MediaImages):
                     row[0]: row[1]
                     for row in conn.execute(
                         "SELECT o.state,COUNT(*) FROM ocr_cache o WHERE o.version=? AND EXISTS "
-                        "(SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 AND r.status='ready' "
+                        "(SELECT 1 FROM indexable_media_refs r WHERE "
+                        "r.sha256=o.sha256 AND r.status='ready' "
                         "AND r.kind='photo'" + refs + ") GROUP BY o.state",
                         (ocr.version, *args),
                     )
@@ -308,25 +309,27 @@ class MediaService(MediaImages):
                 ready, failed = counts.get("ready", 0), counts.get("failed", 0)
             nonempty = conn.execute(
                 "SELECT COUNT(*) FROM ocr_cache o WHERE version=? AND state='ready' "
-                "AND text<>'' AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 "
+                "AND text<>'' AND EXISTS (SELECT 1 FROM "
+                "indexable_media_refs r WHERE r.sha256=o.sha256 "
                 "AND r.status='ready' AND r.kind='photo'" + refs + ")",
                 (ocr.version if ocr else "", *args),
             ).fetchone()[0]
             if clip:
                 images = conn.execute(
                     "SELECT COUNT(*) FROM media_embeddings e WHERE kind='image' "
-                    "AND space_id=? AND EXISTS (SELECT 1 FROM media_refs r "
+                    "AND space_id=? AND EXISTS (SELECT 1 FROM indexable_media_refs r "
                     "WHERE r.sha256=e.sha256 AND r.status='ready' AND r.kind='photo'" + refs + ")",
                     (clip.space_id, *args),
                 ).fetchone()[0]
             missing = conn.execute(
-                "SELECT COUNT(*) FROM media_refs WHERE kind='photo' AND status<>'ready'" + clause,
+                "SELECT COUNT(*) FROM indexable_media_refs WHERE "
+                "kind='photo' AND status<>'ready'" + clause,
                 args,
             ).fetchone()[0]
             ocr_dense = conn.execute(
                 "SELECT COUNT(DISTINCT e.sha256) FROM media_embeddings e "
                 "WHERE kind='ocr' AND space_id=? AND ocr_version=? AND EXISTS "
-                "(SELECT 1 FROM media_refs r WHERE r.sha256=e.sha256 "
+                "(SELECT 1 FROM indexable_media_refs r WHERE r.sha256=e.sha256 "
                 "AND r.status='ready' AND r.kind='photo'" + refs + ")",
                 (
                     encoder.space_id if encoder else "",
@@ -336,7 +339,7 @@ class MediaService(MediaImages):
             ).fetchone()[0]
             images_failed = conn.execute(
                 "SELECT COUNT(*) FROM media_failures f WHERE f.space_id=? AND EXISTS "
-                "(SELECT 1 FROM media_refs r WHERE r.sha256=f.sha256 AND r.kind='photo' "
+                "(SELECT 1 FROM indexable_media_refs r WHERE r.sha256=f.sha256 AND r.kind='photo' "
                 "AND r.status='ready'" + refs + ")",
                 (clip.space_id if clip else "", *args),
             ).fetchone()[0]
@@ -349,7 +352,7 @@ class MediaService(MediaImages):
             )
             ocr_dense_failed = conn.execute(
                 "SELECT COUNT(*) FROM media_failures f WHERE f.space_id=? "
-                "AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=f.sha256 "
+                "AND EXISTS (SELECT 1 FROM indexable_media_refs r WHERE r.sha256=f.sha256 "
                 "AND r.kind='photo' AND r.status='ready'" + refs + ")",
                 (ocr_failure_space, *args),
             ).fetchone()[0]
@@ -447,7 +450,7 @@ class MediaService(MediaImages):
     def _read_photo(self, sha):
         with self.db.connect() as conn:
             refs = conn.execute(
-                "SELECT r.relative_path,s.relative_path AS root FROM media_refs r "
+                "SELECT r.relative_path,s.relative_path AS root FROM indexable_media_refs r "
                 "JOIN source_roots s ON s.id=r.source_root_id WHERE r.sha256=? "
                 "AND r.kind='photo' AND r.status='ready' ORDER BY r.id",
                 (sha,),
@@ -476,7 +479,8 @@ class MediaService(MediaImages):
             not self.stop.is_set()
             and not state[0]
             and conn.execute(
-                "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id WHERE r.sha256=? "
+                "SELECT 1 FROM indexable_media_refs r JOIN chats c ON "
+                "c.id=r.chat_id WHERE r.sha256=? "
                 f"AND c.{chat_column}=0 AND r.status='ready' AND r.kind='photo' LIMIT 1",
                 (sha,),
             ).fetchone()
@@ -617,7 +621,7 @@ class MediaService(MediaImages):
                         # Pause/shutdown flush already computed results. Deletion and
                         # replacement still invalidate publication, including all vectors.
                         exists = conn.execute(
-                            "SELECT 1 FROM media_refs WHERE sha256=? AND kind='photo' "
+                            "SELECT 1 FROM indexable_media_refs WHERE sha256=? AND kind='photo' "
                             "AND status='ready' LIMIT 1",
                             (sha,),
                         ).fetchone()
@@ -791,12 +795,14 @@ class MediaService(MediaImages):
                 self.ocr_dense_waiting = False
                 return False
             row = conn.execute(
-                "SELECT o.sha256,o.text,(SELECT c.text_batch FROM media_refs r JOIN chats c "
+                "SELECT o.sha256,o.text,(SELECT c.text_batch FROM "
+                "indexable_media_refs r JOIN chats c "
                 "ON c.id=r.chat_id WHERE r.sha256=o.sha256 AND r.status='ready' "
                 "AND r.kind='photo' AND c.ocr_dense_paused=0 "
                 "ORDER BY c.id LIMIT 1) AS text_batch "
                 "FROM ocr_cache o WHERE o.version=? AND o.state='ready' "
-                "AND o.text<>'' AND EXISTS (SELECT 1 FROM media_refs r WHERE r.sha256=o.sha256 "
+                "AND o.text<>'' AND EXISTS (SELECT 1 FROM "
+                "indexable_media_refs r WHERE r.sha256=o.sha256 "
                 "AND r.kind='photo' AND r.status='ready' AND EXISTS "
                 "(SELECT 1 FROM chats c WHERE c.id=r.chat_id AND c.ocr_dense_paused=0 "
                 ")) AND NOT EXISTS "
@@ -921,7 +927,7 @@ class MediaService(MediaImages):
             and state["enabled"]
             and state["active_space_id"] == encoder.space_id
             and conn.execute(
-                "SELECT 1 FROM media_refs r JOIN chats c ON c.id=r.chat_id "
+                "SELECT 1 FROM indexable_media_refs r JOIN chats c ON c.id=r.chat_id "
                 "WHERE r.sha256=? AND r.kind='photo' AND r.status='ready' "
                 "AND c.ocr_dense_paused=0 LIMIT 1",
                 (sha,),

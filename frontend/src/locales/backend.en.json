@@ -269,5 +269,9 @@
   "Не удалось распознать изображение. Повторите обработку.": "Could not recognize the image. Retry processing.",
   "Недопустимый батч модели.": "Invalid model batch.",
   "Подготовленный батч не соответствует модели.": "The prepared batch does not match the model.",
-  "Подготовленный батч CLIP не соответствует изображениям.": "The prepared CLIP batch does not match the images."
+  "Подготовленный батч CLIP не соответствует изображениям.": "The prepared CLIP batch does not match the images.",
+  "Выберите не более 500 авторов для исключения из индексации.": "Select up to 500 authors to exclude from indexing.",
+  "Выбранный автор не найден в этом диалоге.": "The selected author was not found in this chat.",
+  "Кэш поиска истёк. Выполните поиск ещё раз.": "The search cache expired. Run your search again.",
+  "Архив или настройки изменились. Выполните поиск ещё раз.": "The archive or settings changed. Run your search again."
 }
