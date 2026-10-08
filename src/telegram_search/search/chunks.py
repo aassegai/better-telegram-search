@@ -23,6 +23,7 @@ class SourceMessage:
     text: str
     has_photo: bool = False
     kind: str = "message"
+    remote_deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -166,6 +167,7 @@ class ChunkBuilder:
                 continue
             if previous_indexed and (
                 message.chat_id != previous_indexed.chat_id
+                or bool(message.remote_deleted) != bool(previous_indexed.remote_deleted)
                 or utc_day(message.timestamp) != utc_day(previous_indexed.timestamp)
                 or message.timestamp - previous_indexed.timestamp > self.gap_seconds
             ):

@@ -18,9 +18,12 @@ class Filters:
     date_from: int | None = None
     date_to: int | None = None
     content_type: str = "all"
+    exclude_deleted: bool = False
 
     def sql(self, alias: str = "m") -> tuple[str, list]:
         clauses, params = [], []
+        if self.exclude_deleted:
+            clauses.append(f"{alias}.remote_deleted=0")
         for column, values in (("chat_id", self.chat_ids), ("author_id", self.author_ids)):
             if values:
                 clauses.append(f"{alias}.{column} IN ({','.join('?' for _ in values)})")
@@ -43,7 +46,8 @@ class Filters:
 
     def matches(self, message: dict) -> bool:
         return (
-            (not self.chat_ids or message["chat_id"] in self.chat_ids)
+            (not self.exclude_deleted or not message.get("remote_deleted", False))
+            and (not self.chat_ids or message["chat_id"] in self.chat_ids)
             and (not self.author_ids or message["author_id"] in self.author_ids)
             and (self.date_from is None or message["timestamp"] >= self.date_from)
             and (self.date_to is None or message["timestamp"] < self.date_to)
@@ -128,16 +132,17 @@ class ContextService:
             anchor = conn.execute(
                 "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
             ).fetchone()
-            if not anchor:
+            if not anchor or (filters and filters.exclude_deleted and anchor["remote_deleted"]):
                 raise UserError("Сообщение не найдено.")
+            visible = " AND remote_deleted=0" if filters and filters.exclude_deleted else ""
             previous = conn.execute(
                 "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
-                "ORDER BY timestamp DESC,message_id DESC LIMIT ?",
+                f"{visible} ORDER BY timestamp DESC,message_id DESC LIMIT ?",
                 (chat_id, anchor["timestamp"], message_id, before),
             ).fetchall()
             following = conn.execute(
                 "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
-                "ORDER BY timestamp,message_id LIMIT ?",
+                f"{visible} ORDER BY timestamp,message_id LIMIT ?",
                 (chat_id, anchor["timestamp"], message_id, after),
             ).fetchall()
             return [
@@ -147,14 +152,15 @@ class ContextService:
 
     def get_result_context(self, conn, anchor, size, filters):
         """Keep the anchor and fill a chronological window, including at chat boundaries."""
+        visible = " AND remote_deleted=0" if filters and filters.exclude_deleted else ""
         previous = conn.execute(
             "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)<(?,?) "
-            "ORDER BY timestamp DESC,message_id DESC LIMIT ?",
+            f"{visible} ORDER BY timestamp DESC,message_id DESC LIMIT ?",
             (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
         following = conn.execute(
             "SELECT * FROM messages WHERE chat_id=? AND (timestamp,message_id)>(?,?) "
-            "ORDER BY timestamp,message_id LIMIT ?",
+            f"{visible} ORDER BY timestamp,message_id LIMIT ?",
             (anchor["chat_id"], anchor["timestamp"], anchor["message_id"], size - 1),
         ).fetchall()
         before = min((size - 1) // 2, len(previous))

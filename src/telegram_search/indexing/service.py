@@ -384,6 +384,7 @@ class SemanticService:
                             work = conn.execute(
                                 "SELECT w.id FROM index_work w JOIN chats c ON c.id=w.chat_id "
                                 "WHERE w.state='pending' AND c.text_paused=0 "
+                                "AND w.available_at<=CAST(strftime('%s','now') AS INTEGER) "
                                 "ORDER BY w.created_at,w.id LIMIT 1"
                             ).fetchone()
                         if (

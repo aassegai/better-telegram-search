@@ -8,7 +8,7 @@ from telegram_search.config.settings import Settings
 from telegram_search.security.privacy import repository_warning
 from telegram_search.shared.errors import UserError
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9
 
 
 def execute_sql(conn, sql: str) -> None:
@@ -69,6 +69,9 @@ class Database:
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
+        from telegram_search.search.ocr_words import ocr_grams
+
+        conn.create_function("ocr_search_grams", 1, ocr_grams, deterministic=True)
         conn.execute("PRAGMA foreign_keys=ON")
         try:
             with conn:
@@ -85,6 +88,11 @@ class Database:
             conn.execute("INSERT INTO message_fts(message_fts) VALUES ('rebuild')")
             conn.execute("INSERT INTO chunk_fts(chunk_fts) VALUES ('rebuild')")
             conn.execute("INSERT INTO ocr_fts(ocr_fts) VALUES ('rebuild')")
+            conn.execute("INSERT INTO ocr_gram_fts(ocr_gram_fts) VALUES('delete-all')")
+            conn.execute(
+                "INSERT INTO ocr_gram_fts(rowid,grams) SELECT rowid,"
+                "ocr_search_grams(text_normalized) FROM ocr_cache WHERE state='ready'"
+            )
 
     def compact(self) -> None:
         with self.connect() as conn:

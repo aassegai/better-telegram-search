@@ -1,0 +1,12 @@
+# Safe defaults only. Developer credentials belong in workspace/private/telegram.toml
+# or BTS_TELEGRAM_API_ID / BTS_TELEGRAM_API_HASH, never in this file or a frontend bundle.
+[telegram_sync]
+reconcile_interval_minutes = 15
+reconcile_window_days = 7
+media_download_concurrency = 2
+max_image_mib = 40
+min_free_mib = 512
+media_quota_mib = 20480
+pages_per_run = 20
+default_deletion_policy = "archive"
+download_photos = true

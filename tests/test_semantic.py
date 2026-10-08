@@ -95,6 +95,32 @@ def setup_index(db, importer, tmp_path, texts=None):
     return result["chat_id"], service, worker, work
 
 
+def test_archive_deletion_reindex_preserves_live_neighbors_in_meaning_search(
+    db, importer, tmp_path
+):
+    from telegram_search.storage.generations import utc_day
+
+    chat, service, worker, work = setup_index(
+        db, importer, tmp_path, ["поезд первый", "поезд удалённый", "поезд третий"]
+    )
+    assert worker.run(work)["state"] == "done"
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE messages SET remote_deleted=1 WHERE chat_id=? AND message_id=2", (chat,)
+        )
+        invalidate_segments(conn, chat, {utc_day(1750000000)}, "telegram")
+        work = conn.execute("SELECT id FROM index_work WHERE state='pending'").fetchone()[0]
+    assert worker.run(work)["state"] == "done"
+    search = HybridSearch(db, service, importer.lifecycle_lock)
+    for mode in ("meaning", "hybrid"):
+        hits = search.search("поезд", Filters(exclude_deleted=True), mode=mode, chunk_size=1)[
+            "results"
+        ]
+        assert {hit["message_id"] for hit in hits} == {1, 3}
+        full = search.search("поезд", Filters(), mode=mode, chunk_size=1)["results"]
+        assert {hit["message_id"] for hit in full} == {1, 2, 3}
+
+
 def test_idle_service_keeps_encoder_used_by_ocr_without_search_queries(db, importer, monkeypatch):
     from telegram_search.inference.e5 import E5Encoder
 

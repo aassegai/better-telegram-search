@@ -139,7 +139,7 @@ def test_generations_only_change_affected_days_and_are_atomic(importer, db, tmp_
         )
         revision = conn.execute("SELECT revision FROM chats").fetchone()[0]
     # A failure writing the outbox must roll back the message and checkpoint as well.
-    import telegram_search.ingestion.importer as module
+    import telegram_search.ingestion.writer as module
 
     def fail(*args):
         raise RuntimeError("synthetic outbox failure")

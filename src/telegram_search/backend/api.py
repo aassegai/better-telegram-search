@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import io
 import os
@@ -10,6 +11,8 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -31,6 +34,9 @@ from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
 from telegram_search.storage.database import Database
+from telegram_search.telegram_sync.api import router as telegram_router
+from telegram_search.telegram_sync.coordinator import SyncCoordinator
+from telegram_search.telegram_sync.models import ERRORS, SourceFailure
 from telegram_search.updates.service import UpdateService
 
 
@@ -88,7 +94,13 @@ class UpdateConfirmation(BaseModel):
     nonce: str = Field(pattern=r"^[a-f0-9]{32}$")
 
 
-def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
+def create_app(
+    workspace: Path,
+    frontend_dir: Path | None = None,
+    *,
+    telegram_factory=None,
+    telegram_settings=None,
+) -> FastAPI:
     db = Database(workspace)
     db.initialize()
     session_token = secrets.token_urlsafe(32)
@@ -98,7 +110,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = semantic = media = updates = None
+        importer = semantic = media = updates = telegram = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -117,6 +129,13 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             app.state.media = media
             app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
             app.state.workspace = WorkspaceService(db, importer, semantic, media)
+            telegram = SyncCoordinator(
+                db, importer.lifecycle_lock, factory=telegram_factory, settings=telegram_settings
+            )
+            telegram.loop = asyncio.get_running_loop()
+            app.state.telegram = telegram
+            if not hold_background:
+                telegram.start()
             app.state.search = UnifiedSearch(
                 HybridSearch(db, semantic, importer.lifecycle_lock),
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
@@ -158,6 +177,8 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 verification_thread.join(timeout=10)
             if updates:
                 updates.close()
+            if telegram:
+                await telegram.close()
             if media:
                 media.shutdown()
             if semantic:
@@ -166,6 +187,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
                 importer.shutdown()
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
+    app.include_router(telegram_router)
     app.state.db = db
     app.state.update_verifying = bool(verification_nonce)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
@@ -220,6 +242,18 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
     async def user_error(_request: Request, exc: UserError):
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/telegram/auth/"):
+            return JSONResponse(
+                {"detail": "Проверьте данные для входа в Telegram."}, status_code=422
+            )
+        return await request_validation_exception_handler(request, exc)
+
+    @app.exception_handler(SourceFailure)
+    async def telegram_error(_request: Request, exc: SourceFailure):
+        return JSONResponse({"detail": ERRORS.get(exc.code, ERRORS["unexpected"])}, status_code=400)
+
     @app.get("/api/session")
     def session():
         return {
@@ -245,6 +279,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         date_from: str | None = None,
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
+        exclude_deleted: bool = False,
         exact: bool = False,
         mode: Literal["words", "meaning", "hybrid"] = "hybrid",
         tab: Literal["all", "text", "images", "ocr"] = "text",
@@ -260,6 +295,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             date_bound(date_from),
             date_bound(date_to, end=True),
             content_type,
+            exclude_deleted,
         )
         if (
             filters.date_from is not None
@@ -350,6 +386,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             app.state.update_verifying = False
             app.state.semantic.start_background()
             app.state.media.start_background()
+        app.state.telegram.start_threadsafe()
         app.state.updates.start_cleanup()
         return {"confirmed": True}
 
@@ -431,6 +468,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
         date_from: str | None = None,
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
+        exclude_deleted: bool = False,
     ):
         filters = Filters(
             [chat_id],
@@ -438,6 +476,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             date_bound(date_from),
             date_bound(date_to, end=True),
             content_type,
+            exclude_deleted,
         )
         return {"messages": context.get_context(chat_id, message_id, before, after, filters)}
 
@@ -579,6 +618,7 @@ def create_app(workspace: Path, frontend_dir: Path | None = None) -> FastAPI:
             )
             conn.execute("DELETE FROM vector_segment_cleanup WHERE chat_id=?", (chat_id,))
             conn.execute("DELETE FROM import_previews WHERE chat_id=?", (chat_id,))
+            conn.execute("DELETE FROM dialog_sync_bindings WHERE chat_id=?", (chat_id,))
             conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
         return {"deleted": True, "source_files_preserved": True}
 

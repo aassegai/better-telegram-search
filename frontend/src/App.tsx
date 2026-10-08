@@ -5,6 +5,7 @@ import { api, initializeSession } from './api';
 import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
 import ChatIndexDialog from './ChatIndexDialog';
+import TelegramPanel from './TelegramPanel';
 import SemanticPanel from './SemanticPanel';
 import WorkspacePanel from './WorkspacePanel';
 import UpdatePanel from './UpdatePanel';
@@ -45,6 +46,7 @@ function MessageRow({ message, anchor, query = '', onOpenImage }: { message: Mes
       <time>{date(message.timestamp)}</time>
       {!message.matches_filters && <span className="context-tag">{t("вне фильтра · контекст")}</span>}
     </div>
+    {!!message.remote_deleted && <div className="message-note remote-deleted">{t('Удалено в Telegram · архивная копия')}</div>}
     {message.forwarded_from && <div className="message-note">{t("Переслано: ")}{message.forwarded_from}</div>}
     {message.reply_to && <div className="message-note">{t("Ответ на #")}{message.reply_to}</div>}
     <div className="message-text"><Highlight text={message.text || message.action || t('Сообщение без текста')} query={query} /></div>
@@ -72,6 +74,7 @@ export default function App() {
   const [to, setTo] = useState('');
   const [contentType, setContentType] = useState('all');
   const [exact, setExact] = useState(false);
+  const [excludeDeleted, setExcludeDeleted] = useState(false);
   const [mode, setMode] = useState('hybrid');
   const [effectiveMode, setEffectiveMode] = useState('words');
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -87,7 +90,7 @@ export default function App() {
   const [showSearchSettings, setShowSearchSettings] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<'import' | 'settings' | null>(null);
+  const [modal, setModal] = useState<'import' | 'settings' | 'sources' | null>(null);
   const [indexChat, setIndexChat] = useState<Chat | null>(null);
   const [conflictJob, setConflictJob] = useState<Job | null>(null);
   const [context, setContext] = useState<{ hit: Hit; messages: Message[] } | null>(null);
@@ -193,7 +196,7 @@ export default function App() {
     if (!modalities.length) { setError(t('Выберите хотя бы один тип поиска.')); return; }
     if (selected?.length === 0) { setError(t('Выберите хотя бы один диалог.')); return; }
     setBusy(true); setError('');
-    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode });
+    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode, exclude_deleted: String(excludeDeleted) });
     modalities.forEach(kind => params.append('modality', kind));
     selected?.forEach(id => params.append('chat_id', id));
     if (author) params.set('author_id', author);
@@ -264,6 +267,7 @@ export default function App() {
         </div>)}
         {!chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
       </div>
+      <button className="import-button telegram-sources-button" disabled={!connected} onClick={() => setModal('sources')}>{t('Источники · Telegram')}</button>
       <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span>{t(" Импортировать выгрузку")}</button>
       {previews.length > 0 && <div className="jobs"><div className="sidebar-title">{t("Проверки экспорта")}</div>
         {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name}</strong> · {preview.scope}</small><small>{preview.processed}{t(" проверено · ")}{preview.state === 'ready' ? t('отчёт готов') : t(stateNames[preview.state] || preview.state)}</small><div className="job-actions"><button onClick={() => { setActivePreview(preview); setModal('import'); }}>{t("Открыть отчёт")}</button></div></div>)}
@@ -315,9 +319,10 @@ export default function App() {
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
           </div>
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />{t("Точная фраза")}</label>
+            <label><input type="checkbox" checked={excludeDeleted} onChange={event => setExcludeDeleted(event.target.checked)} />{t('Скрыть удалённые в Telegram')}</label>
             <div className="search-option-actions">
               <button type="button" className="text-button" aria-expanded={showSearchSettings} aria-controls="search-display-settings" onClick={() => setShowSearchSettings(value => !value)}><span aria-hidden="true">{showSearchSettings ? '▾' : '▸'}</span> <span>{t('Выдача поиска')}</span></button>
-              <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
+              <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setExcludeDeleted(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
             </div></div>
           <fieldset className="search-modalities" disabled={busy} aria-describedby="search-modality-help">
             <legend>{t("Искать в")}</legend>
@@ -357,6 +362,7 @@ export default function App() {
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => t(reasons[reason])).join(' · ')}</div>}
             {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}
             {hit.matched_parts?.some(part => !hit.messages.some(message => message.message_id === part.message_id)) && <p className="baseline-note">{t("Показана часть найденного фрагмента. Другие сообщения доступны через «Открыть контекст».")}</p>}
+            {hit.ocr_match && hit.ocr_match.kind !== 'exact' && <p className="baseline-note ocr-match">{hit.ocr_match.kind === 'substring' ? t('OCR: совпала часть слова') : t('OCR: неточное совпадение · отличий: {p0}', { p0: hit.ocr_match.edits })}</p>}
             {hit.ocr_text && <details className="ocr-evidence"><summary>{t("Распознанный текст")}{hit.ocr_confidence != null ? t(" · уверенность OCR {p0} / 100", { p0: Math.round(hit.ocr_confidence) }) : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>{t("Распознавание может содержать ошибки. Откройте фотографию для проверки.")}</p></details>}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<span>↗</span></button>
           </article>)}</div>
@@ -367,7 +373,11 @@ export default function App() {
 
     {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
-    {indexChat && <ChatIndexDialog onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
+    {indexChat && <ChatIndexDialog onSources={() => { setIndexChat(null); setModal('sources'); }} onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
+    {modal === 'sources' && <SettingsDialog titleId="sources-title" onClose={() => { setModal(null); void refresh().catch(reportError); }}>
+      <div className="eyebrow">{t('ИСТОЧНИКИ')}</div><h2 id="sources-title">{t('Источники')}</h2>
+      <TelegramPanel chats={chats} onChanged={refresh} />
+    </SettingsDialog>}
     {modal === 'settings' && <SettingsDialog titleId="modal-title" onClose={() => setModal(null)}>
       <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
       {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}

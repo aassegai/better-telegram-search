@@ -70,3 +70,11 @@ def test_budget_can_reduce_overlap_and_huge_author_cannot_break_limit():
     huge_author = SourceMessage("a", 20, 1750000000, "автор" * 1000, "текст" * 100)
     chunks = list(builder.build([huge_author], 1, "synthetic"))
     assert all(chunk.tokens <= 100 for chunk in chunks)
+
+
+def test_deleted_and_live_messages_never_share_window_or_overlap():
+    messages = [source(i, remote_deleted=6 <= i <= 11) for i in range(1, 19)]
+    chunks = list(ChunkBuilder(CharacterTokens()).build(messages, 1, "synthetic"))
+    assert {part.message_id for chunk in chunks for part in chunk.parts} == set(range(1, 19))
+    for chunk in chunks:
+        assert len({6 <= part.message_id <= 11 for part in chunk.parts}) == 1

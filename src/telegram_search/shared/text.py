@@ -40,38 +40,58 @@ def serialize(value) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def canonical_entities(message: dict) -> list[dict]:
+    """UTF-16 spans make Desktop text arrays and MTProto entities comparable."""
+    entities = message.get("text_entities")
+    if not isinstance(entities, list):
+        entities = message.get("text") if isinstance(message.get("text"), list) else []
+    result, offset = [], 0
+    aliases = {"text_url": "text_link", "mention_name": "text_mention", "phone": "phone_number"}
+    for entity in entities:
+        if isinstance(entity, str):
+            offset += len(entity.encode("utf-16-le")) // 2
+            continue
+        if not isinstance(entity, dict):
+            continue
+        text = str(entity.get("text", ""))
+        length = len(text.encode("utf-16-le")) // 2
+        kind = aliases.get(entity.get("type"), entity.get("type", "plain"))
+        if kind != "plain":
+            span = {
+                "type": kind,
+                "offset": int(entity.get("offset", offset)),
+                "length": int(entity.get("length", length)),
+            }
+            for key in ("href", "user_id", "language", "document_id"):
+                value = entity.get(key)
+                if value not in (None, ""):
+                    span[key] = str(value)
+            result.append(span)
+        offset += length
+    return sorted(result, key=lambda item: (item["offset"], item["length"], serialize(item)))
+
+
 def meaningful_content(message: dict, media: list[dict]) -> dict:
+    # Rendering metadata (names, filenames, local timezone, receipt time) is not a revision.
     meaningful = {
-        key: message.get(key)
-        for key in (
-            "type",
-            "date_unixtime",
-            "date",
-            "from_id",
-            "actor_id",
-            "text",
-            "text_entities",
-            "reply_to_message_id",
-            "forwarded_from",
-            "forwarded_from_id",
-            "saved_from",
-            "via_bot",
-            "grouped_id",
-            "album_id",
-            "action",
-            "actor",
-            "members",
-            "media_type",
-            "mime_type",
-            "sticker_emoji",
-            "duration_seconds",
-        )
-        if key in message
+        "type": message.get("type", "message"),
+        "sent_at": timestamp(message),
+        "author_id": message.get("from_id") or message.get("actor_id"),
+        "text": flatten_text(message.get("text")),
+        "entities": canonical_entities(message),
+        "reply_to_message_id": message.get("reply_to_message_id"),
+        "grouped_id": str(message.get("grouped_id") or message.get("album_id") or ""),
     }
-    meaningful["media"] = [
-        {"kind": item["kind"], "identity": item["sha256"] or item["relative_path"]}
-        for item in media
-    ]
+    if meaningful["type"] != "message":
+        meaningful["action"] = message.get("action")
+        meaningful["members"] = message.get("members", [])
+    meaningful["media"] = sorted(
+        (
+            {"kind": item["kind"], "identity": item["sha256"] or item["relative_path"]}
+            for item in media
+        ),
+        key=serialize,
+    )
     return meaningful
 
 

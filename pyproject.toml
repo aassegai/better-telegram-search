@@ -47,6 +47,9 @@ gpu = [
   "pyarrow>=18,<30",
   "safetensors>=0.5,<1",
 ]
+telegram = [
+    "telethon==1.45.0",
+]
 
 [tool.uv]
 conflicts = [[{ extra = "semantic" }, { extra = "gpu" }]]

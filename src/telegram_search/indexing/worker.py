@@ -60,7 +60,8 @@ class SegmentWorker:
             reader.execute("BEGIN")
             # A stable canonical snapshot, streamed without raw_json or the entire day in RAM.
             rows = reader.execute(
-                "SELECT chat_id,message_id,timestamp,author,text,has_photo,kind FROM messages "
+                "SELECT chat_id,message_id,timestamp,author,text,has_photo,kind,remote_deleted "
+                "FROM messages "
                 "WHERE chat_id=? AND timestamp>=? AND timestamp<? ORDER BY timestamp,message_id",
                 (work["chat_id"], start, start + 86400),
             )

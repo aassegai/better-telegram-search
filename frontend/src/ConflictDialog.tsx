@@ -56,10 +56,10 @@ export default function ConflictDialog({ job, onClose, onChanged }: {
     <p>{t("Неразрешённых: ")}{pending}{t(". В базе сохраняется текущая версия, пока вы не выберете другую.")}</p>
     {error && <div className="error" role="alert">{t(error)}<button disabled={busy} onClick={() => void run(async () => { await load(); })}>{t("Обновить список")}</button></div>}
     {items.map(item => <article className="conflict-item" key={item.message_id}>
-      <h3>{t("Сообщение #")}{item.message_id} · {item.reason === 'older_revision' ? t('В экспорте более старая редакция') : t('Нет надёжной даты редакции')}</h3>
+      <h3>{t("Сообщение #")}{item.message_id} · {item.reason === 'remote_deleted' ? t('Сообщение удалено в Telegram') : item.reason === 'older_revision' ? t('В экспорте более старая редакция') : t('Нет надёжной даты редакции')}</h3>
       <div className="conflict-versions"><div><strong>{t("Текущая версия")}</strong><small>{item.current?.author} · {date(item.current?.timestamp ?? null)}</small><small>{t("Редакция: ")}{date(item.current?.edited_timestamp ?? null)}</small><p>{item.current?.text || t('Без текста')}</p><Details metadata={item.current_metadata} other={item.incoming.metadata} /></div>
         <div><strong>{t("Версия из экспорта")}</strong><small>{item.incoming.author} · {date(item.incoming.timestamp)}</small><small>{t("Редакция: ")}{date(item.incoming.edited_timestamp)}</small><p>{item.incoming.text || t('Без текста')}</p><Details metadata={item.incoming.metadata} other={item.current_metadata} /></div></div>
-      <div className="dialog-actions"><button disabled={busy || !item.current_version} onClick={() => void resolve(item, 'keep_current')}>{t("Оставить текущую")}</button><button className="primary" disabled={busy || !item.current_version} onClick={() => void resolve(item, 'use_imported')}>{t("Использовать версию из экспорта")}</button></div>
+      <div className="dialog-actions"><button disabled={busy || !item.current_version} onClick={() => void resolve(item, 'keep_current')}>{t("Оставить текущую")}</button><button className="primary" disabled={busy || !item.current_version || item.reason === 'remote_deleted'} onClick={() => void resolve(item, 'use_imported')}>{t("Использовать версию из экспорта")}</button></div>
     </article>)}
     {!items.length && !pending && <p>{t("Все конфликты разрешены.")}</p>}
     {more && <p>{t("Показаны первые 30 конфликтов. После выбора версий появятся следующие.")}</p>}

@@ -8,7 +8,7 @@ export type Message = {
   text: string; kind: string; action: string | null; reply_to: number | null;
   forwarded_from: string | null; matches_filters: boolean;
   media: { id: number; kind: string; status: string }[];
-  edited_timestamp: number | null;
+  edited_timestamp: number | null; remote_deleted?: number;
 };
 export type Hit = {
   chat_id: string; chat_name: string; message_id: number; timestamp: number;
@@ -19,6 +19,7 @@ export type Hit = {
   image_similarity?: number;
   ocr_text?: string | null;
   ocr_confidence?: number | null;
+  ocr_match?: { kind: 'exact' | 'substring' | 'fuzzy'; edits: number };
   ocr_range?: { char_start: number; char_end: number };
   chunk_id?: string;
   matched_parts?: { message_id: number; char_start: number; char_end: number }[];

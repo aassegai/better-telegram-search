@@ -46,6 +46,8 @@ class WorkspaceService:
             if not source:
                 raise UserError("Источник не найден.")
             old_root = self.db.source_path(source["relative_path"])
+            if new_path is not None and source["managed"]:
+                raise UserError("Папкой фотографий Telegram управляет приложение.")
             if new_path is not None and expected_path != str(old_root):
                 raise UserError("Источник уже изменился. Обновите список.")
             if self.importer.is_active(source["chat_id"]):

@@ -20,6 +20,8 @@ datas = [
     (str(repo / "docs" / "portable-builds.md"), "docs"),
     (str(repo / "docs" / "portable-builds.en.md"), "docs"),
 ]
+if (assets / "telegram-app.json").is_file():
+    datas.append((str(assets / "telegram-app.json"), "."))
 datas += collect_data_files("telegram_search", includes=["**/*.json", "**/*.sql"])
 binaries = []
 nvidia_dlls = set()
@@ -39,6 +41,7 @@ for distribution in importlib.metadata.distributions():
 hiddenimports = ["uvicorn.logging", "uvicorn.loops.asyncio", "uvicorn.protocols.http.h11_impl",
                  "uvicorn.lifespan.on", "tesserocr", "tokenizers", "safetensors.numpy"]
 hiddenimports += collect_submodules("lancedb")
+hiddenimports += collect_submodules("telethon")
 hiddenimports += collect_submodules("tesserocr")
 hiddenimports += ["cv2", "pyclipper", "telegram_search.inference.ocr_pipeline"]
 datas += collect_data_files("tesserocr", include_py_files=True, includes=["cysignals/*-helper.py"])

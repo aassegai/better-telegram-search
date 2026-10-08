@@ -89,6 +89,15 @@ class ConflictService:
             if message_version(conn, job["chat_id"], message_id) != expected_version:
                 raise UserError("Текущая версия изменилась. Обновите список конфликтов.")
             if choice == "use_imported":
+                if row["reason"] == "remote_deleted":
+                    raise UserError(
+                        "Сообщение удалено в Telegram. Старый экспорт не восстановит его."
+                    )
+                if conn.execute(
+                    "SELECT 1 FROM telegram_message_provenance WHERE chat_id=? AND message_id=?",
+                    (job["chat_id"], message_id),
+                ).fetchone():
+                    raise UserError("Свежая версия Telegram защищена от старого экспорта.")
                 incoming = json.loads(row["incoming_json"])
                 if row["incoming_media_json"] is None:
                     from telegram_search.ingestion.importer import inspect_media

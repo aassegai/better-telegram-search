@@ -8,6 +8,7 @@ repo = Path(__file__).resolve().parents[1]
 paths = subprocess.check_output(["git", "-C", str(repo), "ls-files", "-z"]).decode().split("\0")
 forbidden = {
     "plans",
+    "private",
     "workspace",
     "exports",
     "test_chat_export",
@@ -35,6 +36,8 @@ for name in filter(None, paths):
         reason = "private requirements"
     elif path.name.startswith(".env") and not path.name.endswith(".example"):
         reason = "secrets file"
+    elif path.suffix == ".session" or ".session-" in path.name:
+        reason = "Telegram authentication secret"
     elif path.suffix in {".sqlite", ".db"} or ".sqlite-" in path.name:
         reason = "private database"
     elif path.suffix in {".onnx", ".onnx_data", ".safetensors", ".pt", ".pth", ".traineddata"}:

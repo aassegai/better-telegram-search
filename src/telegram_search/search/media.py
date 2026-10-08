@@ -1,7 +1,7 @@
-from telegram_search.search.lexical import ContextService, fts_query
+from telegram_search.search.lexical import ContextService
+from telegram_search.search.ocr_words import ocr_word_search
 from telegram_search.search.presentation import search_options
 from telegram_search.shared.errors import UserError
-from telegram_search.shared.text import normalize_text
 
 
 class MediaSearch:
@@ -109,35 +109,18 @@ class MediaSearch:
                 version = None
             else:
                 version = engine.version
-                match = fts_query(query, exact)
-                where, params = filters.sql("m")
-                if match and (exact or mode != "meaning" or vector is None):
-                    extra, arguments = (
-                        ("AND instr(o.text_normalized,?)>0", [normalize_text(query.strip())])
-                        if exact
-                        else ("", [])
-                    )
+                lexical_evidence = {}
+                if exact or mode != "meaning" or vector is None:
                     with self.db.connect() as conn:
-                        lexical = [
-                            str(row[0])
-                            for row in conn.execute(
-                                "SELECT o.rowid FROM ocr_fts JOIN ocr_cache o "
-                                "ON o.rowid=ocr_fts.rowid "
-                                "WHERE ocr_fts MATCH ? AND o.version=? AND o.state='ready' "
-                                f"{extra} AND EXISTS (SELECT 1 FROM media_refs r JOIN messages m "
-                                "ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
-                                "WHERE r.sha256=o.sha256 AND r.kind='photo' "
-                                f"AND r.status='ready' AND {where}) "
-                                "ORDER BY bm25(ocr_fts),o.rowid LIMIT ?",
-                                (
-                                    match,
-                                    version,
-                                    *arguments,
-                                    *params,
-                                    self.db.settings.retrieval_candidates,
-                                ),
-                            )
-                        ]
+                        lexical, lexical_evidence, lexical_warnings = ocr_word_search(
+                            conn,
+                            query,
+                            version,
+                            filters,
+                            self.db.settings.retrieval_candidates,
+                            exact=exact,
+                        )
+                        warnings.extend(lexical_warnings)
                 if vector is not None:
                     dense = [
                         item["id"]
@@ -200,6 +183,8 @@ class MediaSearch:
                             if channel not in hit["matched_by"]:
                                 hit["matched_by"].append(channel)
                                 hit["score"] += 1 / (self.db.settings.rrf_k + rank)
+                            if channel == "ocr_words":
+                                hit["ocr_match"] = lexical_evidence.get(key)
                             if channel == "image":
                                 hit["image_similarity"] = image_similarities[key]
                             if channel == "ocr_meaning" and "ocr_range" not in hit:
@@ -284,6 +269,7 @@ class UnifiedSearch:
                     "ocr_text",
                     "ocr_confidence",
                     "ocr_range",
+                    "ocr_match",
                 ):
                     if hit.get(name) is not None:
                         current[name] = hit[name]

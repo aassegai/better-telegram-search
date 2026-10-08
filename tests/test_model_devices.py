@@ -300,6 +300,27 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_region_batch")
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_paused")
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_paused")
+        # Reconstruct the pre-v6 schema, including removal of later optional
+        # source/search migrations before replaying all migrations.
+        for trigger in ("ocr_grams_ai", "ocr_grams_ad", "ocr_grams_au"):
+            conn.execute(f'DROP TRIGGER "{trigger}"')
+        for table in (
+            "ocr_gram_fts",
+            "telegram_jobs",
+            "sync_runs",
+            "dialog_sync_cursors",
+            "telegram_message_provenance",
+            "telegram_tombstones",
+            "telegram_sync_conflicts",
+            "telegram_assets",
+            "dialog_sync_bindings",
+            "telegram_connections",
+        ):
+            conn.execute(f'DROP TABLE "{table}"')
+        conn.execute("DROP INDEX media_refs_path")
+        conn.execute("ALTER TABLE index_work DROP COLUMN available_at")
+        conn.execute("ALTER TABLE messages DROP COLUMN remote_deleted")
+        conn.execute("ALTER TABLE source_roots DROP COLUMN managed")
         conn.execute("DELETE FROM schema_migrations WHERE version>=6")
     importer.shutdown()
     db.initialize()

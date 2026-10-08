@@ -62,7 +62,7 @@ Node.js 22+. uv sets up Python 3.12 and a separate `.venv` environment.
 ```sh
 git clone https://github.com/aassegai/better-telegram-search.git
 cd better-telegram-search
-uv sync --locked --python 3.12 --extra semantic --extra ocr
+uv sync --locked --python 3.12 --extra semantic --extra ocr --extra telegram
 npm ci --prefix frontend
 npm run build --prefix frontend
 uv run --no-sync telegram-search run
@@ -74,7 +74,7 @@ data in `workspace/`; packaged builds use your OS's application data directory.
 For NVIDIA, use a separate environment instead of the CPU extra:
 
 ```sh
-UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr
+UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr --extra telegram
 UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv run --no-sync telegram-search run
 ```
 
@@ -107,6 +107,22 @@ Keyword search skips common Russian and English function words (`и`, `в`, `э�
 `the`, `and`, `is`), including in OCR and the keyword branch of the combined mode.
 Negations are preserved. A query consisting entirely of stop words has no keyword
 matches; select **Exact phrase** to search for those words literally.
+OCR keyword search uses BM25 and also finds substrings and small spelling errors.
+Exact word matches rank above approximate matches; every meaningful query term must
+match. **Exact phrase** disables substring and typo expansion.
+
+### Receive new messages from Telegram
+
+Open **Sources · Telegram**, connect using your phone number, login code and,
+if requested, two-step verification password. Choose a cloud chat and a local
+archive, check the overlapping history and confirm the binding. Alternatively,
+create a new chat with a download start date. The chat's **⋯** menu contains pause,
+update now, retry errors, photo download and deletion controls.
+Sync runs while the app is open. Search remains available without a connection.
+
+The developer configures Telegram API application identifiers once for a build.
+If your build says Telegram is not configured, see [Telegram setup](docs/telegram-sync.en.md),
+including private session storage, history limits and disconnect versus logout.
 
 Preparing E5/CLIP/PaddleOCR downloads the models; subsequent searches work offline.
 **Search results** on the main search screen control the number of results and the number of

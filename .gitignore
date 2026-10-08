@@ -56,3 +56,10 @@ playwright-report/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Telegram authentication secrets (also excluded from app backups)
+private/
+*.session
+*.session-journal
+*.session-wal
+*.session-shm

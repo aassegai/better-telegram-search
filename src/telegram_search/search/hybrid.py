@@ -24,6 +24,12 @@ class HybridSearch:
             "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
             f"WHERE p.chunk_id=c.id AND {where})"
         )
+        if filters.exclude_deleted:
+            predicate += (
+                " AND NOT EXISTS(SELECT 1 FROM chunk_parts dp JOIN messages dm "
+                "ON dm.chat_id=dp.chat_id AND dm.message_id=dp.message_id "
+                "WHERE dp.chunk_id=c.id AND dm.remote_deleted=1)"
+            )
         return predicate, [space_id, space_id, *params]
 
     @staticmethod

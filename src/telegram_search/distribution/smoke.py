@@ -43,6 +43,8 @@ def main():
     import numpy as np
     import onnxruntime as ort
     from safetensors.numpy import load, save
+    from telethon import TelegramClient, types
+    from telethon.sessions import MemorySession
     from tokenizers import Tokenizer, models, pre_tokenizers
 
     from telegram_search.inference.ocr import OcrEngine
@@ -50,6 +52,7 @@ def main():
     from telegram_search.search.lexical import SearchService
     from telegram_search.search.vectors import VectorStore
     from telegram_search.storage.database import Database
+    from telegram_search.telegram_sync.adapter import normalize_message
     from telegram_search.updates.installer import build_info
 
     gpu_build = build_info().get("variant") == "gpu"
@@ -72,6 +75,18 @@ def main():
     tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
     if tokenizer.encode("test").ids != [1]:
         raise RuntimeError("Native tokenizer")
+    # Construct an offline SDK client; no account, connection or session file.
+    client = TelegramClient(MemorySession(), 1, "0" * 32)
+    from datetime import UTC, datetime
+
+    record = normalize_message(
+        types.Message(
+            id=1, peer_id=types.PeerUser(100), date=datetime.now(UTC), message="synthetic"
+        )
+    )
+    if record.peer.id != 100 or record.data["text"] != "synthetic":
+        raise RuntimeError("Native Telegram adapter")
+    del client
     with tempfile.TemporaryDirectory(prefix="bts-smoke-") as temporary:
         root = Path(temporary)
         db = Database(root / "workspace Тест поиск 中文")
@@ -159,6 +174,7 @@ def main():
                 "unicode_paths": True,
                 "update_installer": True,
                 "device_selection": True,
+                "telegram_runtime": True,
                 **({"cuda_libraries": True} if gpu_build else {}),
             }
         )

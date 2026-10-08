@@ -34,6 +34,25 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def prepare_telegram_app(assets):
+    """Embed only developer app identifiers, never user sessions or login data."""
+    from telegram_search.telegram_sync.settings import SyncSettings
+
+    path = assets / "telegram-app.json"
+    path.unlink(missing_ok=True)
+    api_id = os.environ.get("BTS_TELEGRAM_API_ID", "")
+    api_hash = os.environ.get("BTS_TELEGRAM_API_HASH", "")
+    if not api_id and not api_hash:
+        return
+    try:
+        settings = SyncSettings(api_id=int(api_id), api_hash=api_hash)
+        if not settings.configured:
+            raise ValueError("invalid application identifiers")
+    except ValueError:
+        raise RuntimeError("Configure both Telegram developer application identifiers") from None
+    path.write_text(json.dumps({"api_id": settings.api_id, "api_hash": settings.api_hash}))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=REPO / "artifacts")
@@ -61,6 +80,7 @@ def main():
     build_root = REPO / "build" / f"{sys.platform}-{arch}-{args.variant}"
     assets = build_root / "assets"
     (assets / "licenses").mkdir(parents=True, exist_ok=True)
+    prepare_telegram_app(assets)
     version = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"]
     (assets / "build.json").write_text(
         json.dumps(

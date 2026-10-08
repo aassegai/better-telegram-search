@@ -65,7 +65,7 @@ uv подготовит Python 3.12 и отдельное окружение `.v
 ```sh
 git clone https://github.com/aassegai/better-telegram-search.git
 cd better-telegram-search
-uv sync --locked --python 3.12 --extra semantic --extra ocr
+uv sync --locked --python 3.12 --extra semantic --extra ocr --extra telegram
 npm ci --prefix frontend
 npm run build --prefix frontend
 uv run --no-sync telegram-search run
@@ -77,7 +77,7 @@ uv run --no-sync telegram-search run
 Для NVIDIA используйте отдельное окружение вместо CPU-extra:
 
 ```sh
-UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr
+UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr --extra telegram
 UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv run --no-sync telegram-search run
 ```
 
@@ -112,6 +112,22 @@ UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv run --no-sync telegram-search run
 («и», «в», «это», `the`, `and`, `is`), в том числе в OCR и режиме «Слова и смысл».
 Отрицания сохраняются. Если запрос состоит только из стоп-слов, совпадений по словам
 не будет; для буквального поиска таких слов включите **«Точная фраза»**.
+В OCR поиск по словам использует BM25 и также находит части слов и небольшие
+опечатки. Точные совпадения идут выше неточных; все значимые слова запроса должны
+совпасть. **«Точная фраза»** отключает допуск опечаток и частей слов.
+
+### Новые сообщения из Telegram
+
+В **«Источники · Telegram»** подключите аккаунт по номеру телефона, коду и,
+при необходимости, паролю двухэтапной проверки. Выберите облачный диалог и
+локальную выгрузку, проверьте перекрытие истории и подтвердите привязку. Можно
+создать новый диалог, указав начальную дату загрузки. В меню **⋯** диалога доступны
+пауза, обновление сейчас, повтор ошибок, загрузка фотографий и политика удалений.
+Синхронизация работает, пока приложение запущено. Поиск работает и без подключения.
+
+Для поставки разработчик один раз настраивает реквизиты Telegram API; если сборка
+показывает, что подключение не настроено, см. [настройку Telegram](docs/telegram-sync.md).
+Там же описаны приватная сессия, ограничения догрузки и отличие отключения от выхода.
 
 Подготовка E5/CLIP/PaddleOCR скачивает модели; после неё поиск работает без сети.
 В блоке **«Выдача поиска»** настраиваются количество результатов и число сообщений

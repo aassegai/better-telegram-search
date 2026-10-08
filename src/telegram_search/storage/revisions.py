@@ -9,7 +9,15 @@ def message_version(conn, chat_id: str, message_id: int) -> str | None:
         (chat_id, message_id),
     ).fetchone()
     if row is None:
-        return None
+        tombstone = conn.execute(
+            "SELECT observed_at,policy FROM telegram_tombstones WHERE chat_id=? AND message_id=?",
+            (chat_id, message_id),
+        ).fetchone()
+        return (
+            hashlib.sha256(serialize([chat_id, message_id, list(tombstone)]).encode()).hexdigest()
+            if tombstone
+            else None
+        )
     known_media = sorted(
         {
             (ref["kind"], ref["sha256"])
