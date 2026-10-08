@@ -1,7 +1,7 @@
 {
   "commit": "5ceaae27897d5ebc19248c2ae4793f9038374c19",
   "run_id": "37750438862",
-  "result": "failure",
+  "result": "success",
   "draft": true,
   "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-6b4ffc64fa311718aef6",
   "builds": {
@@ -1140,15 +1140,93 @@
       "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-linux-x86_64.tar.gz"
     },
     "darwin-x86_64": {
-      "state": "failed",
-      "url": null
+      "state": "ready",
+      "sha256": "51b977338f73ad5dc2f610415401b5c0bac0b100e87ccc2da1cd353382c06812",
+      "bytes": 178767705,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-darwin-x86_64.zip"
     }
   },
   "jobs": [
     {
+      "name": "build (macos-15-intel, x86_64, darwin-x86_64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312779519",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
       "name": "prepare",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222048872",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312779884",
       "steps": [
         {
           "name": "Set up job",
@@ -1189,9 +1267,9 @@
       ]
     },
     {
-      "name": "build (macos-15, arm64, darwin-arm64, semantic, cpu)",
+      "name": "build (ubuntu-22.04, x86_64, linux-x86_64, semantic, cpu)",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122690",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312780653",
       "steps": [
         {
           "name": "Set up job",
@@ -1248,9 +1326,9 @@
       ]
     },
     {
-      "name": "build (macos-15-intel, x86_64, darwin-x86_64, semantic, cpu)",
-      "conclusion": "failure",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122712",
+      "name": "build (ubuntu-22.04-arm, arm64, linux-arm64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312781103",
       "steps": [
         {
           "name": "Set up job",
@@ -1278,23 +1356,23 @@
         },
         {
           "name": "Build and verify the extracted native archive",
-          "conclusion": "failure"
+          "conclusion": "success"
         },
         {
           "name": "Stage verified packages in the unpublished release",
-          "conclusion": "skipped"
+          "conclusion": "success"
         },
         {
           "name": "Run actions/upload-artifact@v4",
-          "conclusion": "skipped"
+          "conclusion": "success"
         },
         {
           "name": "Post Run actions/setup-node@v4",
-          "conclusion": "skipped"
+          "conclusion": "success"
         },
         {
           "name": "Post Run astral-sh/setup-uv@v6",
-          "conclusion": "skipped"
+          "conclusion": "success"
         },
         {
           "name": "Post Run actions/checkout@v4",
@@ -1309,7 +1387,7 @@
     {
       "name": "build (windows-2022, x86_64, win32-x86_64-gpu, gpu, gpu)",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122727",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312781325",
       "steps": [
         {
           "name": "Set up job",
@@ -1368,7 +1446,7 @@
     {
       "name": "build (windows-2022, x86_64, win32-x86_64, semantic, cpu)",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122739",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312816302",
       "steps": [
         {
           "name": "Set up job",
@@ -1425,9 +1503,9 @@
       ]
     },
     {
-      "name": "build (ubuntu-22.04, x86_64, linux-x86_64, semantic, cpu)",
+      "name": "build (macos-15, arm64, darwin-arm64, semantic, cpu)",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122747",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312816843",
       "steps": [
         {
           "name": "Set up job",
@@ -1486,7 +1564,7 @@
     {
       "name": "build (ubuntu-22.04, x86_64, linux-x86_64-gpu, gpu, gpu)",
       "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122784",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113312829678",
       "steps": [
         {
           "name": "Set up job",
@@ -1543,68 +1621,9 @@
       ]
     },
     {
-      "name": "build (ubuntu-22.04-arm, arm64, linux-arm64, semantic, cpu)",
-      "conclusion": "success",
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122803",
-      "steps": [
-        {
-          "name": "Set up job",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run actions/checkout@v4",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run astral-sh/setup-uv@v6",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run actions/setup-node@v4",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run npm ci",
-          "conclusion": "success"
-        },
-        {
-          "name": "Build and verify the extracted native archive",
-          "conclusion": "success"
-        },
-        {
-          "name": "Stage verified packages in the unpublished release",
-          "conclusion": "success"
-        },
-        {
-          "name": "Run actions/upload-artifact@v4",
-          "conclusion": "success"
-        },
-        {
-          "name": "Post Run actions/setup-node@v4",
-          "conclusion": "success"
-        },
-        {
-          "name": "Post Run astral-sh/setup-uv@v6",
-          "conclusion": "success"
-        },
-        {
-          "name": "Post Run actions/checkout@v4",
-          "conclusion": "success"
-        },
-        {
-          "name": "Complete job",
-          "conclusion": "success"
-        }
-      ]
-    },
-    {
       "name": "report",
       "conclusion": null,
-      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113227217903",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113315392654",
       "steps": [
         {
           "name": "Set up job",
@@ -1630,129 +1649,5 @@
     }
   ],
   "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862",
-  "failures": {
-    "build (macos-15-intel, x86_64, darwin-x86_64, semantic, cpu)": [
-      "2026-10-08T08:33:19.6713760Z  + pyarrow==25.0.1",
-      "2026-10-08T08:33:19.6727450Z  + pyasn1==0.6.4",
-      "2026-10-08T08:33:19.6752250Z  + pyclipper==1.4.0",
-      "2026-10-08T08:33:19.6762170Z  + pydantic==2.13.5",
-      "2026-10-08T08:33:19.6773680Z  + pydantic-core==2.46.5",
-      "2026-10-08T08:33:19.6800640Z  + pyinstaller==6.22.3",
-      "2026-10-08T08:33:19.6858370Z  + pyinstaller-hooks-contrib==2026.8",
-      "2026-10-08T08:33:19.7861920Z  + python-dateutil==2.9.0.post0",
-      "2026-10-08T08:33:19.8215160Z  + pyyaml==6.0.3",
-      "2026-10-08T08:33:19.8383420Z  + rsa==4.9.1",
-      "2026-10-08T08:33:19.8430610Z  + safetensors==0.8.0",
-      "2026-10-08T08:33:19.8517530Z  + setuptools==84.0.0",
-      "2026-10-08T08:33:19.8541990Z  + six==1.17.0",
-      "2026-10-08T08:33:19.8602280Z  + starlette==1.7.0",
-      "2026-10-08T08:33:19.8624070Z  + sympy==1.14.0",
-      "2026-10-08T08:33:19.8642220Z  + telethon==1.45.0",
-      "2026-10-08T08:33:19.8669970Z  + tesserocr==2.11.0",
-      "2026-10-08T08:33:19.8721080Z  + tokenizers==0.23.2",
-      "2026-10-08T08:33:19.8761340Z  + tqdm==4.70.1",
-      "2026-10-08T08:33:19.8794890Z  + typing-extensions==4.16.0",
-      "2026-10-08T08:33:19.8813060Z  + typing-inspection==0.4.4",
-      "2026-10-08T08:33:19.8839730Z  + urllib3==2.8.0",
-      "2026-10-08T08:33:19.8888770Z  + uvicorn==0.54.0",
-      "2026-10-08T08:33:19.9039410Z ##[group]Run npm ci",
-      "2026-10-08T08:33:19.9040670Z npm ci",
-      "2026-10-08T08:33:19.9176250Z shell: /bin/bash -e {0}",
-      "2026-10-08T08:33:19.9177080Z env:",
-      "2026-10-08T08:33:19.9177900Z   UV_PROJECT_ENVIRONMENT: workspace/build-env",
-      "2026-10-08T08:33:19.9179140Z   BTS_RUNTIME_EXTRA: semantic",
-      "2026-10-08T08:33:19.9180040Z   UV_PYTHON: 3.12",
-      "2026-10-08T08:33:19.9181880Z   UV_CACHE_DIR: /Users/runner/work/_temp/setup-uv-cache",
-      "2026-10-08T08:33:19.9183120Z ##[endgroup]",
-      "2026-10-08T08:33:32.3554840Z ",
-      "2026-10-08T08:33:32.4559040Z added 170 packages, and audited 171 packages in 12s",
-      "2026-10-08T08:33:32.5559920Z ",
-      "2026-10-08T08:33:32.6563490Z 94 packages are looking for funding",
-      "2026-10-08T08:33:32.7564580Z   run `npm fund` for details",
-      "2026-10-08T08:33:32.8566570Z ",
-      "2026-10-08T08:33:32.9571260Z found 0 vulnerabilities",
-      "2026-10-08T08:33:33.2699130Z ##[group]Run if [ \"$RUNNER_OS\" = \"Windows\" ]; then",
-      "2026-10-08T08:33:33.2700130Z if [ \"$RUNNER_OS\" = \"Windows\" ]; then",
-      "2026-10-08T08:33:33.2702190Z   workspace/build-env/Scripts/python.exe scripts/build_app.py --expected-arch \"$BTS_EXPECTED_ARCH\" --variant \"$BTS_BUILD_VARIANT\"",
-      "2026-10-08T08:33:33.2704800Z else",
-      "2026-10-08T08:33:33.2706400Z   workspace/build-env/bin/python scripts/build_app.py --expected-arch \"$BTS_EXPECTED_ARCH\" --variant \"$BTS_BUILD_VARIANT\"",
-      "2026-10-08T08:33:33.2708110Z fi",
-      "2026-10-08T08:33:33.2831400Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}",
-      "2026-10-08T08:33:33.2835740Z env:",
-      "2026-10-08T08:33:33.2836480Z   UV_PROJECT_ENVIRONMENT: workspace/build-env",
-      "2026-10-08T08:33:33.2842230Z   BTS_RUNTIME_EXTRA: semantic",
-      "2026-10-08T08:33:33.2843610Z   UV_PYTHON: 3.12",
-      "2026-10-08T08:33:33.2844620Z   UV_CACHE_DIR: /Users/runner/work/_temp/setup-uv-cache",
-      "2026-10-08T08:33:33.2847730Z   BTS_EXPECTED_ARCH: x86_64",
-      "2026-10-08T08:33:33.2848610Z   BTS_BUILD_VARIANT: cpu",
-      "2026-10-08T08:33:33.2849250Z   BTS_TELEGRAM_API_ID: ",
-      "2026-10-08T08:33:33.2849850Z   BTS_TELEGRAM_API_HASH: ",
-      "2026-10-08T08:33:33.2850470Z ##[endgroup]",
-      "2026-10-08T08:34:36.0090550Z Traceback (most recent call last):",
-      "2026-10-08T08:34:36.0290110Z   File \"/Users/runner/work/better-telegram-search/better-telegram-search/scripts/build_app.py\", line 281, in <module>",
-      "2026-10-08T08:34:36.0536730Z     main()",
-      "2026-10-08T08:34:36.0687830Z   File \"/Users/runner/work/better-telegram-search/better-telegram-search/scripts/build_app.py\", line 94, in main",
-      "2026-10-08T08:34:36.0767360Z     engine.prepare()",
-      "2026-10-08T08:34:36.0838670Z   File \"/Users/runner/work/better-telegram-search/better-telegram-search/src/telegram_search/inference/ocr.py\", line 104, in prepare",
-      "2026-10-08T08:34:36.0931290Z     self._download(item, target)",
-      "2026-10-08T08:34:36.0982070Z   File \"/Users/runner/work/better-telegram-search/better-telegram-search/src/telegram_search/inference/ocr.py\", line 113, in _download",
-      "2026-10-08T08:34:36.1540170Z     urllib.request.urlopen(item[\"url\"], timeout=60) as response,",
-      "2026-10-08T08:34:36.1807830Z     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.2115280Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 215, in urlopen",
-      "2026-10-08T08:34:36.2264060Z     return opener.open(url, data, timeout)",
-      "2026-10-08T08:34:36.2328800Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.2407430Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 515, in open",
-      "2026-10-08T08:34:36.2467150Z     response = self._open(req, data)",
-      "2026-10-08T08:34:36.2641890Z                ^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.2793900Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 532, in _open",
-      "2026-10-08T08:34:36.2829010Z     result = self._call_chain(self.handle_open, protocol, protocol +",
-      "2026-10-08T08:34:36.2858500Z              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.2978520Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 492, in _call_chain",
-      "2026-10-08T08:34:36.3051150Z     result = func(*args)",
-      "2026-10-08T08:34:36.3212210Z              ^^^^^^^^^^^",
-      "2026-10-08T08:34:36.3346470Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 1405, in https_open",
-      "2026-10-08T08:34:36.3445280Z     return self.do_open(http.client.HTTPSConnection, req,",
-      "2026-10-08T08:34:36.3494430Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.3540590Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/urllib/request.py\", line 1361, in do_open",
-      "2026-10-08T08:34:36.3597530Z     r = h.getresponse()",
-      "2026-10-08T08:34:36.3654310Z         ^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.3710370Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/http/client.py\", line 1478, in getresponse",
-      "2026-10-08T08:34:36.3759470Z     response.begin()",
-      "2026-10-08T08:34:36.3820470Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/http/client.py\", line 343, in begin",
-      "2026-10-08T08:34:36.3857140Z     version, status, reason = self._read_status()",
-      "2026-10-08T08:34:36.3931230Z                               ^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.3988870Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/http/client.py\", line 304, in _read_status",
-      "2026-10-08T08:34:36.4023250Z     line = str(self.fp.readline(_MAXLINE + 1), \"iso-8859-1\")",
-      "2026-10-08T08:34:36.4051530Z                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.4089320Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/socket.py\", line 720, in readinto",
-      "2026-10-08T08:34:36.4127290Z     return self._sock.recv_into(b)",
-      "2026-10-08T08:34:36.4191850Z            ^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.4256410Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/ssl.py\", line 1276, in recv_into",
-      "2026-10-08T08:34:36.4291560Z     return self.read(nbytes, buffer)",
-      "2026-10-08T08:34:36.4328540Z            ^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.4385930Z   File \"/Users/runner/.local/share/uv/python/cpython-3.12.15-macos-x86_64-none/lib/python3.12/ssl.py\", line 1128, in read",
-      "2026-10-08T08:34:36.4424250Z     return self._sslobj.read(len, buffer)",
-      "2026-10-08T08:34:36.4471900Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
-      "2026-10-08T08:34:36.4504710Z TimeoutError: The read operation timed out",
-      "2026-10-08T08:34:36.4528040Z ##[error]Process completed with exit code 1.",
-      "2026-10-08T08:34:36.4972400Z Post job cleanup.",
-      "2026-10-08T08:34:36.8058560Z [command]/usr/local/bin/git version",
-      "2026-10-08T08:34:36.8066070Z git version 2.55.0",
-      "2026-10-08T08:34:36.8264660Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/974a3dd7-39ac-4a06-91d6-ff8a67c46ed4/.gitconfig'",
-      "2026-10-08T08:34:36.8327110Z Temporarily overriding HOME='/Users/runner/work/_temp/974a3dd7-39ac-4a06-91d6-ff8a67c46ed4' before making global git config changes",
-      "2026-10-08T08:34:36.8369600Z Adding repository directory to the temporary git global config as a safe directory",
-      "2026-10-08T08:34:36.8417090Z [command]/usr/local/bin/git config --global --add safe.directory /Users/runner/work/better-telegram-search/better-telegram-search",
-      "2026-10-08T08:34:36.8581170Z [command]/usr/local/bin/git config --local --name-only --get-regexp core\\.sshCommand",
-      "2026-10-08T08:34:36.8674550Z [command]/usr/local/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'core\\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\"",
-      "2026-10-08T08:34:37.1584950Z [command]/usr/local/bin/git config --local --name-only --get-regexp http\\.https\\:\\/\\/github\\.com\\/\\.extraheader",
-      "2026-10-08T08:34:37.1913420Z http.https://github.com/.extraheader",
-      "2026-10-08T08:34:37.2103420Z [command]/usr/local/bin/git config --local --unset-all http.https://github.com/.extraheader",
-      "2026-10-08T08:34:37.2256060Z [command]/usr/local/bin/git submodule foreach --recursive sh -c \"git config --local --name-only --get-regexp 'http\\.https\\:\\/\\/github\\.com\\/\\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\"",
-      "2026-10-08T08:34:37.3633800Z [command]/usr/local/bin/git config --local --name-only --get-regexp ^includeIf\\.gitdir:",
-      "2026-10-08T08:34:37.3899950Z [command]/usr/local/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url",
-      "2026-10-08T08:34:37.6719170Z Cleaning up orphan processes",
-      "2026-10-08T08:34:38.9117320Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, astral-sh/setup-uv@v6. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
-    ]
-  },
-  "diagnostics_complete": true
+  "failures": {}
 }
