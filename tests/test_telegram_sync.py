@@ -477,9 +477,13 @@ def test_gc_skips_symlinks_and_reparse_points(sync, tmp_path, monkeypatch):
     root = service.db.workspace / "data/media/telegram"
     root.mkdir(parents=True)
     link = root / "00000000-0000-0000-0000-000000000001"
-    link.symlink_to(outside, target_is_directory=True)
-    assert service.media.collect_orphans(0) == 0 and secret.exists()
-    link.unlink()
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pass  # Windows may require administrator privileges for symlinks.
+    else:
+        assert service.media.collect_orphans(0) == 0 and secret.exists()
+        link.unlink()
     link.mkdir()
     original = Path.lstat
 

@@ -416,8 +416,7 @@ class SyncStore:
                 ).fetchone()
             )
             run = conn.execute(
-                "SELECT * FROM sync_runs WHERE binding_id=? ORDER BY rowid DESC "
-                "LIMIT 1",
+                "SELECT * FROM sync_runs WHERE binding_id=? ORDER BY rowid DESC LIMIT 1",
                 (binding["id"],),
             ).fetchone()
             queues = {

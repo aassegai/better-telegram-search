@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC, datetime
 
+from telegram_search import __version__
 from telegram_search.telegram_sync.models import NormalizedMessage, Peer, SourceFailure
 
 
@@ -156,7 +157,7 @@ class TelethonAdapter:
             entity_cache_limit=100,
             base_logger=logger,
             device_model="Better Telegram Search",
-            app_version="0.4.0",
+            app_version=__version__,
         )
         self.events = events
         self.handler = None
