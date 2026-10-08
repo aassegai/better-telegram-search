@@ -289,6 +289,8 @@ def test_download_checks_github_digest_before_running_the_new_executable(db, tmp
     payload = archive_path.read_bytes()
     release, report = release_case(payload)
     service = UpdateService(db.workspace)
+    # Keep this upgrade scenario independent of the source checkout's version.
+    monkeypatch.setattr(module, "__version__", "0.3.0")
     service.arch = "x86_64"
     monkeypatch.setattr(module, "sys", SimpleNamespace(platform="linux"))
     monkeypatch.setattr(

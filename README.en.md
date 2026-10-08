@@ -92,11 +92,12 @@ run the commands without the environment prefix. [Device details](docs/gpu-and-u
    import. Click **Open context** to see the surrounding messages.
 4. Open **Settings** and prepare **E5** for semantic search, **CLIP** for photos,
    or **OCR** for text in images. Then open **⋯** beside a chat and click
-   **Resume indexing** for the required index.
-5. The chat menu contains text and image batch sizes, progress, and an estimate
+   **Resume indexing**, **Resume OCR**, or **Resume semantic OCR** for the required stage.
+5. The chat menu contains text, image, and OCR batch sizes, progress, and an estimate
    for the whole remaining queue. Larger GPU batches use more memory; the app
    retries smaller batches if memory runs out.
-   Pause OCR independently of CLIP. Open **Sources** in the same chat menu to
+   OCR has separate image and text-region batch sizes. Pause recognition and its
+   semantic index independently of CLIP. Open **Sources** in the same chat menu to
    check attachments or relink a moved export folder.
 6. **Keywords and meaning** is the default mode. Keyword search remains available
    while the semantic index is being built. Combine **Text**, **Images**, and

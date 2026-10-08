@@ -1,0 +1,38 @@
+{
+  "validation_date": "2026-10-08",
+  "synthetic_only": true,
+  "torch_absent": true,
+  "cpu_reference_runtime": "1.30.0",
+  "cuda_runtime": "1.23.2",
+  "cross_runtime_checked_vectors": [
+    "clip-image",
+    "clip-text",
+    "e5-base",
+    "e5-base-query",
+    "e5-small",
+    "e5-small-query"
+  ],
+  "cross_runtime_acceptance": {
+    "max_absolute_error": 0.0001,
+    "minimum_cosine": 0.99999
+  },
+  "cross_runtime_passed": true,
+  "same_runtime_1.23.2_cpu_gpu_differences": {
+    "e5-small": {
+      "max_absolute_error": 8.195638656616211e-08,
+      "minimum_cosine": 0.9999998807907104
+    },
+    "e5-base": {
+      "max_absolute_error": 1.0710209608078003e-07,
+      "minimum_cosine": 0.9999998807907104
+    },
+    "clip-text": {
+      "max_absolute_error": 8.940696716308594e-08,
+      "minimum_cosine": 0.9999998807907104
+    },
+    "clip-image": {
+      "max_absolute_error": 2.473592758178711e-06,
+      "minimum_cosine": 0.9999998807907104
+    }
+  }
+}

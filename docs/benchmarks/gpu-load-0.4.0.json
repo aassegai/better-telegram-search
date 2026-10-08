@@ -1,0 +1,498 @@
+{
+  "synthetic_only": true,
+  "torch_absent": true,
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "driver": "566.26",
+    "vram_mib": 8188.0
+  },
+  "runtime": {
+    "onnxruntime": "1.23.2",
+    "python": "3.12.15"
+  },
+  "seconds_per_phase": 20,
+  "sections": [
+    "encoders",
+    "ocr",
+    "mixed"
+  ],
+  "prefetch_first": true,
+  "phases": {
+    "e5-small-prefetch-True": {
+      "units": 800,
+      "elapsed_seconds": 20.4125,
+      "units_per_minute": 2351.5,
+      "warmup_seconds": 5.2982,
+      "batch_size": 32,
+      "prefetch": true,
+      "batch_seconds": {
+        "samples": 25,
+        "mean": 0.8165,
+        "p50": 0.8324945549975382,
+        "p95": 0.8549672610097332,
+        "maximum": 0.8661486079945462
+      },
+      "telemetry": {
+        "samples": 94,
+        "gpu_utilization_percent": {
+          "samples": 94,
+          "mean": 100.0,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 3956.0,
+        "power_peak_watts": 60.41,
+        "temperature_peak_celsius": 87.0,
+        "sm_clock_mhz": {
+          "samples": 94,
+          "mean": 1792.6596,
+          "p50": 1800.0,
+          "p95": 1875.0,
+          "maximum": 1920.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 1173561344
+      },
+      "last_timings": {
+        "encoder_wait_seconds": 5.862006219103932e-06,
+        "preprocess_seconds": 0.004085544002009556,
+        "compute_wait_seconds": 5.4805990657769144e-05,
+        "model_load_seconds": 3.4052005503326654e-05,
+        "inference_seconds": 0.8359915299952263,
+        "postprocess_seconds": 0.002912120005930774,
+        "batch_size": 32,
+        "sequence_length": 237,
+        "prefetched": 1
+      }
+    },
+    "e5-small-prefetch-False": {
+      "units": 800,
+      "elapsed_seconds": 20.5065,
+      "units_per_minute": 2340.72,
+      "warmup_seconds": 0.8499,
+      "batch_size": 32,
+      "prefetch": false,
+      "batch_seconds": {
+        "samples": 25,
+        "mean": 0.8203,
+        "p50": 0.8338036370114423,
+        "p95": 0.8629418429918587,
+        "maximum": 0.8663202919997275
+      },
+      "telemetry": {
+        "samples": 94,
+        "gpu_utilization_percent": {
+          "samples": 94,
+          "mean": 100.0,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 4015.0,
+        "power_peak_watts": 59.47,
+        "temperature_peak_celsius": 87.0,
+        "sm_clock_mhz": {
+          "samples": 94,
+          "mean": 1781.8085,
+          "p50": 1770.0,
+          "p95": 1845.0,
+          "maximum": 1995.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 1174609920
+      },
+      "last_timings": {
+        "encoder_wait_seconds": 4.287998308427632e-06,
+        "preprocess_seconds": 0.0042392530012875795,
+        "compute_wait_seconds": 6.694300100207329e-05,
+        "model_load_seconds": 3.248501161579043e-05,
+        "inference_seconds": 0.7872858419868862,
+        "postprocess_seconds": 0.002388784007052891,
+        "batch_size": 32,
+        "sequence_length": 237,
+        "prefetched": 0
+      }
+    },
+    "clip-prefetch-True": {
+      "units": 1376,
+      "elapsed_seconds": 20.2251,
+      "units_per_minute": 4082.06,
+      "warmup_seconds": 2.4754,
+      "batch_size": 32,
+      "prefetch": true,
+      "batch_seconds": {
+        "samples": 43,
+        "mean": 0.4703,
+        "p50": 0.4738342439959524,
+        "p95": 0.480517221003538,
+        "maximum": 0.7988424329960253
+      },
+      "telemetry": {
+        "samples": 92,
+        "gpu_utilization_percent": {
+          "samples": 92,
+          "mean": 99.8043,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 3637.0,
+        "power_peak_watts": 58.27,
+        "temperature_peak_celsius": 86.0,
+        "sm_clock_mhz": {
+          "samples": 92,
+          "mean": 1759.0761,
+          "p50": 1755.0,
+          "p95": 1770.0,
+          "maximum": 1845.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 1553653760
+      },
+      "last_timings": {
+        "preprocess_seconds": 0.3131557550514117,
+        "compute_wait_seconds": 9.590400441084057e-05,
+        "model_load_seconds": 3.2019888749346137e-06,
+        "inference_seconds": 0.4683074630011106,
+        "postprocess_seconds": 0.00041778699960559607,
+        "batch_size": 32,
+        "prefetched": 1
+      }
+    },
+    "clip-prefetch-False": {
+      "units": 864,
+      "elapsed_seconds": 20.4706,
+      "units_per_minute": 2532.42,
+      "warmup_seconds": 0.7962,
+      "batch_size": 32,
+      "prefetch": false,
+      "batch_seconds": {
+        "samples": 27,
+        "mean": 0.7582,
+        "p50": 0.7689674909925088,
+        "p95": 0.7968325109977741,
+        "maximum": 0.8076376810058719
+      },
+      "telemetry": {
+        "samples": 95,
+        "gpu_utilization_percent": {
+          "samples": 95,
+          "mean": 99.8421,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 3647.0,
+        "power_peak_watts": 58.06,
+        "temperature_peak_celsius": 86.0,
+        "sm_clock_mhz": {
+          "samples": 95,
+          "mean": 1767.9474,
+          "p50": 1770.0,
+          "p95": 1800.0,
+          "maximum": 1815.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 1517903872
+      },
+      "last_timings": {
+        "preprocess_seconds": 0.2919537280249642,
+        "compute_wait_seconds": 9.721399692352861e-05,
+        "model_load_seconds": 2.764994860626757e-06,
+        "inference_seconds": 0.43006263799907174,
+        "postprocess_seconds": 0.00038305400812532753,
+        "batch_size": 32,
+        "prefetched": 0
+      }
+    },
+    "ocr-images-1": {
+      "images": 48,
+      "batch_size": 1,
+      "elapsed_seconds": 20.1861,
+      "images_per_minute": 142.67,
+      "same_transcriptions": true,
+      "batch_seconds": {
+        "samples": 48,
+        "mean": 0.4205,
+        "p50": 0.21773429900349583,
+        "p95": 1.917366651003249,
+        "maximum": 2.018620714006829
+      },
+      "telemetry": {
+        "samples": 93,
+        "gpu_utilization_percent": {
+          "samples": 93,
+          "mean": 99.5699,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 3878.0,
+        "power_peak_watts": 58.15,
+        "temperature_peak_celsius": 86.0,
+        "sm_clock_mhz": {
+          "samples": 93,
+          "mean": 1791.2903,
+          "p50": 1785.0,
+          "p95": 1845.0,
+          "maximum": 1920.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 2743885824
+      },
+      "worker_starts": 1
+    },
+    "ocr-images-4": {
+      "images": 56,
+      "batch_size": 4,
+      "elapsed_seconds": 20.9508,
+      "images_per_minute": 160.38,
+      "same_transcriptions": true,
+      "batch_seconds": {
+        "samples": 14,
+        "mean": 1.4965,
+        "p50": 0.7210715199908009,
+        "p95": 2.429582445998676,
+        "maximum": 2.429582445998676
+      },
+      "telemetry": {
+        "samples": 96,
+        "gpu_utilization_percent": {
+          "samples": 96,
+          "mean": 99.3854,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 3879.0,
+        "power_peak_watts": 59.14,
+        "temperature_peak_celsius": 86.0,
+        "sm_clock_mhz": {
+          "samples": 96,
+          "mean": 1801.7188,
+          "p50": 1800.0,
+          "p95": 1860.0,
+          "maximum": 1920.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 2754342912
+      },
+      "worker_starts": 1
+    },
+    "ocr-cpu-gpu-quality": {
+      "synthetic_images": 8,
+      "transcription_mismatches": 0,
+      "cpu": {
+        "cer": 0.1688,
+        "wer": 0.1795,
+        "control_tokens_found": 8,
+        "control_tokens_total": 9
+      },
+      "gpu": {
+        "cer": 0.1688,
+        "wer": 0.1795,
+        "control_tokens_found": 8,
+        "control_tokens_total": 9
+      }
+    },
+    "mixed-indexing-cpu-search": {
+      "elapsed_seconds": 103.2285,
+      "synthetic_messages": 448,
+      "synthetic_photos": 64,
+      "progress": {
+        "text_chunks_done": 381,
+        "text_remaining": 0,
+        "text_failed": 0,
+        "text_running": 0,
+        "ocr_ready": 64,
+        "ocr_failed": 0,
+        "images_ready": 64,
+        "ocr_dense_ready": 48,
+        "ocr_nonempty": 48,
+        "media_failed": 0
+      },
+      "pause_resume": true,
+      "pause_checkpoint": {
+        "text_chunks_done": 32,
+        "text_remaining": 1,
+        "text_failed": 0,
+        "text_running": 0,
+        "ocr_ready": 8,
+        "ocr_failed": 0,
+        "images_ready": 16,
+        "ocr_dense_ready": 0,
+        "ocr_nonempty": 7,
+        "media_failed": 0
+      },
+      "pause_requested_checkpoint": {
+        "text_chunks_done": 32,
+        "text_remaining": 1,
+        "text_failed": 0,
+        "text_running": 1,
+        "ocr_ready": 4,
+        "ocr_failed": 0,
+        "images_ready": 16,
+        "ocr_dense_ready": 0,
+        "ocr_nonempty": 4,
+        "media_failed": 0
+      },
+      "pause_stable_checkpoint": {
+        "text_chunks_done": 32,
+        "text_remaining": 1,
+        "text_failed": 0,
+        "text_running": 0,
+        "ocr_ready": 8,
+        "ocr_failed": 0,
+        "images_ready": 16,
+        "ocr_dense_ready": 0,
+        "ocr_nonempty": 7,
+        "media_failed": 0
+      },
+      "search_errors": 0,
+      "queries_with_partial_index_warnings": 166,
+      "final_cpu_search_branches": {
+        "text": {
+          "results": 5,
+          "effective_mode": "meaning",
+          "warnings": 0
+        },
+        "images": {
+          "results": 5,
+          "effective_mode": "images",
+          "warnings": 0
+        },
+        "ocr": {
+          "results": 5,
+          "effective_mode": "meaning",
+          "warnings": 0
+        }
+      },
+      "combined_cpu_query_seconds": {
+        "samples": 167,
+        "mean": 0.3434,
+        "p50": 0.08474842399300542,
+        "p95": 0.3061645610141568,
+        "maximum": 15.839749161008513
+      },
+      "queries_with_matches": 167,
+      "queues": {
+        "ocr": {
+          "pending": 0,
+          "samples": 16,
+          "completed": 64,
+          "errors": 0,
+          "cold_starts": 2.0,
+          "regions_per_second": 3.51,
+          "units_per_minute": 48.19,
+          "p50_seconds": 1.0621,
+          "p95_seconds": 2.9151,
+          "estimated_remaining_seconds": 0.0,
+          "phase_means": {
+            "publish_seconds": 0.180662,
+            "select_seconds": 0.03841,
+            "preprocess_seconds": 0.038847,
+            "child_rss_bytes": 1056894720.0,
+            "read_seconds": 0.123566,
+            "detection_seconds": 0.702866,
+            "boxes_seconds": 0.009007,
+            "recognition_seconds": 1.135132,
+            "cold_start": 0.125,
+            "process_starts": 1.875,
+            "request_seconds": 2.478298,
+            "inference_seconds": 2.478482,
+            "cold_start_seconds": 0.61092,
+            "regions": 17.5,
+            "compute_wait_seconds": 2.158616
+          },
+          "measuring": false
+        },
+        "clip": {
+          "pending": 0,
+          "samples": 4,
+          "completed": 64,
+          "errors": 0,
+          "cold_starts": 0,
+          "regions_per_second": 0.0,
+          "units_per_minute": 144.24,
+          "p50_seconds": 0.6704,
+          "p95_seconds": 0.6739,
+          "estimated_remaining_seconds": 0.0,
+          "phase_means": {
+            "batch_size": 16.0,
+            "preprocess_seconds": 0.621075,
+            "model_load_seconds": 0.708017,
+            "prefetched": 1.0,
+            "inference_seconds": 0.314225,
+            "postprocess_seconds": 0.27603,
+            "compute_wait_seconds": 5.335974
+          },
+          "measuring": false
+        },
+        "ocr_dense": {
+          "pending": 0,
+          "samples": 48,
+          "completed": 48,
+          "errors": 0,
+          "cold_starts": 0,
+          "regions_per_second": 0.0,
+          "units_per_minute": 40.07,
+          "p50_seconds": 0.1685,
+          "p95_seconds": 8.3029,
+          "estimated_remaining_seconds": 0.0,
+          "phase_means": {
+            "batch_size": 1.0,
+            "preprocess_seconds": 0.000329,
+            "sequence_length": 47.5,
+            "model_load_seconds": 3.5e-05,
+            "prefetched": 0.0,
+            "inference_seconds": 0.090161,
+            "encoder_wait_seconds": 0.882861,
+            "postprocess_seconds": 0.000352,
+            "compute_wait_seconds": 0.457867
+          },
+          "measuring": false
+        }
+      },
+      "telemetry": {
+        "samples": 475,
+        "gpu_utilization_percent": {
+          "samples": 475,
+          "mean": 99.0147,
+          "p50": 100.0,
+          "p95": 100.0,
+          "maximum": 100.0
+        },
+        "low_utilization_sample_fraction": 0.0,
+        "device_memory_peak_mib": 7823.0,
+        "power_peak_watts": 58.89,
+        "temperature_peak_celsius": 89.0,
+        "sm_clock_mhz": {
+          "samples": 475,
+          "mean": 1783.3895,
+          "p50": 1770.0,
+          "p95": 1965.0,
+          "maximum": 2475.0
+        },
+        "thermal_throttle_sample_fraction": 1.0,
+        "power_cap_sample_fraction": 1.0,
+        "sampled_rss_peak_bytes": 4871946240
+      }
+    }
+  },
+  "completed": true,
+  "validation_date": "2026-10-08",
+  "execution_platform": "Linux under WSL"
+}

@@ -51,7 +51,8 @@ Runtime CPU 1.30.0 and tesserocr 2.11.0.
 These mechanisms address idle gaps caused by SQL selection, CPU preparation,
 stage coupling and repeated model startup. They do not guarantee flat GPU usage:
 varying text/image shapes, CPU detection/CTC, transfers and checkpoints still take
-time. No GPU utilization improvement has been measured in this task.
+time. Subsequent CUDA load and mixed-pipeline validation is recorded separately
+in [GPU validation for 0.4.0](gpu-validation-0.4.0.md).
 
 ## CPU measurements
 
@@ -147,11 +148,11 @@ native child cancellation, bounded memory recovery and Windows LF/CRLF startup.
 Browser checks cover per-chat settings, integer/range validation, persistence,
 late responses after closing a dialog and Russian/English strings.
 
-The CPU implementation covers A01–A05, A07–A09. GPU/hybrid comparisons in A06,
-including steady-state utilization, VRAM, real query latency and RTX 4060 tuning,
-remain unmeasured because this task permits CPU computation only. An isolated
-long-duration memory run is still required before treating the recycle ceiling as
-a validated leak bound.
+The CPU implementation covers A01–A05, A07–A09. The subsequent
+[RTX 4060 CUDA report](gpu-validation-0.4.0.md) adds utilization, VRAM, batch
+comparisons and CPU queries during GPU indexing. A simultaneous CPU + GPU OCR
+comparison and an isolated long-duration memory run are still required before
+treating the recycle ceiling as a validated leak bound.
 
 A10–A13 remain experiments: a separate fast/accurate pass, resolution/INT8/FP16
 quality comparisons, other multilingual models, device-side CTC, I/O binding and
