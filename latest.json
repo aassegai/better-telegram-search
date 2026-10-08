@@ -1,43 +1,1153 @@
 {
   "commit": "5ceaae27897d5ebc19248c2ae4793f9038374c19",
   "run_id": "37750438862",
-  "result": "pending",
+  "result": "failure",
   "draft": true,
   "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-6b4ffc64fa311718aef6",
   "builds": {
-    "darwin-x86_64": {
-      "state": "pending",
-      "url": null
+    "linux-x86_64-gpu": {
+      "state": "ready",
+      "sha256": "cd1129a23347af179b22f4b6cb1857c00620907bcfdc61b3e8a5b7477d730aea",
+      "bytes": 1837783872,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true,
+        "cuda_libraries": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-linux-x86_64-gpu.tar.xz",
+      "core": {
+        "artifact": "better-telegram-search-0.5.0-linux-x86_64-gpu-core.tar.xz",
+        "bytes": 206537992,
+        "sha256": "10c67960f6c322b9bfc026b9c551a53fb64b2ceb632de2c96302d0323c2aedc3",
+        "commit": "5ceaae27897d5ebc19248c2ae4793f9038374c19",
+        "source_dirty": false,
+        "platform": "linux",
+        "arch": "x86_64",
+        "variant": "gpu",
+        "python": "3.12.15",
+        "checks": {
+          "sqlite_fts5": true,
+          "lancedb": true,
+          "onnx_cpu": true,
+          "tokenizers": true,
+          "safetensors": true,
+          "ocr_rus_eng": true,
+          "ocr_worker_reuse": true,
+          "onnx_ocr_runtime": true,
+          "frontend_http": true,
+          "csrf": true,
+          "torch_absent": true,
+          "unicode_paths": true,
+          "update_installer": true,
+          "device_selection": true,
+          "telegram_runtime": true,
+          "cuda_libraries": true
+        },
+        "dependencies": [
+          {
+            "name": "PyYAML",
+            "version": "6.0.3"
+          },
+          {
+            "name": "Telethon",
+            "version": "1.45.0"
+          },
+          {
+            "name": "altgraph",
+            "version": "0.17.5"
+          },
+          {
+            "name": "annotated-doc",
+            "version": "0.0.5"
+          },
+          {
+            "name": "annotated-types",
+            "version": "0.8.0"
+          },
+          {
+            "name": "anyio",
+            "version": "4.15.1"
+          },
+          {
+            "name": "better-telegram-search",
+            "version": "0.5.0"
+          },
+          {
+            "name": "certifi",
+            "version": "2026.7.22"
+          },
+          {
+            "name": "click",
+            "version": "8.5.0"
+          },
+          {
+            "name": "coloredlogs",
+            "version": "15.0.1"
+          },
+          {
+            "name": "cysignals",
+            "version": "1.12.6"
+          },
+          {
+            "name": "deprecation",
+            "version": "2.1.0"
+          },
+          {
+            "name": "fastapi",
+            "version": "0.142.2"
+          },
+          {
+            "name": "filelock",
+            "version": "3.32.7"
+          },
+          {
+            "name": "flatbuffers",
+            "version": "25.12.19"
+          },
+          {
+            "name": "fsspec",
+            "version": "2026.9.0"
+          },
+          {
+            "name": "h11",
+            "version": "0.16.0"
+          },
+          {
+            "name": "hf-xet",
+            "version": "1.6.0"
+          },
+          {
+            "name": "httpcore",
+            "version": "1.0.9"
+          },
+          {
+            "name": "httpx",
+            "version": "0.28.1"
+          },
+          {
+            "name": "huggingface_hub",
+            "version": "1.33.0"
+          },
+          {
+            "name": "humanfriendly",
+            "version": "10.0"
+          },
+          {
+            "name": "idna",
+            "version": "3.20"
+          },
+          {
+            "name": "ijson",
+            "version": "3.5.1"
+          },
+          {
+            "name": "lance-namespace",
+            "version": "0.13.0"
+          },
+          {
+            "name": "lance-namespace-urllib3-client",
+            "version": "0.13.0"
+          },
+          {
+            "name": "lancedb",
+            "version": "0.39.0"
+          },
+          {
+            "name": "mpmath",
+            "version": "1.3.0"
+          },
+          {
+            "name": "numpy",
+            "version": "2.5.3"
+          },
+          {
+            "name": "nvidia-cublas-cu12",
+            "version": "12.9.2.10"
+          },
+          {
+            "name": "nvidia-cuda-nvrtc-cu12",
+            "version": "12.9.86"
+          },
+          {
+            "name": "nvidia-cuda-runtime-cu12",
+            "version": "12.9.79"
+          },
+          {
+            "name": "nvidia-cudnn-cu12",
+            "version": "9.27.0.42"
+          },
+          {
+            "name": "nvidia-cufft-cu12",
+            "version": "11.4.1.4"
+          },
+          {
+            "name": "nvidia-curand-cu12",
+            "version": "10.3.10.19"
+          },
+          {
+            "name": "nvidia-nvjitlink-cu12",
+            "version": "12.9.86"
+          },
+          {
+            "name": "onnxruntime-gpu",
+            "version": "1.23.2"
+          },
+          {
+            "name": "opencv-python-headless",
+            "version": "4.14.0.94"
+          },
+          {
+            "name": "opentelemetry-api",
+            "version": "1.45.0"
+          },
+          {
+            "name": "packaging",
+            "version": "26.3"
+          },
+          {
+            "name": "pillow",
+            "version": "12.3.0"
+          },
+          {
+            "name": "protobuf",
+            "version": "7.36.2"
+          },
+          {
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          {
+            "name": "pyaes",
+            "version": "1.6.1"
+          },
+          {
+            "name": "pyarrow",
+            "version": "25.0.1"
+          },
+          {
+            "name": "pyasn1",
+            "version": "0.6.4"
+          },
+          {
+            "name": "pyclipper",
+            "version": "1.4.0"
+          },
+          {
+            "name": "pydantic",
+            "version": "2.13.5"
+          },
+          {
+            "name": "pydantic_core",
+            "version": "2.46.5"
+          },
+          {
+            "name": "pyinstaller",
+            "version": "6.22.3"
+          },
+          {
+            "name": "pyinstaller-hooks-contrib",
+            "version": "2026.8"
+          },
+          {
+            "name": "python-dateutil",
+            "version": "2.9.0.post0"
+          },
+          {
+            "name": "rsa",
+            "version": "4.9.1"
+          },
+          {
+            "name": "safetensors",
+            "version": "0.8.0"
+          },
+          {
+            "name": "setuptools",
+            "version": "84.0.0"
+          },
+          {
+            "name": "six",
+            "version": "1.17.0"
+          },
+          {
+            "name": "starlette",
+            "version": "1.7.0"
+          },
+          {
+            "name": "sympy",
+            "version": "1.14.0"
+          },
+          {
+            "name": "tesserocr",
+            "version": "2.11.0"
+          },
+          {
+            "name": "tokenizers",
+            "version": "0.23.2"
+          },
+          {
+            "name": "tqdm",
+            "version": "4.70.1"
+          },
+          {
+            "name": "typing-inspection",
+            "version": "0.4.4"
+          },
+          {
+            "name": "typing_extensions",
+            "version": "4.16.0"
+          },
+          {
+            "name": "urllib3",
+            "version": "2.8.0"
+          },
+          {
+            "name": "uvicorn",
+            "version": "0.54.0"
+          }
+        ],
+        "gpu_runtime": {
+          "schema": 1,
+          "version": "0.5.0",
+          "platform": "linux",
+          "files": [
+            {
+              "path": "_internal/libcublas.so.12",
+              "sha256": "5757ab5839fb4f203ca47ecb336110d10f4a5606b1e097f195fbca89774569e2",
+              "bytes": 105140976,
+              "asset": "gpu-runtime-linux-x86_64-5757ab5839fb4f203ca47ecb336110d10f4a5606b1e097f195fbca89774569e2.gz",
+              "compressed_sha256": "8a4b0ea9ef1311bdc490d9fccf4bfe883c884d5ba24eb638731a525e218d668c",
+              "compressed_bytes": 80778579
+            },
+            {
+              "path": "_internal/libcublasLt.so.12",
+              "sha256": "2c9006a75c74b3bea2dc7ae2ec38ab038b0e45ea02cb4b717a915e8a5796acb1",
+              "bytes": 749210000,
+              "asset": "gpu-runtime-linux-x86_64-2c9006a75c74b3bea2dc7ae2ec38ab038b0e45ea02cb4b717a915e8a5796acb1.gz",
+              "compressed_sha256": "b2f8246729d8dcfea7751a664d681c47fd5132ec2a476bf01db068557a226338",
+              "compressed_bytes": 512212042
+            },
+            {
+              "path": "_internal/libcudart.so.12",
+              "sha256": "256e6409e4f06f618e1fb53d4844a6b81cdded1013afa8ade40c22f99eb133b7",
+              "bytes": 741088,
+              "asset": "gpu-runtime-linux-x86_64-256e6409e4f06f618e1fb53d4844a6b81cdded1013afa8ade40c22f99eb133b7.gz",
+              "compressed_sha256": "275f3c22c3f636ecec9fba53721559bbba1e0373f0780216c1624f3154f1f746",
+              "compressed_bytes": 250081
+            },
+            {
+              "path": "_internal/libcudnn.so.9",
+              "sha256": "4c3ccb552ee0c43aacca7498e12914fbda31be4fcb52cbdc1aaa87e78fb96e19",
+              "bytes": 133336,
+              "asset": "gpu-runtime-linux-x86_64-4c3ccb552ee0c43aacca7498e12914fbda31be4fcb52cbdc1aaa87e78fb96e19.gz",
+              "compressed_sha256": "559ff299aed427024ce8d35b9a523a2063c6722df9f71aad7b3572d457975185",
+              "compressed_bytes": 48757
+            },
+            {
+              "path": "_internal/libcudnn_adv.so.9",
+              "sha256": "6fb2f7455e690d77df3351483be3abd23c7b26c85cb2b70fe62abd27c0a14fa2",
+              "bytes": 274846904,
+              "asset": "gpu-runtime-linux-x86_64-6fb2f7455e690d77df3351483be3abd23c7b26c85cb2b70fe62abd27c0a14fa2.gz",
+              "compressed_sha256": "f811b707ea22dd8ed266c674516cd48a5bb9af24af0024961fc2adc5535c479a",
+              "compressed_bytes": 201521376
+            },
+            {
+              "path": "_internal/libcudnn_cnn.so.9",
+              "sha256": "0bc150ee4d6ed549287a5e2c04f3284155b208a22084543b6af2ec6521e02561",
+              "bytes": 4203880,
+              "asset": "gpu-runtime-linux-x86_64-0bc150ee4d6ed549287a5e2c04f3284155b208a22084543b6af2ec6521e02561.gz",
+              "compressed_sha256": "7df03761ab6e664a04f60577e9cadc61d10b0dc8e517569c8501c70c20cdf68b",
+              "compressed_bytes": 2256051
+            },
+            {
+              "path": "_internal/libcudnn_engines_precompiled.so.9",
+              "sha256": "106171d50adb53c263c9ce8e83d3b257fe231731372dbb72d31520fa58fae7d1",
+              "bytes": 566255968,
+              "asset": "gpu-runtime-linux-x86_64-106171d50adb53c263c9ce8e83d3b257fe231731372dbb72d31520fa58fae7d1.gz",
+              "compressed_sha256": "9275fac9fc0099b9fa0ba5acd477db0e884c60c9c754c71586469232a3fb57fe",
+              "compressed_bytes": 390529032
+            },
+            {
+              "path": "_internal/libcudnn_engines_runtime_compiled.so.9",
+              "sha256": "3f480e78a61ab16d54263c0397f62f57915af67213752b8e7235e74f4b027a36",
+              "bytes": 48269728,
+              "asset": "gpu-runtime-linux-x86_64-3f480e78a61ab16d54263c0397f62f57915af67213752b8e7235e74f4b027a36.gz",
+              "compressed_sha256": "53ee27e014c73dac2a383763f9f9acd7553f5f01f185ada74a64ead3b239c099",
+              "compressed_bytes": 25054476
+            },
+            {
+              "path": "_internal/libcudnn_engines_tensor_ir.so.9",
+              "sha256": "805ec06f754944c107ce4e2c234a3a190a8e42d5b4bfae82a9128460fd5959bd",
+              "bytes": 2099128,
+              "asset": "gpu-runtime-linux-x86_64-805ec06f754944c107ce4e2c234a3a190a8e42d5b4bfae82a9128460fd5959bd.gz",
+              "compressed_sha256": "d260a1739c700bf76854e6e7de797f4ece32d0dfa1cc130a56b5006e8769357b",
+              "compressed_bytes": 13783
+            },
+            {
+              "path": "_internal/libcudnn_ext.so.9",
+              "sha256": "fb7f46eaaadd2c81bda58504726058fa4bbbe76cbc87073c271513152f0ab9dd",
+              "bytes": 8401752,
+              "asset": "gpu-runtime-linux-x86_64-fb7f46eaaadd2c81bda58504726058fa4bbbe76cbc87073c271513152f0ab9dd.gz",
+              "compressed_sha256": "5efc52edbc31060a386d42a8a36cb288e05842dd6bc0bc7e4837bedf61e79208",
+              "compressed_bytes": 4044066
+            },
+            {
+              "path": "_internal/libcudnn_graph.so.9",
+              "sha256": "28aaa0dc993c91d7c537846d3409a45dd71b94097c4794aedf9aac8a98a0bac8",
+              "bytes": 115562616,
+              "asset": "gpu-runtime-linux-x86_64-28aaa0dc993c91d7c537846d3409a45dd71b94097c4794aedf9aac8a98a0bac8.gz",
+              "compressed_sha256": "54b7fbaf0e33e3dba3f51bfd78d5324c25b7bae1c27d6d24dc1bb058ed1450bf",
+              "compressed_bytes": 48562244
+            },
+            {
+              "path": "_internal/libcudnn_heuristic.so.9",
+              "sha256": "0f8bebd3f041bdce10e11c7981f3cd397e90e1f953215b6afa1c37b1d65db15a",
+              "bytes": 96473880,
+              "asset": "gpu-runtime-linux-x86_64-0f8bebd3f041bdce10e11c7981f3cd397e90e1f953215b6afa1c37b1d65db15a.gz",
+              "compressed_sha256": "efc15127f3bfbd67b71c166d79d6d1d5bf7857b43d61245cfe74ca27a66cd405",
+              "compressed_bytes": 37827055
+            },
+            {
+              "path": "_internal/libcudnn_ops.so.9",
+              "sha256": "e6c3242e8ea81fdc9b33d6a20144cab7ba246d2a4bb6b9ed31f0894be55921e4",
+              "bytes": 106964664,
+              "asset": "gpu-runtime-linux-x86_64-e6c3242e8ea81fdc9b33d6a20144cab7ba246d2a4bb6b9ed31f0894be55921e4.gz",
+              "compressed_sha256": "f9523628a729cfc6c08a2a9319879c9ffa9613086db1037611807aa9147dc091",
+              "compressed_bytes": 81214567
+            },
+            {
+              "path": "_internal/libcufft.so.11",
+              "sha256": "e1d65ebd08895f9d9883f848f3974f89e0130416252477b18835ba7f15d159bc",
+              "bytes": 291507928,
+              "asset": "gpu-runtime-linux-x86_64-e1d65ebd08895f9d9883f848f3974f89e0130416252477b18835ba7f15d159bc.gz",
+              "compressed_sha256": "792929d84e1e051e5bc35fc9faadb061b18e70d6722088c93f45a4e8e339c4db",
+              "compressed_bytes": 208364362
+            },
+            {
+              "path": "_internal/libcufftw.so.11",
+              "sha256": "09db2c93073d233f0bb1730dd10c4d3b5c4ec949da8e9e7db86d6ed97fcb6c3e",
+              "bytes": 2101488,
+              "asset": "gpu-runtime-linux-x86_64-09db2c93073d233f0bb1730dd10c4d3b5c4ec949da8e9e7db86d6ed97fcb6c3e.gz",
+              "compressed_sha256": "f5db51aa993a5e862e95f7c6a4608cdb9844cb794eef73fb2fbc05bc843b2ffc",
+              "compressed_bytes": 373940
+            },
+            {
+              "path": "_internal/libcurand.so.10",
+              "sha256": "ab8c07338fa663c018b16df5b3f3878c84aaae98bda930e9e8bad340427b0faa",
+              "bytes": 166965432,
+              "asset": "gpu-runtime-linux-x86_64-ab8c07338fa663c018b16df5b3f3878c84aaae98bda930e9e8bad340427b0faa.gz",
+              "compressed_sha256": "6f636d01ab27761f7a5a6a64dca2ec588d3b2154b255803045cc96c918554756",
+              "compressed_bytes": 72833875
+            },
+            {
+              "path": "_internal/libnvJitLink.so.12",
+              "sha256": "02d3acb5fe598dd20f0fca3cc03734ad164037a22747a01900561a42d0b8448f",
+              "bytes": 95935344,
+              "asset": "gpu-runtime-linux-x86_64-02d3acb5fe598dd20f0fca3cc03734ad164037a22747a01900561a42d0b8448f.gz",
+              "compressed_sha256": "278743cd6ed656d324836099cc100752ea4f5736e858a7686def296967919348",
+              "compressed_bytes": 43105688
+            },
+            {
+              "path": "_internal/libnvrtc-builtins.alt.so.12.9",
+              "sha256": "5246bbfb25da49f7107b6a3ae9bb337fb45bce0178f97a431ce8a88113b2283c",
+              "bytes": 7169992,
+              "asset": "gpu-runtime-linux-x86_64-5246bbfb25da49f7107b6a3ae9bb337fb45bce0178f97a431ce8a88113b2283c.gz",
+              "compressed_sha256": "ca5453a2cef233055263c23e2be3ac88451e99cf5f191e86c0d0da80a43d362f",
+              "compressed_bytes": 1887525
+            },
+            {
+              "path": "_internal/libnvrtc-builtins.so.12.9",
+              "sha256": "6507cf33450cfb22970c2c1e7aa8e7c0a33e39d864720277b05f61a92791e2e8",
+              "bytes": 7202760,
+              "asset": "gpu-runtime-linux-x86_64-6507cf33450cfb22970c2c1e7aa8e7c0a33e39d864720277b05f61a92791e2e8.gz",
+              "compressed_sha256": "9ea791455b81433a04d73900a139d819e9ee3c6911d9bf44834a62c89aae10b2",
+              "compressed_bytes": 1889094
+            },
+            {
+              "path": "_internal/libnvrtc.alt.so.12",
+              "sha256": "0da838ec1266d7d12409927a8b5f00aecea29bf97b359f4462877bf6ecb5997e",
+              "bytes": 106723760,
+              "asset": "gpu-runtime-linux-x86_64-0da838ec1266d7d12409927a8b5f00aecea29bf97b359f4462877bf6ecb5997e.gz",
+              "compressed_sha256": "238c5af699941c5c93833abe4144a45940ee402956a2ada75feecc9c4be23fa9",
+              "compressed_bytes": 46803725
+            },
+            {
+              "path": "_internal/libnvrtc.so.12",
+              "sha256": "7c67c6b51ea0e0279634cebd676ff7efda1674806444520c84430ad5c35fe625",
+              "bytes": 106244480,
+              "asset": "gpu-runtime-linux-x86_64-7c67c6b51ea0e0279634cebd676ff7efda1674806444520c84430ad5c35fe625.gz",
+              "compressed_sha256": "c988bae578a22032a047d21b4a9e67b5c842e0de9c0888791034ffde0bba3b2f",
+              "compressed_bytes": 46754556
+            },
+            {
+              "path": "_internal/nvidia/cublas/lib/libcublas.so.12",
+              "sha256": "5757ab5839fb4f203ca47ecb336110d10f4a5606b1e097f195fbca89774569e2",
+              "bytes": 105140976,
+              "asset": "gpu-runtime-linux-x86_64-5757ab5839fb4f203ca47ecb336110d10f4a5606b1e097f195fbca89774569e2.gz",
+              "compressed_sha256": "8a4b0ea9ef1311bdc490d9fccf4bfe883c884d5ba24eb638731a525e218d668c",
+              "compressed_bytes": 80778579
+            },
+            {
+              "path": "_internal/nvidia/cublas/lib/libcublasLt.so.12",
+              "sha256": "2c9006a75c74b3bea2dc7ae2ec38ab038b0e45ea02cb4b717a915e8a5796acb1",
+              "bytes": 749210000,
+              "asset": "gpu-runtime-linux-x86_64-2c9006a75c74b3bea2dc7ae2ec38ab038b0e45ea02cb4b717a915e8a5796acb1.gz",
+              "compressed_sha256": "b2f8246729d8dcfea7751a664d681c47fd5132ec2a476bf01db068557a226338",
+              "compressed_bytes": 512212042
+            },
+            {
+              "path": "_internal/nvidia/cudnn/lib/libcudnn_graph.so.9",
+              "sha256": "28aaa0dc993c91d7c537846d3409a45dd71b94097c4794aedf9aac8a98a0bac8",
+              "bytes": 115562616,
+              "asset": "gpu-runtime-linux-x86_64-28aaa0dc993c91d7c537846d3409a45dd71b94097c4794aedf9aac8a98a0bac8.gz",
+              "compressed_sha256": "54b7fbaf0e33e3dba3f51bfd78d5324c25b7bae1c27d6d24dc1bb058ed1450bf",
+              "compressed_bytes": 48562244
+            },
+            {
+              "path": "_internal/nvidia/cudnn/lib/libcudnn_ops.so.9",
+              "sha256": "e6c3242e8ea81fdc9b33d6a20144cab7ba246d2a4bb6b9ed31f0894be55921e4",
+              "bytes": 106964664,
+              "asset": "gpu-runtime-linux-x86_64-e6c3242e8ea81fdc9b33d6a20144cab7ba246d2a4bb6b9ed31f0894be55921e4.gz",
+              "compressed_sha256": "f9523628a729cfc6c08a2a9319879c9ffa9613086db1037611807aa9147dc091",
+              "compressed_bytes": 81214567
+            },
+            {
+              "path": "_internal/nvidia/cufft/lib/libcufft.so.11",
+              "sha256": "e1d65ebd08895f9d9883f848f3974f89e0130416252477b18835ba7f15d159bc",
+              "bytes": 291507928,
+              "asset": "gpu-runtime-linux-x86_64-e1d65ebd08895f9d9883f848f3974f89e0130416252477b18835ba7f15d159bc.gz",
+              "compressed_sha256": "792929d84e1e051e5bc35fc9faadb061b18e70d6722088c93f45a4e8e339c4db",
+              "compressed_bytes": 208364362
+            },
+            {
+              "path": "_internal/onnxruntime/capi/libonnxruntime_providers_cuda.so",
+              "sha256": "8b8311ce197680e3adb506381b9c1189ae0e50eb9f7278420942b842e5a16dfd",
+              "bytes": 435854600,
+              "asset": "gpu-runtime-linux-x86_64-8b8311ce197680e3adb506381b9c1189ae0e50eb9f7278420942b842e5a16dfd.gz",
+              "compressed_sha256": "2905557f65efc8ef6c3dacf56b61e193a4c0456306f65956e21f2e585eb03824",
+              "compressed_bytes": 292177649
+            }
+          ]
+        },
+        "gpu_core_verified": true
+      }
     },
     "win32-x86_64-gpu": {
-      "state": "pending",
-      "url": null
-    },
-    "linux-arm64": {
-      "state": "pending",
-      "url": null
-    },
-    "linux-x86_64-gpu": {
-      "state": "pending",
-      "url": null
-    },
-    "linux-x86_64": {
-      "state": "pending",
-      "url": null
-    },
-    "win32-x86_64": {
-      "state": "pending",
-      "url": null
+      "state": "ready",
+      "sha256": "cfe9249b46cdb80ef8e36d30674b005710c0527a7dca94d9217ab29818d9049c",
+      "bytes": 2130256882,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true,
+        "cuda_libraries": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-win32-x86_64-gpu.zip",
+      "core": {
+        "artifact": "better-telegram-search-0.5.0-win32-x86_64-gpu-core.zip",
+        "bytes": 225888950,
+        "sha256": "4bf6646147cb429e5eb064cba1a00e08a83a0f3c12d30690589b9b9e88199fc7",
+        "commit": "5ceaae27897d5ebc19248c2ae4793f9038374c19",
+        "source_dirty": false,
+        "platform": "win32",
+        "arch": "x86_64",
+        "variant": "gpu",
+        "python": "3.12.15",
+        "checks": {
+          "sqlite_fts5": true,
+          "lancedb": true,
+          "onnx_cpu": true,
+          "tokenizers": true,
+          "safetensors": true,
+          "ocr_rus_eng": true,
+          "ocr_worker_reuse": true,
+          "onnx_ocr_runtime": true,
+          "frontend_http": true,
+          "csrf": true,
+          "torch_absent": true,
+          "unicode_paths": true,
+          "update_installer": true,
+          "device_selection": true,
+          "telegram_runtime": true,
+          "cuda_libraries": true
+        },
+        "dependencies": [
+          {
+            "name": "PyYAML",
+            "version": "6.0.3"
+          },
+          {
+            "name": "Telethon",
+            "version": "1.45.0"
+          },
+          {
+            "name": "altgraph",
+            "version": "0.17.5"
+          },
+          {
+            "name": "annotated-doc",
+            "version": "0.0.5"
+          },
+          {
+            "name": "annotated-types",
+            "version": "0.8.0"
+          },
+          {
+            "name": "anyio",
+            "version": "4.15.1"
+          },
+          {
+            "name": "better-telegram-search",
+            "version": "0.5.0"
+          },
+          {
+            "name": "certifi",
+            "version": "2026.7.22"
+          },
+          {
+            "name": "click",
+            "version": "8.5.0"
+          },
+          {
+            "name": "colorama",
+            "version": "0.4.6"
+          },
+          {
+            "name": "coloredlogs",
+            "version": "15.0.1"
+          },
+          {
+            "name": "deprecation",
+            "version": "2.1.0"
+          },
+          {
+            "name": "fastapi",
+            "version": "0.142.2"
+          },
+          {
+            "name": "filelock",
+            "version": "3.32.7"
+          },
+          {
+            "name": "flatbuffers",
+            "version": "25.12.19"
+          },
+          {
+            "name": "fsspec",
+            "version": "2026.9.0"
+          },
+          {
+            "name": "h11",
+            "version": "0.16.0"
+          },
+          {
+            "name": "hf-xet",
+            "version": "1.6.0"
+          },
+          {
+            "name": "httpcore",
+            "version": "1.0.9"
+          },
+          {
+            "name": "httpx",
+            "version": "0.28.1"
+          },
+          {
+            "name": "huggingface_hub",
+            "version": "1.33.0"
+          },
+          {
+            "name": "humanfriendly",
+            "version": "10.0"
+          },
+          {
+            "name": "idna",
+            "version": "3.20"
+          },
+          {
+            "name": "ijson",
+            "version": "3.5.1"
+          },
+          {
+            "name": "lance-namespace",
+            "version": "0.13.0"
+          },
+          {
+            "name": "lance-namespace-urllib3-client",
+            "version": "0.13.0"
+          },
+          {
+            "name": "lancedb",
+            "version": "0.39.0"
+          },
+          {
+            "name": "mpmath",
+            "version": "1.3.0"
+          },
+          {
+            "name": "numpy",
+            "version": "2.5.3"
+          },
+          {
+            "name": "nvidia-cublas-cu12",
+            "version": "12.9.2.10"
+          },
+          {
+            "name": "nvidia-cuda-nvrtc-cu12",
+            "version": "12.9.86"
+          },
+          {
+            "name": "nvidia-cuda-runtime-cu12",
+            "version": "12.9.79"
+          },
+          {
+            "name": "nvidia-cudnn-cu12",
+            "version": "9.27.0.42"
+          },
+          {
+            "name": "nvidia-cufft-cu12",
+            "version": "11.4.1.4"
+          },
+          {
+            "name": "nvidia-curand-cu12",
+            "version": "10.3.10.19"
+          },
+          {
+            "name": "nvidia-nvjitlink-cu12",
+            "version": "12.9.86"
+          },
+          {
+            "name": "onnxruntime-gpu",
+            "version": "1.23.2"
+          },
+          {
+            "name": "opencv-python-headless",
+            "version": "4.14.0.94"
+          },
+          {
+            "name": "opentelemetry-api",
+            "version": "1.45.0"
+          },
+          {
+            "name": "packaging",
+            "version": "26.3"
+          },
+          {
+            "name": "pefile",
+            "version": "2024.8.26"
+          },
+          {
+            "name": "pillow",
+            "version": "12.3.0"
+          },
+          {
+            "name": "protobuf",
+            "version": "7.36.2"
+          },
+          {
+            "name": "psutil",
+            "version": "7.2.2"
+          },
+          {
+            "name": "pyaes",
+            "version": "1.6.1"
+          },
+          {
+            "name": "pyarrow",
+            "version": "25.0.1"
+          },
+          {
+            "name": "pyasn1",
+            "version": "0.6.4"
+          },
+          {
+            "name": "pyclipper",
+            "version": "1.4.0"
+          },
+          {
+            "name": "pydantic",
+            "version": "2.13.5"
+          },
+          {
+            "name": "pydantic_core",
+            "version": "2.46.5"
+          },
+          {
+            "name": "pyinstaller",
+            "version": "6.22.3"
+          },
+          {
+            "name": "pyinstaller-hooks-contrib",
+            "version": "2026.8"
+          },
+          {
+            "name": "pyreadline3",
+            "version": "3.5.6"
+          },
+          {
+            "name": "python-dateutil",
+            "version": "2.9.0.post0"
+          },
+          {
+            "name": "pywin32-ctypes",
+            "version": "0.2.3"
+          },
+          {
+            "name": "rsa",
+            "version": "4.9.1"
+          },
+          {
+            "name": "safetensors",
+            "version": "0.8.0"
+          },
+          {
+            "name": "setuptools",
+            "version": "84.0.0"
+          },
+          {
+            "name": "six",
+            "version": "1.17.0"
+          },
+          {
+            "name": "starlette",
+            "version": "1.7.0"
+          },
+          {
+            "name": "sympy",
+            "version": "1.14.0"
+          },
+          {
+            "name": "tesserocr",
+            "version": "2.11.0"
+          },
+          {
+            "name": "tokenizers",
+            "version": "0.23.2"
+          },
+          {
+            "name": "tqdm",
+            "version": "4.70.1"
+          },
+          {
+            "name": "typing-inspection",
+            "version": "0.4.4"
+          },
+          {
+            "name": "typing_extensions",
+            "version": "4.16.0"
+          },
+          {
+            "name": "urllib3",
+            "version": "2.8.0"
+          },
+          {
+            "name": "uvicorn",
+            "version": "0.54.0"
+          }
+        ],
+        "gpu_runtime": {
+          "schema": 1,
+          "version": "0.5.0",
+          "platform": "win32",
+          "files": [
+            {
+              "path": "_internal/cublas64_12.dll",
+              "sha256": "52ce5ba0ec5327d39be6021f0f9362d2ed4d64d7206f9b5afc06398d827b8e82",
+              "bytes": 102518272,
+              "asset": "gpu-runtime-win32-x86_64-52ce5ba0ec5327d39be6021f0f9362d2ed4d64d7206f9b5afc06398d827b8e82.gz",
+              "compressed_sha256": "7d656c3ceef8a51eeab5f80eea879ae90684a97ea91e1cf4a72d292358ea6464",
+              "compressed_bytes": 80048304
+            },
+            {
+              "path": "_internal/cublasLt64_12.dll",
+              "sha256": "71705a7cf0923f4ab034d0d2620bbfc989ff669ac3d79f868b7a7c597ca559c5",
+              "bytes": 668673536,
+              "asset": "gpu-runtime-win32-x86_64-71705a7cf0923f4ab034d0d2620bbfc989ff669ac3d79f868b7a7c597ca559c5.gz",
+              "compressed_sha256": "f8ca04b74548fea81ac3d3bd8ba1d3dab898ffdcae5ab14203a106340fe5ae54",
+              "compressed_bytes": 482014105
+            },
+            {
+              "path": "_internal/cudart64_12.dll",
+              "sha256": "760c38928bbe5759f7b31ed6692599eb7ec83cedd5702e84c2b72028a89837e1",
+              "bytes": 583680,
+              "asset": "gpu-runtime-win32-x86_64-760c38928bbe5759f7b31ed6692599eb7ec83cedd5702e84c2b72028a89837e1.gz",
+              "compressed_sha256": "9394f34d1221afb6d29665a81f5486b58c7b823fa0456c3e5a9fabef57d40f7b",
+              "compressed_bytes": 202200
+            },
+            {
+              "path": "_internal/cudnn64_9.dll",
+              "sha256": "7268ef53e32c2c574372326dfc9d94a26095f4ed9c89dba87cfb3ab1e40a6470",
+              "bytes": 270448,
+              "asset": "gpu-runtime-win32-x86_64-7268ef53e32c2c574372326dfc9d94a26095f4ed9c89dba87cfb3ab1e40a6470.gz",
+              "compressed_sha256": "ea89583ca79991b953be7b606e366d2a005f9b5de70df6c21121fc1c56d690da",
+              "compressed_bytes": 130924
+            },
+            {
+              "path": "_internal/cudnn_adv64_9.dll",
+              "sha256": "712ace96559e60b5be81a1097acb7609f601ff4cd0cdef848b013d671753b4b4",
+              "bytes": 270983792,
+              "asset": "gpu-runtime-win32-x86_64-712ace96559e60b5be81a1097acb7609f601ff4cd0cdef848b013d671753b4b4.gz",
+              "compressed_sha256": "18ecd31b7a853ad7118a4911bd11ed66306e60ea25b9fbd013718a88d518ed4f",
+              "compressed_bytes": 201321297
+            },
+            {
+              "path": "_internal/cudnn_cnn64_9.dll",
+              "sha256": "dff4c446c855b3ab2d486aebf4c11388cf74da14d7bd0bfafb61c3a75481313d",
+              "bytes": 2997872,
+              "asset": "gpu-runtime-win32-x86_64-dff4c446c855b3ab2d486aebf4c11388cf74da14d7bd0bfafb61c3a75481313d.gz",
+              "compressed_sha256": "f0c4afc97d87d05407a1e4135bfbc5ffcc40a1a252b55bbb7400ee351f0f37e1",
+              "compressed_bytes": 2009614
+            },
+            {
+              "path": "_internal/cudnn_engines_precompiled64_9.dll",
+              "sha256": "6b603ac45fc018a96f014d0c6cdbc8f480dce2dbe33b8ca38228a4e4c531f3fe",
+              "bytes": 528169072,
+              "asset": "gpu-runtime-win32-x86_64-6b603ac45fc018a96f014d0c6cdbc8f480dce2dbe33b8ca38228a4e4c531f3fe.gz",
+              "compressed_sha256": "2391a2b8a4a903f4a4924c8d6aa65dacbdda93f3344b0a44e536ffff50dc782e",
+              "compressed_bytes": 377686679
+            },
+            {
+              "path": "_internal/cudnn_engines_runtime_compiled64_9.dll",
+              "sha256": "f92f4776261e4409aa9f84357c40bc3626700292a1d22025746388bea43ae11b",
+              "bytes": 45452912,
+              "asset": "gpu-runtime-win32-x86_64-f92f4776261e4409aa9f84357c40bc3626700292a1d22025746388bea43ae11b.gz",
+              "compressed_sha256": "053769a0f9911d5fe48c57ed15f4f913ccb33d584d18194e10732555acc1cc43",
+              "compressed_bytes": 23101554
+            },
+            {
+              "path": "_internal/cudnn_engines_tensor_ir64_9.dll",
+              "sha256": "d7380a7c4ad90590968e97b4d8b43a616e7e0070bfdeeee04c4d0be85ad52394",
+              "bytes": 156272,
+              "asset": "gpu-runtime-win32-x86_64-d7380a7c4ad90590968e97b4d8b43a616e7e0070bfdeeee04c4d0be85ad52394.gz",
+              "compressed_sha256": "49241acf78b4b77bd8be77101d7cd0b76711d4efe09424b14a26fc6d9af620d1",
+              "compressed_bytes": 73789
+            },
+            {
+              "path": "_internal/cudnn_ext64_9.dll",
+              "sha256": "f20888488b701e429830e19cf59022e90a0c5dd398723162ea9f320b3ca06636",
+              "bytes": 130160,
+              "asset": "gpu-runtime-win32-x86_64-f20888488b701e429830e19cf59022e90a0c5dd398723162ea9f320b3ca06636.gz",
+              "compressed_sha256": "2a7a938c7195e32c61555dbae8a7bc570cbc03df4cb43969fe12132b362566f1",
+              "compressed_bytes": 66237
+            },
+            {
+              "path": "_internal/cudnn_graph64_9.dll",
+              "sha256": "445e8c3e44a6a6035749380009ae35ae8c2bc246428229b79545a25238bb56e2",
+              "bytes": 99919472,
+              "asset": "gpu-runtime-win32-x86_64-445e8c3e44a6a6035749380009ae35ae8c2bc246428229b79545a25238bb56e2.gz",
+              "compressed_sha256": "920e7fd638dcc8310eac8c0455d43bf226befbead6a33bcdc56320dddcd27b00",
+              "compressed_bytes": 43513239
+            },
+            {
+              "path": "_internal/cudnn_heuristic64_9.dll",
+              "sha256": "0634af738266cd36c912e99cd3807ee452450e963bf885be204fdcfb322cfc70",
+              "bytes": 94795376,
+              "asset": "gpu-runtime-win32-x86_64-0634af738266cd36c912e99cd3807ee452450e963bf885be204fdcfb322cfc70.gz",
+              "compressed_sha256": "b00f4cf5824404c9c53e91d8d6008942bac673fc3ab1e40c7134de4fee307487",
+              "compressed_bytes": 37505672
+            },
+            {
+              "path": "_internal/cudnn_ops64_9.dll",
+              "sha256": "390bfe103a244c714fca5a1320950ba51a3173a7fbd6664ed535ce7367891ccd",
+              "bytes": 105686640,
+              "asset": "gpu-runtime-win32-x86_64-390bfe103a244c714fca5a1320950ba51a3173a7fbd6664ed535ce7367891ccd.gz",
+              "compressed_sha256": "174ed84033c595d41fab07fd6749586dc971ee798613dff44c5d6002a4439112",
+              "compressed_bytes": 80803682
+            },
+            {
+              "path": "_internal/cufft64_11.dll",
+              "sha256": "5b90655ca9cdf5d91cbdf2c72b995ec937eed0aef2d6954370c711b45c929b35",
+              "bytes": 287136768,
+              "asset": "gpu-runtime-win32-x86_64-5b90655ca9cdf5d91cbdf2c72b995ec937eed0aef2d6954370c711b45c929b35.gz",
+              "compressed_sha256": "e8a6e42694f68ae2255c0f1d63b0d65504968c787db05ff5dffb7192965b8504",
+              "compressed_bytes": 207621113
+            },
+            {
+              "path": "_internal/cufftw64_11.dll",
+              "sha256": "1c72f91689ee00f20bf606574fbc24ebd9115a3146ad359de2a2917b8de39ec6",
+              "bytes": 163328,
+              "asset": "gpu-runtime-win32-x86_64-1c72f91689ee00f20bf606574fbc24ebd9115a3146ad359de2a2917b8de39ec6.gz",
+              "compressed_sha256": "91c991a43db24a4dedc239c091a2b5409361f0308789cf2908cf8adbfebe566b",
+              "compressed_bytes": 88916
+            },
+            {
+              "path": "_internal/curand64_10.dll",
+              "sha256": "4d6d16c9941c4f7a7e49d5c43df25d408a2a8503d8cc1eb9808e0e0c2cde36d4",
+              "bytes": 79197696,
+              "asset": "gpu-runtime-win32-x86_64-4d6d16c9941c4f7a7e49d5c43df25d408a2a8503d8cc1eb9808e0e0c2cde36d4.gz",
+              "compressed_sha256": "fe997f72f02a0de19e19ac239f90e01f2dc91e2e6f43677c0ff16231f0318604",
+              "compressed_bytes": 68660736
+            },
+            {
+              "path": "_internal/nvJitLink_120_0.dll",
+              "sha256": "998494a8eff0d8382b41ba443d668e3eaea7b67852256ca2982c841cd5bed47a",
+              "bytes": 87359488,
+              "asset": "gpu-runtime-win32-x86_64-998494a8eff0d8382b41ba443d668e3eaea7b67852256ca2982c841cd5bed47a.gz",
+              "compressed_sha256": "23352c904e9e7112609aa527e9263c90004a264227dc6b936f81705686f1c91a",
+              "compressed_bytes": 38666748
+            },
+            {
+              "path": "_internal/nvrtc-builtins64_129.dll",
+              "sha256": "c405226b0b394ed8bdc593bb1419b94a989f93248ed2873e8f2e0e27c1688ca1",
+              "bytes": 7217664,
+              "asset": "gpu-runtime-win32-x86_64-c405226b0b394ed8bdc593bb1419b94a989f93248ed2873e8f2e0e27c1688ca1.gz",
+              "compressed_sha256": "9c0bc15fa1e001a752d114b10e37c6ce323d49d1735ac067dd9ce9210f35a5c3",
+              "compressed_bytes": 1909829
+            },
+            {
+              "path": "_internal/nvrtc64_120_0.alt.dll",
+              "sha256": "ac56a4d3b5a99f294523abec28b8f648b96324a9277622a450ec20ddb9e2c47d",
+              "bytes": 89899520,
+              "asset": "gpu-runtime-win32-x86_64-ac56a4d3b5a99f294523abec28b8f648b96324a9277622a450ec20ddb9e2c47d.gz",
+              "compressed_sha256": "2663b1bc33c799c438b2aca54050706b0b17d6f3e74ef765249c679b8aaef133",
+              "compressed_bytes": 40482108
+            },
+            {
+              "path": "_internal/nvrtc64_120_0.dll",
+              "sha256": "0cc63349fedffeec1660b30955e8028b6e4e4c26cf1e41c56dc4569fd5eca82c",
+              "bytes": 89832960,
+              "asset": "gpu-runtime-win32-x86_64-0cc63349fedffeec1660b30955e8028b6e4e4c26cf1e41c56dc4569fd5eca82c.gz",
+              "compressed_sha256": "0c6648a97112ea0851a5b29c263a4fdf2e1c77d049771132a5d10a1c0f2c23de",
+              "compressed_bytes": 40447838
+            },
+            {
+              "path": "_internal/onnxruntime/capi/onnxruntime_providers_cuda.dll",
+              "sha256": "e7bc99a2dda4076e3408474da837bf3c96b0676ebb04c5703363c315afe3944e",
+              "bytes": 366219296,
+              "asset": "gpu-runtime-win32-x86_64-e7bc99a2dda4076e3408474da837bf3c96b0676ebb04c5703363c315afe3944e.gz",
+              "compressed_sha256": "9824c2ea0bd06e3a57f68542fe9250e2bbc625ca8320dbf8c02ed44056425758",
+              "compressed_bytes": 238878737
+            }
+          ]
+        },
+        "gpu_core_verified": true
+      }
     },
     "darwin-arm64": {
-      "state": "pending",
+      "state": "ready",
+      "sha256": "26cdada1bf89e093623f85c08c1d134213b36397f7ec14e369b8686520928917",
+      "bytes": 207992389,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-darwin-arm64.zip"
+    },
+    "win32-x86_64": {
+      "state": "ready",
+      "sha256": "2a2974348f2d80face198704f551bfc79fa079f647d848f072f77a63285350b2",
+      "bytes": 225956746,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-win32-x86_64.zip"
+    },
+    "linux-arm64": {
+      "state": "ready",
+      "sha256": "70fcefb59709d8e03dcd9248c280e7bd9f0d8c56738c98872dc57e51a0be48c4",
+      "bytes": 232737609,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-linux-arm64.tar.gz"
+    },
+    "linux-x86_64": {
+      "state": "ready",
+      "sha256": "d7e14d4d1723775a658adb2fe9e7e73b991b84b3dcda3b551e0c8f15a728d0c1",
+      "bytes": 274588188,
+      "checks": {
+        "sqlite_fts5": true,
+        "lancedb": true,
+        "onnx_cpu": true,
+        "tokenizers": true,
+        "safetensors": true,
+        "ocr_rus_eng": true,
+        "ocr_worker_reuse": true,
+        "onnx_ocr_runtime": true,
+        "frontend_http": true,
+        "csrf": true,
+        "torch_absent": true,
+        "unicode_paths": true,
+        "update_installer": true,
+        "device_selection": true,
+        "telegram_runtime": true
+      },
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-6b4ffc64fa311718aef6/better-telegram-search-0.5.0-linux-x86_64.tar.gz"
+    },
+    "darwin-x86_64": {
+      "state": "failed",
       "url": null
     }
   },
   "jobs": [
     {
       "name": "prepare",
-      "conclusion": null,
+      "conclusion": "success",
       "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222048872",
       "steps": [
         {
@@ -62,10 +1172,454 @@
         },
         {
           "name": "Run tag=\"build-${BTS_BUILD_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\"",
-          "conclusion": null
+          "conclusion": "success"
         },
         {
           "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (macos-15, arm64, darwin-arm64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122690",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (macos-15-intel, x86_64, darwin-x86_64, semantic, cpu)",
+      "conclusion": "failure",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122712",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (windows-2022, x86_64, win32-x86_64-gpu, gpu, gpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122727",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'gpu' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (windows-2022, x86_64, win32-x86_64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122739",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (ubuntu-22.04, x86_64, linux-x86_64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122747",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (ubuntu-22.04, x86_64, linux-x86_64-gpu, gpu, gpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122784",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'gpu' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "build (ubuntu-22.04-arm, arm64, linux-arm64, semantic, cpu)",
+      "conclusion": "success",
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113222122803",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run uv sync --locked --no-dev --group bundle --extra 'semantic' --extra ocr --extra telegram --python 3.12 --python-preference only-managed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run npm ci",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build and verify the extracted native archive",
+          "conclusion": "success"
+        },
+        {
+          "name": "Stage verified packages in the unpublished release",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "report",
+      "conclusion": null,
+      "url": "https://github.com/aassegai/better-telegram-search/actions/runs/37750438862/job/113227217903",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/download-artifact@v4",
+          "conclusion": "success"
+        },
+        {
+          "name": "Record statuses and download links",
           "conclusion": null
         },
         {
