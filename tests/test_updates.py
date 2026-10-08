@@ -8,6 +8,7 @@ import os
 import stat
 import tarfile
 import threading
+import time
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,18 @@ from telegram_search.updates import installer, network
 from telegram_search.updates.archive import extract
 from telegram_search.updates.manifest import CHECKS, select_release, validate_manifest
 from telegram_search.updates.service import UpdateService
+
+
+def wait_for_update_database(client):
+    """Follow the installer's readiness protocol before confirming a replacement."""
+    deadline = time.monotonic() + 5
+    while True:
+        state = client.get("/api/doctor").json()["database_check"]
+        if state == "ok":
+            return
+        assert state == "checking", state
+        assert time.monotonic() < deadline, "Update database verification did not finish"
+        time.sleep(0.01)
 
 
 def release_case(payload=b"synthetic archive", variant="cpu"):
@@ -475,6 +488,7 @@ def test_verified_startup_holds_background_work_until_helper_confirmation(tmp_pa
             ).status_code
             == 400
         )
+        wait_for_update_database(client)
         assert (
             client.post("/api/updates/confirm", headers=headers, json={"nonce": nonce}).json()[
                 "confirmed"
@@ -508,6 +522,7 @@ def test_durable_confirmation_opens_application_even_if_ui_status_write_fails(
     nonce = "a" * 32
     monkeypatch.setenv("BTS_UPDATE_HEALTHCHECK", nonce)
     with TestClient(create_app(tmp_path / "workspace"), base_url="http://localhost") as client:
+        wait_for_update_database(client)
         updates = client.app.state.updates
         updates._set(state="installing", installation_nonce=nonce)
         (updates.root / nonce).mkdir()
