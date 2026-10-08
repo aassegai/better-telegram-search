@@ -311,9 +311,17 @@ def test_main_reports_confirmed_publication_when_final_journal_is_unavailable(
     assert "HTTP 503" in result["report_warning"]
 
 
-@pytest.mark.parametrize("changed", ["README.md", "src/telegram_search/cli.py"])
+@pytest.mark.parametrize(
+    ("changed", "allowed"),
+    [
+        ("README.md", True),
+        ("tests/test_telegram_sync.py", True),
+        ("tests/telegram_fake.py", False),
+        ("src/telegram_search/cli.py", False),
+    ],
+)
 def test_request_uses_its_committed_revision_and_rejects_application_changes(
-    monkeypatch, tmp_path, changed
+    monkeypatch, tmp_path, changed, allowed
 ):
     request = {
         "repository": "synthetic/repository",
@@ -340,7 +348,7 @@ def test_request_uses_its_committed_revision_and_rejects_application_changes(
         return changed
 
     monkeypatch.setattr(publisher, "git", git)
-    if changed.startswith("src/"):
+    if not allowed:
         with pytest.raises(ValueError, match="Release code differs"):
             publisher.load_request()
     else:

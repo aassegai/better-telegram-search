@@ -329,14 +329,15 @@ def test_image_quota_and_decode_errors_are_finite(sync, importer, tmp_path):
 
 def test_old_missing_photos_are_not_scheduled(sync, importer, tmp_path):
     service, fake = sync
+    created_at = int(time.time())
     binding = bind(
         service,
         fake,
         importer,
         tmp_path,
-        records=[message(1, date=int(time.time()), photo="photos/missing.jpg")],
+        records=[message(1, date=created_at, photo="photos/missing.jpg")],
     )
-    result = service.store.merge(binding, [remote(1, message()["text"], photo=1)])
+    result = service.store.merge(binding, [remote(1, message()["text"], date=created_at, photo=1)])
     assert result["unchanged"] == 1
     with service.db.connect() as conn:
         assert not conn.execute("SELECT 1 FROM telegram_assets").fetchone()
