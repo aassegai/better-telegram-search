@@ -132,7 +132,7 @@ def test_context_order_and_overlapping_window_dedup(importer, db, tmp_path):
     assert [m["message_id"] for m in context] == [5, 6, 7, 8, 9]
     hits = SearchService(db).search("термин", limit=2, chunk_size=6)
     assert len(hits["results"]) == 2 and hits["has_more"]
-    assert [h["message_id"] for h in hits["results"]] == [1, 7]
+    assert [h["message_id"] for h in hits["results"]] == [1, 2]
 
 
 def test_display_window_fills_boundaries_preserves_order_and_anchor(importer, db, tmp_path):

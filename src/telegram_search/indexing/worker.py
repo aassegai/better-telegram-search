@@ -8,12 +8,18 @@ from telegram_search.inference.resources import (
     indexing_batch_size,
     memory_exhausted,
 )
+from telegram_search.search.chunking.builder import EpisodeBuilder
+from telegram_search.search.chunking.policy import LEGACY_POLICY_ID, ChunkPolicy
 from telegram_search.search.chunks import ChunkBuilder, SourceMessage
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
 
 
 class WorkInterrupted(Exception):
+    pass
+
+
+class ContextChanged(Exception):
     pass
 
 
@@ -30,11 +36,15 @@ class SegmentWorker:
         self.batch_size = batch_size
         self.default_batch = batch_size
         self.should_stop = should_stop
-        self.builder = ChunkBuilder(encoder.tokenizer)
+        self.builder = ChunkBuilder(
+            encoder.tokenizer,
+            passage_prefix=encoder.spec.manifest.get("passage_prefix", "passage: "),
+        )
 
     def _current(self, conn, work) -> bool:
         row = conn.execute(
-            "SELECT s.target_generation,t.active_space_id,t.paused,t.enabled,w.state,c.text_paused "
+            "SELECT s.target_generation,s.chunking_policy_id,t.active_space_id,"
+            "t.paused,t.enabled,w.state,c.text_paused "
             "FROM index_segments s JOIN index_work w ON w.chat_id=s.chat_id "
             "AND w.utc_day=s.utc_day JOIN chats c ON c.id=w.chat_id "
             "JOIN semantic_state t ON t.id=1 WHERE w.id=?",
@@ -43,6 +53,7 @@ class SegmentWorker:
         return bool(
             row
             and row["target_generation"] == work["generation"]
+            and row["chunking_policy_id"] == work["chunking_policy_id"]
             and row["active_space_id"] == self.encoder.space_id
             and row["enabled"]
             and not row["paused"]
@@ -56,19 +67,94 @@ class SegmentWorker:
 
     def _build(self, work):
         start = int(datetime.fromisoformat(work["utc_day"]).replace(tzinfo=UTC).timestamp())
+        policy = None
+        if work["chunking_policy_id"] != LEGACY_POLICY_ID:
+            with self.lock, self.db.connect() as conn:
+                self._guard(conn, work)
+                row = conn.execute(
+                    "SELECT policy_json FROM chunking_policies WHERE id=?",
+                    (work["chunking_policy_id"],),
+                ).fetchone()
+                if not row:
+                    raise UserError("Политика чанкинга не найдена. Требуется переиндексация.")
+                policy = ChunkPolicy.from_json(row[0])
+                if policy.identity != work["chunking_policy_id"]:
+                    raise UserError("Политика чанкинга повреждена. Требуется переиндексация.")
+                # Register the cross-day selection fence BEFORE taking the source
+                # snapshot. A later, closer neighbor must invalidate this day too.
+                conn.execute(
+                    "INSERT OR REPLACE INTO segment_context_ranges VALUES(?,?,?,?)",
+                    (work["id"], work["chat_id"], start - policy.neighbor_seconds, start),
+                )
         with self.db.connect() as reader:
             reader.execute("BEGIN")
+            dependencies = {}
+
+            def remember(message_id, row):
+                dependencies[message_id] = row["content_hash"] if row else None
+                if len(dependencies) >= 64:
+                    self._stage_dependencies(work, dependencies)
+                    dependencies.clear()
+
+            fields = (
+                "m.chat_id,m.message_id,m.timestamp,m.author,m.text,m.has_photo,m.kind,"
+                "m.remote_deleted,m.author_id,m.reply_to,m.content_hash,"
+                "EXISTS(SELECT 1 FROM media_refs r WHERE r.chat_id=m.chat_id AND "
+                "r.message_id=m.message_id) OR "
+                "json_extract(m.raw_json,'$.media_type') IS NOT NULL OR "
+                "json_extract(m.raw_json,'$.file') IS NOT NULL AS has_attachment,"
+                "EXISTS(SELECT 1 FROM json_each(m.raw_json,'$.text_entities') e WHERE "
+                "json_extract(CASE WHEN e.type='object' THEN e.value ELSE '{}' END,'$.type') "
+                "IN ('mention','text_mention','text_link',"
+                "'code','pre','link')) AS protected "
+            )
+
+            def lookup(chat_id, message_id):
+                row = reader.execute(
+                    "SELECT " + fields + "FROM indexable_messages m WHERE m.chat_id=? "
+                    "AND m.message_id=? AND m.remote_deleted=0",
+                    (chat_id, message_id),
+                ).fetchone()
+                remember(message_id, row)
+                return SourceMessage(**dict(row)) if row else None
+
+            def neighbor_lookup(message):
+                row = reader.execute(
+                    "SELECT " + fields + "FROM indexable_messages m WHERE m.chat_id=? "
+                    "AND m.remote_deleted=0 AND m.kind='message' AND length(trim(m.text))>0 "
+                    "AND m.timestamp>=? AND (m.timestamp,m.message_id)<(?,?) "
+                    "ORDER BY m.timestamp DESC,m.message_id DESC LIMIT 1",
+                    (
+                        message.chat_id,
+                        message.timestamp - policy.neighbor_seconds,
+                        message.timestamp,
+                        message.message_id,
+                    ),
+                ).fetchone()
+                if row:
+                    remember(row["message_id"], row)
+                return SourceMessage(**dict(row)) if row else None
+
+            builder = self.builder
+            if policy is not None:
+                builder = EpisodeBuilder(
+                    self.encoder.tokenizer,
+                    policy,
+                    passage_prefix=self.encoder.spec.manifest.get("passage_prefix", "passage: "),
+                    lookup=lookup,
+                    neighbor_lookup=neighbor_lookup,
+                )
             # A stable canonical snapshot, streamed without raw_json or the entire day in RAM.
             rows = reader.execute(
-                "SELECT chat_id,message_id,timestamp,author,text,has_photo,kind,remote_deleted "
-                "FROM indexable_messages "
-                "WHERE chat_id=? AND timestamp>=? AND timestamp<? ORDER BY timestamp,message_id",
+                "SELECT " + fields + "FROM indexable_messages m "
+                "WHERE m.chat_id=? AND m.timestamp>=? AND m.timestamp<? "
+                "ORDER BY m.timestamp,m.message_id",
                 (work["chat_id"], start, start + 86400),
             )
             messages = (SourceMessage(**dict(row)) for row in rows)
             pending = []
             for ordinal, chunk in enumerate(
-                self.builder.build(messages, work["generation"], self.encoder.space_id), 1
+                builder.build(messages, work["generation"], self.encoder.space_id), 1
             ):
                 pending.append((ordinal, chunk))
                 if len(pending) == 64:
@@ -76,6 +162,9 @@ class SegmentWorker:
                     pending = []
             if pending:
                 self._stage(work, pending)
+            if dependencies:
+                self._stage_dependencies(work, dependencies)
+            source_messages = getattr(builder, "source_messages", 0)
         with self.lock, self.db.connect() as conn:
             self._guard(conn, work)
             totals = conn.execute(
@@ -84,17 +173,58 @@ class SegmentWorker:
                 (work["chat_id"], work["utc_day"], work["generation"], self.encoder.space_id),
             ).fetchone()
             conn.execute(
-                "UPDATE index_work SET stage='embedding',chunks_total=?,tokens_total=? WHERE id=?",
-                (*totals, work["id"]),
+                "UPDATE index_work SET stage='embedding',chunks_total=?,tokens_total=?,"
+                "source_messages=?,skipped_messages=? WHERE id=?",
+                (
+                    *totals,
+                    source_messages,
+                    max(
+                        0,
+                        source_messages
+                        - conn.execute(
+                            "SELECT count(DISTINCT p.message_id) FROM chunk_embedding_parts p "
+                            "JOIN chunks c ON c.id=p.chunk_id WHERE c.chat_id=? "
+                            "AND c.utc_day=? AND c.generation=? "
+                            "AND p.role<>'borrowed_context'",
+                            (work["chat_id"], work["utc_day"], work["generation"]),
+                        ).fetchone()[0],
+                    ),
+                    work["id"],
+                ),
             )
+
+    def _stage_dependencies(self, work, dependencies):
+        with self.lock, self.db.connect() as conn:
+            self._guard(conn, work)
+            for message_id, content_hash in dependencies.items():
+                row = conn.execute(
+                    "SELECT content_hash FROM indexable_messages WHERE chat_id=? "
+                    "AND message_id=? AND remote_deleted=0",
+                    (work["chat_id"], message_id),
+                ).fetchone()
+                if (row[0] if row else None) != content_hash:
+                    raise ContextChanged()
+                conn.execute(
+                    "INSERT OR REPLACE INTO segment_context_dependencies VALUES(?,?,?,?)",
+                    (work["id"], work["chat_id"], message_id, content_hash),
+                )
 
     def _stage(self, work, batch):
         with self.lock, self.db.connect() as conn:
             self._guard(conn, work)
             for ordinal, chunk in batch:
+                for message_id, content_hash in chunk.dependencies:
+                    actual = conn.execute(
+                        "SELECT content_hash FROM indexable_messages WHERE chat_id=? "
+                        "AND message_id=? AND remote_deleted=0",
+                        (chunk.chat_id, message_id),
+                    ).fetchone()
+                    if (actual[0] if actual else None) != content_hash:
+                        raise ContextChanged()
                 conn.execute(
                     "INSERT INTO chunks(id,chat_id,utc_day,generation,embedding_space_id,ordinal,"
-                    "text,text_normalized,tokens) VALUES(?,?,?,?,?,?,?,?,?)",
+                    "text,text_normalized,tokens,chunking_policy_id,lexical_text) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         chunk.id,
                         chunk.chat_id,
@@ -103,15 +233,41 @@ class SegmentWorker:
                         self.encoder.space_id,
                         ordinal,
                         chunk.text,
-                        normalize_text(chunk.text),
+                        normalize_text(
+                            chunk.lexical_text if chunk.lexical_text is not None else chunk.text
+                        ),
                         chunk.tokens,
+                        chunk.policy_id,
+                        chunk.lexical_text,
                     ),
                 )
                 conn.executemany(
                     "INSERT INTO chunk_parts VALUES(?,?,?,?,?,?)",
                     [
                         (chunk.id, i, chunk.chat_id, part.message_id, part.start, part.end)
+                        for i, part in enumerate(chunk.source_parts or chunk.parts)
+                    ],
+                )
+                conn.executemany(
+                    "INSERT INTO chunk_embedding_parts VALUES(?,?,?,?,?,?,?)",
+                    [
+                        (
+                            chunk.id,
+                            i,
+                            chunk.chat_id,
+                            part.message_id,
+                            part.start,
+                            part.end,
+                            part.role,
+                        )
                         for i, part in enumerate(chunk.parts)
+                    ],
+                )
+                conn.executemany(
+                    "INSERT INTO chunk_context_dependencies VALUES(?,?,?,?)",
+                    [
+                        (chunk.id, chunk.chat_id, message_id, value)
+                        for message_id, value in chunk.dependencies
                     ],
                 )
 
@@ -304,6 +460,12 @@ class SegmentWorker:
                     "AND generation=?",
                     (work["chat_id"], work["utc_day"], work["generation"]),
                 )
+        except ContextChanged:
+            from telegram_search.storage.generations import invalidate_segments
+
+            with self.lock, self.db.connect() as conn:
+                if self._current(conn, work):
+                    invalidate_segments(conn, work["chat_id"], {work["utc_day"]}, "context_changed")
         except WorkInterrupted:
             with self.lock, self.db.connect() as conn:
                 conn.execute(

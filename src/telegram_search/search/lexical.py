@@ -211,7 +211,7 @@ class SearchService:
                     has_more = True
                     break
                 context = self.context.get_result_context(conn, row, chunk_size, filters)
-                seen.update((row["chat_id"], item["message_id"]) for item in context)
+                seen.add((row["chat_id"], row["message_id"]))
                 results.append(
                     {
                         "chat_id": row["chat_id"],

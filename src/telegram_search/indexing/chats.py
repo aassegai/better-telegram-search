@@ -1,7 +1,9 @@
 """Per-dialog queues over shared, compatible model and media caches."""
 
 from telegram_search.indexing.exclusions import update_authors, validate_authors
+from telegram_search.search.chunking.policy import DEFAULT_POLICY, LEGACY_POLICY_ID
 from telegram_search.shared.errors import UserError
+from telegram_search.storage.generations import bump_revision, invalidate_segments, utc_day
 
 
 class ChatIndexing:
@@ -27,9 +29,26 @@ class ChatIndexing:
                 "ON x.chat_id=m.chat_id AND x.author_id=m.author_id WHERE m.chat_id=?",
                 (chat_id,),
             ).fetchone()[0]
+            policy = conn.execute(
+                "SELECT policy_id FROM chat_chunking WHERE chat_id=?", (chat_id,)
+            ).fetchone()
+            policy_id = policy[0] if policy else LEGACY_POLICY_ID
+            skipped = conn.execute(
+                "SELECT coalesce(sum(w.skipped_messages),0) FROM index_work w "
+                "JOIN index_segments s ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
+                "AND s.target_generation=w.generation WHERE w.chat_id=? AND w.state='done'",
+                (chat_id,),
+            ).fetchone()[0]
         if chat is None:
             raise UserError("Диалог не найден.")
         return {
+            "chunking": {
+                "profile": "legacy" if policy_id == LEGACY_POLICY_ID else "episodes",
+                "policy_id": policy_id,
+                "max_messages": 8,
+                "max_tokens": 480,
+                "skipped_messages": skipped,
+            },
             "excluded_author_ids": excluded,
             "excluded_messages": excluded_messages,
             "semantic": {
@@ -53,15 +72,22 @@ class ChatIndexing:
             "ocr_batch_size": ("ocr_batch", 4),
             "ocr_region_batch_size": ("ocr_region_batch", 32),
         }
-        if not values or set(values) - (fields.keys() | {"excluded_author_ids"}):
+        if not values or set(values) - (
+            fields.keys() | {"excluded_author_ids", "chunking_profile"}
+        ):
             raise UserError("Неизвестные настройки индексации.")
         authors = (
             validate_authors(values["excluded_author_ids"])
             if "excluded_author_ids" in values
             else None
         )
+        if "chunking_profile" in values and (
+            type(values["chunking_profile"]) is not str
+            or values["chunking_profile"] not in {"legacy", "episodes"}
+        ):
+            raise UserError("Неизвестная политика чанкинга.")
         for key, value in values.items():
-            if key == "excluded_author_ids":
+            if key in {"excluded_author_ids", "chunking_profile"}:
                 continue
             if type(value) is not int or not 1 <= value <= fields[key][1]:
                 raise UserError("Недопустимый размер батча индексации.")
@@ -69,9 +95,36 @@ class ChatIndexing:
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
                 raise UserError("Диалог не найден.")
             for key, value in values.items():
-                if key == "excluded_author_ids":
+                if key in {"excluded_author_ids", "chunking_profile"}:
                     continue
                 conn.execute(f"UPDATE chats SET {fields[key][0]}=? WHERE id=?", (value, chat_id))
+            if "chunking_profile" in values:
+                selected = values["chunking_profile"]
+                if selected not in {"legacy", "episodes"}:
+                    raise UserError("Неизвестная политика чанкинга.")
+                policy_id = LEGACY_POLICY_ID if selected == "legacy" else DEFAULT_POLICY.identity
+                current = conn.execute(
+                    "SELECT policy_id FROM chat_chunking WHERE chat_id=?", (chat_id,)
+                ).fetchone()
+                if (current[0] if current else LEGACY_POLICY_ID) != policy_id:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO chunking_policies VALUES(?,?)",
+                        (DEFAULT_POLICY.identity, DEFAULT_POLICY.json),
+                    )
+                    conn.execute(
+                        "INSERT INTO chat_chunking VALUES(?,?) ON CONFLICT(chat_id) "
+                        "DO UPDATE SET policy_id=excluded.policy_id",
+                        (chat_id, policy_id),
+                    )
+                    days = {
+                        utc_day(row[0])
+                        for row in conn.execute(
+                            "SELECT DISTINCT timestamp FROM messages WHERE chat_id=?", (chat_id,)
+                        )
+                    }
+                    invalidate_segments(conn, chat_id, days, "chunking_policy")
+                    bump_revision(conn, chat_id)
+                    self.semantic.estimates.cache.clear()
             if authors is not None and update_authors(conn, chat_id, authors):
                 self.semantic.estimates.cache.clear()
             if {"ocr_batch_size", "ocr_region_batch_size"} & values.keys():

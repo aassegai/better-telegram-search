@@ -5,6 +5,7 @@ export type Chat = {
 export type SearchModality = 'text' | 'images' | 'ocr';
 export type ChatIndexStatus = {
   semantic: SemanticStatus; media: MediaStatus;
+  chunking?: { profile: string; policy_id: string; max_messages: number; max_tokens: number; skipped_messages: number };
   excluded_author_ids?: string[]; excluded_messages?: number;
 };
 export type Message = {
@@ -25,7 +26,7 @@ export type Hit = {
   ocr_confidence?: number | null;
   ocr_match?: { kind: 'exact' | 'substring' | 'fuzzy'; edits: number };
   ocr_range?: { char_start: number; char_end: number };
-  chunk_id?: string;
+  chunk_id?: string | null;
   matched_parts?: { message_id: number; char_start: number; char_end: number }[];
 };
 

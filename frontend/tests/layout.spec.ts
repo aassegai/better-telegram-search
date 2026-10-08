@@ -93,7 +93,7 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 900, height: 400 
     await page.getByRole('button', { name: /Настройки индексации / }).first().click();
     const index = page.getByRole('dialog');
     await expect(index.getByRole('region', { name: 'Исключения авторов' })).toBeAttached();
-    await expect(index.locator('.index-card')).toHaveCount(5);
+    await expect(index.locator('.index-card')).toHaveCount(6);
     const indexClose = index.getByRole('button', { name: 'Закрыть', exact: true });
     const indexInitial = (await indexClose.boundingBox())!;
     const indexBounds = (await index.locator('.modal').boundingBox())!;

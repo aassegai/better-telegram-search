@@ -20,9 +20,9 @@ class HybridSearch:
             "c.embedding_space_id=? AND c.generation=s.target_generation "
             "AND s.chunk_generation=s.target_generation "
             "AND s.dense_generation=s.target_generation AND s.embedding_space_id=? "
-            "AND EXISTS(SELECT 1 FROM chunk_parts p JOIN indexable_messages m "
+            "AND EXISTS(SELECT 1 FROM chunk_embedding_parts p JOIN indexable_messages m "
             "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
-            f"WHERE p.chunk_id=c.id AND {where})"
+            f"WHERE p.chunk_id=c.id AND p.role<>'borrowed_context' AND {where})"
         )
         if filters.exclude_deleted:
             predicate += (
@@ -94,19 +94,36 @@ class HybridSearch:
                 )
                 candidates = self.db.settings.retrieval_candidates
                 lexical = []
+                lexical_anchors = {}
                 match = fts_query(query, False)
                 if mode == "hybrid" and match:
-                    lexical = [
-                        row[0]
-                        for row in conn.execute(
-                            "SELECT c.id FROM chunk_fts JOIN chunks c "
-                            "ON c.rowid=chunk_fts.rowid JOIN index_segments s "
-                            "ON s.chat_id=c.chat_id AND s.utc_day=c.utc_day "
-                            f"WHERE chunk_fts MATCH ? AND {predicate} "
-                            "ORDER BY bm25(chunk_fts),c.id LIMIT ?",
-                            [match, *params, candidates],
+                    # Source FTS covers filler-only days and messages with no dense
+                    # chunk. Never use derived model text to confirm literal words.
+                    source_where, source_params = filters.sql()
+                    for row in conn.execute(
+                        "SELECT m.*,ch.name AS chat_name FROM message_fts "
+                        "JOIN indexable_messages m ON m.rowid=message_fts.rowid "
+                        "JOIN chats ch ON ch.id=m.chat_id WHERE message_fts MATCH ? "
+                        f"AND {source_where} ORDER BY bm25(message_fts),"
+                        "m.chat_id,m.message_id LIMIT ?",
+                        [match, *source_params, candidates],
+                    ):
+                        mapped = conn.execute(
+                            "SELECT c.id FROM chunk_parts p JOIN chunks c ON c.id=p.chunk_id "
+                            "JOIN index_segments s ON s.chat_id=c.chat_id AND s.utc_day=c.utc_day "
+                            "WHERE p.chat_id=? AND p.message_id=? AND c.embedding_space_id=? "
+                            "AND c.generation=s.target_generation "
+                            "AND s.dense_generation=s.target_generation "
+                            "ORDER BY c.ordinal LIMIT 1",
+                            (row["chat_id"], row["message_id"], encoder.space_id),
+                        ).fetchone()
+                        key = (
+                            mapped[0] if mapped else f"message:{row['chat_id']}:{row['message_id']}"
                         )
-                    ]
+                        if key in lexical_anchors:
+                            key = f"message:{row['chat_id']}:{row['message_id']}"
+                        lexical.append(key)
+                        lexical_anchors[key] = row
 
                 def eligible(ids):
                     placeholders = ",".join("?" for _ in ids)
@@ -153,37 +170,51 @@ class HybridSearch:
                     )
                     anchor_params = [match.replace(" AND ", " OR ")]
                 for chunk_id in sorted(scores, key=lambda key: (-scores[key], key)):
-                    anchor = conn.execute(
-                        "SELECT m.*,ch.name AS chat_name FROM chunk_parts p "
-                        "JOIN indexable_messages m "
-                        "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
-                        "JOIN chats ch ON ch.id=m.chat_id "
-                        f"WHERE p.chunk_id=? AND {witness} "
-                        f"ORDER BY {anchor_order}p.ordinal LIMIT 1",
-                        [chunk_id, *witness_params, *anchor_params],
-                    ).fetchone()
+                    anchor = lexical_anchors.get(chunk_id)
+                    if anchor is None:
+                        anchor = conn.execute(
+                            "SELECT m.*,ch.name AS chat_name FROM chunk_embedding_parts p "
+                            "JOIN indexable_messages m "
+                            "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
+                            "JOIN chats ch ON ch.id=m.chat_id "
+                            f"WHERE p.chunk_id=? AND p.role<>'borrowed_context' AND {witness} "
+                            f"ORDER BY {anchor_order}CASE WHEN p.role='core' THEN 0 ELSE 1 END,"
+                            "p.ordinal LIMIT 1",
+                            [chunk_id, *witness_params, *anchor_params],
+                        ).fetchone()
                     if not anchor or (anchor["chat_id"], anchor["message_id"]) in seen:
                         continue
                     if len(results) == limit:
                         more = True
                         break
                     context = self.context.get_result_context(conn, anchor, chunk_size, filters)
-                    seen.update((anchor["chat_id"], item["message_id"]) for item in context)
+                    # UI neighbors are not evidence and must not suppress another hit.
+                    seen.add((anchor["chat_id"], anchor["message_id"]))
                     parts = [
                         dict(row)
                         for row in conn.execute(
-                            "SELECT message_id,char_start,char_end FROM chunk_parts "
-                            "WHERE chunk_id=? ORDER BY ordinal",
+                            "SELECT message_id,char_start,char_end FROM chunk_embedding_parts "
+                            "WHERE chunk_id=? AND role<>'borrowed_context' ORDER BY ordinal",
                             (chunk_id,),
                         )
                     ]
+                    if "words" in branches[chunk_id] or not parts:
+                        # Lexical evidence is the actual canonical source hit;
+                        # omitted filler is not falsely marked as dense evidence.
+                        source_part = {
+                            "message_id": anchor["message_id"],
+                            "char_start": 0,
+                            "char_end": len(anchor["text"]),
+                        }
+                        if source_part not in parts:
+                            parts.append(source_part)
                     results.append(
                         {
                             "chat_id": anchor["chat_id"],
                             "chat_name": anchor["chat_name"],
                             "anchor_message_id": anchor["message_id"],
                             "message_id": anchor["message_id"],
-                            "chunk_id": chunk_id,
+                            "chunk_id": None if chunk_id.startswith("message:") else chunk_id,
                             "timestamp": anchor["timestamp"],
                             "messages": context,
                             "matched_parts": parts,

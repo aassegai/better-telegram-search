@@ -25,7 +25,9 @@ class TestEncoder:
 
     def __init__(self, space="synthetic", on_encode=None):
         self.space_id = space
-        self.spec = SimpleNamespace(profile="small", dimension=4)
+        self.spec = SimpleNamespace(
+            profile="small", dimension=4, manifest={"passage_prefix": "passage: "}
+        )
         self.space_manifest = {"test": space}
         self.tokenizer = SimpleNamespace(count=lambda text: len(text.split()) + 2)
         self.on_encode = on_encode
@@ -276,7 +278,8 @@ def test_filters_use_one_witness_and_context_keeps_original(db, importer, tmp_pa
     assert hit["messages"][0]["text"].endswith("🙂" * 2000)
     assert not hit["messages"][0]["matches_filters"]
     assert hit["messages"][1]["matches_filters"]
-    assert set(hit["matched_by"]) == {"words", "meaning"}
+    # The filtered author did not write the query term; UI context is not evidence.
+    assert set(hit["matched_by"]) == {"meaning"}
 
 
 def test_single_scan_rejects_unpublished_nearest_vectors_before_top_k(db, importer, tmp_path):

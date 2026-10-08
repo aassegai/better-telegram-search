@@ -304,6 +304,29 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_paused")
         # Reconstruct the pre-v6 schema, including removal of later optional
         # source/search migrations before replaying all migrations.
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'chunk_context_%'"
+        ).fetchall():
+            conn.execute(f'DROP TRIGGER "{row[0]}"')
+        for name in ("chunk_context_owners", "chunk_context_intervals"):
+            conn.execute(f'DROP VIEW "{name}"')
+        for name in (
+            "segment_context_dependencies",
+            "segment_context_ranges",
+            "chunk_context_dirty",
+            "chunk_context_dependencies",
+            "chunk_embedding_parts",
+            "chat_chunking",
+            "chunking_policies",
+        ):
+            conn.execute(f'DROP TABLE "{name}"')
+        for table, columns in (
+            ("index_segments", ("chunking_policy_id",)),
+            ("index_work", ("chunking_policy_id", "source_messages", "skipped_messages")),
+            ("chunks", ("chunking_policy_id", "lexical_text")),
+        ):
+            for column in columns:
+                conn.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
         for trigger in (
             "chats_search_ai",
             "chats_search_ad",

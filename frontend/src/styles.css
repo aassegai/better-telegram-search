@@ -281,3 +281,6 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .search-options { flex-wrap: wrap; gap: 12px; }
 
 .more-results { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin: 1.5rem 0; }
+
+.chunking-settings label { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+.chunking-settings select { width: 100%; min-width: 0; max-width: 100%; min-height: 2.5rem; }

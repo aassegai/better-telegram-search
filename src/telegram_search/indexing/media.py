@@ -818,7 +818,10 @@ class MediaService(MediaImages):
         from telegram_search.search.chunks import ChunkBuilder, SourceMessage
 
         chunks = list(
-            ChunkBuilder(encoder.tokenizer, max_messages=1, overlap=0).build(
+            ChunkBuilder(
+                encoder.tokenizer, max_messages=1, overlap=0,
+                passage_prefix=encoder.spec.manifest.get("passage_prefix", "passage: "),
+            ).build(
                 [SourceMessage(row["sha256"], 1, 0, "OCR", row["text"])], 1, encoder.space_id
             )
         )

@@ -11,6 +11,8 @@ search and photo search use ONNX Runtime.
 
 Per-chat indexing settings let you exclude authors, including their messages, images and OCR. **Show more** loads the next results from a cache of up to 100 ranked matches without running the models again.
 
+[Text fragment rules and explicit rebuilding](docs/chunking.en.md).
+
 ## Quickstart
 
 ### Download a ready-to-run build

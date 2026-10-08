@@ -588,5 +588,14 @@
   "Показать ещё": "Show more",
   "Загружаем…": "Loading…",
   "Следующие результаты загружаются из кэша поиска.": "More results load from the search cache.",
-  "Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.": "Showing the first {p0} fragments. Refine your query or filters to find more."
+  "Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.": "Showing the first {p0} fragments. Refine your query or filters to find more.",
+  "Формирование текстовых фрагментов": "Text fragment construction",
+  "Правила чанкинга": "Chunking rules",
+  "Исходные окна": "Original windows",
+  "Диалог с фильтрацией однословного шума": "Conversation with single-word noise filtering",
+  "До 8 содержательных сообщений и 480 токенов. Короткие реплики и контекст расходуют токены, но не лимит сообщений. Подписи с содержанием считаются обычными сообщениями.": "Up to 8 meaningful messages and 480 tokens. Short replies and context use tokens without using message slots. Meaningful captions count as regular messages.",
+  "Новые правила сохраняют исходную переписку и поиск по словам. Смена правил перестраивает только текстовый индекс этого диалога; паузы, картинки и распознанный OCR сохраняются.": "New rules preserve the original conversation and keyword search. Changing rules rebuilds only this conversation’s text index; pauses, images and recognized OCR are preserved.",
+  "Пропущено в смысловом индексе: {p0}": "Omitted from the semantic index: {p0}",
+  "Применить и переиндексировать текст": "Apply and rebuild text index",
+  "До 8 сообщений и 480 токенов. Короткие реплики расходуют лимит сообщений; однословный шум не фильтруется.": "Up to 8 messages and 480 tokens. Short replies use message slots; single-word noise is not filtered."
 }
