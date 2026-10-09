@@ -11,7 +11,12 @@ search and photo search use ONNX Runtime.
 
 Per-chat indexing settings let you exclude authors, including their messages, images and OCR. **Show more** loads the next results from a cache of up to 100 ranked matches without running the models again.
 
-[Text fragment rules and explicit rebuilding](docs/chunking.en.md).
+Version 0.6.0 offers **BERTA** and **SigLIP 2** for new indexes, with optional
+**Giga** text/OCR reranking disabled by default. Existing E5/CLIP indexes keep
+working. Changing models or fragment rules requires explicit reindexing; messages
+and completed OCR recognition are preserved.
+
+[Text fragment rules](docs/chunking.en.md) · [Models and reindexing](docs/model-migration.en.md).
 
 ## Quickstart
 
@@ -37,7 +42,7 @@ your system theme; your subsequent choice is saved.
 For NVIDIA on Windows/Linux x64, choose an archive ending in `-gpu`. Torch and a
 separate CUDA installation are unnecessary; a compatible NVIDIA driver is required.
 Set **Indexing device → GPU** and **Search device → CPU** separately for
-**E5** and **CLIP** in settings.
+the text and image models in settings.
 Click **Apply device**, then resume indexing.
 Both devices use one index, preserving completed chunks and progress.
 GPU sessions are unloaded when indexing is paused or finished.
@@ -94,14 +99,14 @@ run the commands without the environment prefix. [Device details](docs/gpu-and-u
    containing `result.json`; usually you can leave it blank.
 3. Enter a query and click **Search**. **Keywords** search works immediately after
    import. Click **Open context** to see the surrounding messages.
-4. Open **Settings** and prepare **E5** for semantic search, **CLIP** for photos,
+4. Open **Settings** and prepare **BERTA** for semantic search, **SigLIP 2** for photos,
    or **OCR** for text in images. Then open **⋯** beside a chat and click
    **Resume indexing**, **Resume OCR**, or **Resume semantic OCR** for the required stage.
 5. The chat menu contains text, image, and OCR batch sizes, progress, and an estimate
    for the whole remaining queue. Larger GPU batches use more memory; the app
    retries smaller batches if memory runs out.
    OCR has separate image and text-region batch sizes. Pause recognition and its
-   semantic index independently of CLIP. Open **Sources** in the same chat menu to
+   semantic index independently of image indexing. Open **Sources** in the same chat menu to
    check attachments or relink a moved export folder.
 6. **Keywords and meaning** is the default mode. Keyword search remains available
    while the semantic index is being built. Combine **Text**, **Images**, and
@@ -128,9 +133,7 @@ The developer configures Telegram API application identifiers once for a build.
 If your build says Telegram is not configured, see [Telegram setup](docs/telegram-sync.en.md),
 including private session storage, history limits and disconnect versus logout.
 
-Preparing E5/CLIP/PaddleOCR downloads the models; subsequent searches work offline.
+Preparing BERTA/SigLIP 2/PaddleOCR downloads the models; subsequent searches work offline.
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.
-
-[Models and reindexing](docs/model-migration.en.md)

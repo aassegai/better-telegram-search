@@ -92,4 +92,4 @@ uv run telegram-search --workspace ./workspace prepare-media --kind images --pro
 The separate CPU-only uv export project is documented in
 [tools/model-export](../tools/model-export/README.md). The application never performs
 that export. ONNX bundles use the separate `model-bundles-v1` prerelease, excluded
-from application updates. No new application release version has been declared yet.
+from application updates. These changes ship in application release 0.6.0.

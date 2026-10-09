@@ -92,4 +92,4 @@ uv run telegram-search --workspace ./workspace prepare-media --kind images --pro
 Экспорт и его отдельное CPU-окружение uv описаны в
 [tools/model-export](../tools/model-export/README.md). Приложение не выполняет этот экспорт.
 ONNX model bundles публикуются отдельным prerelease `model-bundles-v1`, который не
-считается обновлением приложения. Новая версия приложения для этих изменений пока не объявлена.
+считается обновлением приложения. Эти изменения входят в релиз приложения 0.6.0.

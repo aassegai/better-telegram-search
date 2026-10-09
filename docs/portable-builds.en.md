@@ -2,8 +2,9 @@
 
 Each build includes Python, the interface, ONNX Runtime, LanceDB, tokenizers, and
 Tesseract with Russian and English dictionaries. You do not need Python, uv,
-Node.js, or a system Tesseract installation to run it. Download E5, CLIP, and PaddleOCR from
-settings; their model revisions are pinned. Tesseract OCR preparation works offline with
+Node.js, or a system Tesseract installation to run it. Download BERTA, SigLIP 2,
+optional Giga, and PaddleOCR from settings; revisions and checksums are pinned.
+Legacy E5 and CLIP remain available. Tesseract OCR preparation works offline with
 the bundled dictionaries. Conversations and search indexes are not included.
 
 | Platform | Architecture | Minimum OS | Format |
@@ -85,7 +86,7 @@ and Telegram archives stay out of Git.
 
 Publishing is a separate step authorized by a checked-in
 `.github/releases/v<version>.json` request on `main` or a manual run of
-`Publish verified release`. Version 0.3.0 requires seven successful native builds and
+`Publish verified release`. Publication requires seven successful native builds and
 verifies uploaded JSON reports and archive checksums before publishing the draft.
 Application code must match the verified builds; existing tags are never replaced.
 
