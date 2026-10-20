@@ -10,6 +10,7 @@ from telegram_search.indexing.worker import SegmentWorker
 from telegram_search.inference.resources import configure_gpu_load
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
+from telegram_search.storage.chunking import reset_for_rebuild
 from telegram_search.storage.generations import invalidate_segments
 
 
@@ -137,6 +138,8 @@ class SemanticService:
                         int(time.time()),
                     ),
                 )
+                if reindex:
+                    reset_for_rebuild(conn)
                 if current != encoder.space_id or reindex:
                     for row in conn.execute("SELECT chat_id,utc_day FROM index_segments"):
                         invalidate_segments(conn, row["chat_id"], {row["utc_day"]}, "model_reindex")

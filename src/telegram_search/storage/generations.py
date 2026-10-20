@@ -1,6 +1,8 @@
 import time
 from datetime import UTC, datetime
 
+from telegram_search.storage.chunking import ensure_chat_policy
+
 
 def utc_day(timestamp: int) -> str:
     return datetime.fromtimestamp(timestamp, UTC).date().isoformat()
@@ -8,12 +10,6 @@ def utc_day(timestamp: int) -> str:
 
 def invalidate_segments(conn, chat_id: str, days: set[str], reason: str) -> None:
     """Publish source changes and idempotent derivative work in the same transaction."""
-    from telegram_search.search.chunking.policy import LEGACY_POLICY_ID
-
-    selected = conn.execute(
-        "SELECT policy_id FROM chat_chunking WHERE chat_id=?", (chat_id,)
-    ).fetchone()
-    policy_id = selected[0] if selected else LEGACY_POLICY_ID
     # Dependency triggers also capture cross-day edits/deletions and exclusions.
     days = days | {
         row[0]
@@ -22,6 +18,9 @@ def invalidate_segments(conn, chat_id: str, days: set[str], reason: str) -> None
         )
     }
     conn.execute("DELETE FROM chunk_context_dirty WHERE chat_id=?", (chat_id,))
+    if not days:
+        return
+    policy_id = ensure_chat_policy(conn, chat_id)
     for day in sorted(days):
         row = conn.execute(
             "SELECT target_generation FROM index_segments WHERE chat_id=? AND utc_day=?",

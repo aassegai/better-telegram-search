@@ -72,7 +72,7 @@ class TestEncoder:
         assert json.loads(manifest_json) == self.space_manifest
 
 
-def setup_index(db, importer, tmp_path, texts=None):
+def setup_index(db, importer, tmp_path, texts=None, *, legacy=True):
     texts = texts or [f"поезд синтетический текст {i}" for i in range(40)]
     result = load(
         importer,
@@ -86,6 +86,14 @@ def setup_index(db, importer, tmp_path, texts=None):
             ],
         ),
     )
+    if legacy:
+        # These regressions intentionally exercise historical windows/checkpoints.
+        # New application imports use episodes by default.
+        with db.connect() as conn:
+            conn.execute(
+                "UPDATE chat_chunking SET policy_id='telegram-windows-v1' WHERE chat_id=?",
+                (result["chat_id"],),
+            )
     service = SemanticService(db, importer.lifecycle_lock, start_background=False)
     encoder = TestEncoder()
     service.activate(encoder)

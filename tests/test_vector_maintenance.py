@@ -73,6 +73,12 @@ def test_clear_one_vector_kind_preserves_other_partitions_and_can_resume(db, imp
         assert conn.execute("SELECT COUNT(*) FROM ocr_cache WHERE state='ready'").fetchone()[0] == 1
         assert conn.execute("SELECT ocr_paused FROM media_state").fetchone()[0] == 0
         if kind == "text":
+            assert (
+                ChatIndexing(db, semantic, media, importer.lifecycle_lock).status(chat)["chunking"][
+                    "profile"
+                ]
+                == "episodes"
+            )
             assert semantic.status()["ready_segments"] == 0
             assert not conn.execute("SELECT 1 FROM chats WHERE text_paused=0").fetchone()
         if kind == "images":

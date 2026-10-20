@@ -12,8 +12,9 @@ Updating the application never switches models or rebuilds indexes automatically
 
 Switching text models requires explicit reindexing. BERTA gets a separate space;
 E5 vectors are never renamed or mixed with it. Message and semantic OCR vectors
-are rebuilt. Recognition results, original images, author exclusions, chunking
-policy, batches, devices and pauses remain. The chunk budget is 8 meaningful
+are rebuilt. Recognition results, original images, author exclusions, batches,
+devices and pauses remain. A full text rebuild uses advanced chunking by default.
+The chunk budget is 8 meaningful
 messages and 480 tokens of the selected tokenizer, including prefix/special tokens.
 Retained short context consumes tokens.
 

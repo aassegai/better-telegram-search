@@ -5,6 +5,7 @@ from conftest import export, load, message
 from test_chat_indexing import controls
 from test_semantic import setup_index
 
+from telegram_search.search.chunking.policy import DEFAULT_POLICY
 from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.lexical import Filters
 from telegram_search.storage.generations import invalidate_segments, utc_day
@@ -21,6 +22,41 @@ def enable_episodes(db, importer, service, chat):
             )
         ]
     return indexing, media, works
+
+
+def test_advanced_default_filters_noise_without_opt_in(db, importer, tmp_path):
+    chat, service, worker, work = setup_index(
+        db, importer, tmp_path, ["сука", "блядь"], legacy=False
+    )
+    try:
+        indexing, _ = controls(db, importer, service)
+        assert indexing.status(chat)["chunking"]["profile"] == "episodes"
+        result = worker.run(work)
+        assert result["state"] == "done" and result["skipped_messages"] == 2
+        assert result["chunks_total"] == 0
+        assert HybridSearch(db, service, importer.lifecycle_lock).search("сука", mode="words")[
+            "results"
+        ]
+    finally:
+        service.shutdown()
+
+
+def test_explicit_full_model_rebuild_adopts_advanced_rules(db, importer, tmp_path):
+    chat, service, worker, work = setup_index(db, importer, tmp_path)
+    try:
+        assert worker.run(work)["state"] == "done"
+        service.activate(service.encoder, reindex=True)
+        indexing, _ = controls(db, importer, service)
+        assert indexing.status(chat)["chunking"]["profile"] == "episodes"
+        with db.connect() as conn:
+            assert {
+                row[0]
+                for row in conn.execute(
+                    "SELECT chunking_policy_id FROM index_work WHERE state='pending'"
+                )
+            } == {DEFAULT_POLICY.identity}
+    finally:
+        service.shutdown()
 
 
 def test_explicit_policy_rebuild_preserves_pauses_model_space_and_old_checkpoints(

@@ -3,6 +3,7 @@
 from telegram_search.indexing.exclusions import update_authors, validate_authors
 from telegram_search.search.chunking.policy import DEFAULT_POLICY, LEGACY_POLICY_ID
 from telegram_search.shared.errors import UserError
+from telegram_search.storage.chunking import chat_policy
 from telegram_search.storage.generations import bump_revision, invalidate_segments, utc_day
 
 
@@ -29,10 +30,7 @@ class ChatIndexing:
                 "ON x.chat_id=m.chat_id AND x.author_id=m.author_id WHERE m.chat_id=?",
                 (chat_id,),
             ).fetchone()[0]
-            policy = conn.execute(
-                "SELECT policy_id FROM chat_chunking WHERE chat_id=?", (chat_id,)
-            ).fetchone()
-            policy_id = policy[0] if policy else LEGACY_POLICY_ID
+            policy_id = chat_policy(conn, chat_id)
             skipped = conn.execute(
                 "SELECT coalesce(sum(w.skipped_messages),0) FROM index_work w "
                 "JOIN index_segments s ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
@@ -103,10 +101,7 @@ class ChatIndexing:
                 if selected not in {"legacy", "episodes"}:
                     raise UserError("Неизвестная политика чанкинга.")
                 policy_id = LEGACY_POLICY_ID if selected == "legacy" else DEFAULT_POLICY.identity
-                current = conn.execute(
-                    "SELECT policy_id FROM chat_chunking WHERE chat_id=?", (chat_id,)
-                ).fetchone()
-                if (current[0] if current else LEGACY_POLICY_ID) != policy_id:
+                if chat_policy(conn, chat_id) != policy_id:
                     conn.execute(
                         "INSERT OR IGNORE INTO chunking_policies VALUES(?,?)",
                         (DEFAULT_POLICY.identity, DEFAULT_POLICY.json),

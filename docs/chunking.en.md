@@ -1,10 +1,8 @@
 # Text fragments
 
-Open **Text fragment construction** in a conversation's indexing settings.
-Select **Conversation with single-word noise filtering** and explicitly click
-**Apply and rebuild text index**. This rebuilds only that conversation's text
-fragments, preserving pauses, devices, images and recognized OCR. New semantic
-results become available as daily segments finish; keyword search covers the archive.
+New text indexes use advanced chunking with single-word noise filtering by default.
+There is no rule selector or separate apply button. Semantic results become
+available as daily segments finish; keyword search covers the whole archive.
 
 The limits are **8 meaningful messages and 480 tokens**, including the model prefix,
 author labels and special tokens. Retained short replies, standalone terms, numbers,
@@ -28,11 +26,11 @@ Long messages split at paragraph, sentence and word boundaries with bounded toke
 overlap and original Unicode ranges. Source and model provenance remain separate.
 Preview neighbors do not suppress independent search evidence.
 
-**Original windows** retain previous behavior: every message uses a slot and
-single-word noise is not filtered. Existing indices and checkpoints keep this policy
-until you explicitly switch. Changing document rules creates a new generation;
-changing execution devices or batch sizes does not. Untagged bot-command filtering
-is deferred.
+Existing indexes and unfinished checkpoints keep their frozen rules, so an update
+does not restart indexing. An explicit full text-index rebuild (after clearing it
+or confirming reindexing during model preparation) uses advanced chunking.
+Changing execution devices or batch sizes does not change the rules.
+Untagged bot-command filtering is deferred.
 
 To analyze an explicitly chosen export locally:
 

@@ -123,6 +123,9 @@ class VectorMaintenance:
 
     def _reset(self, conn, kind):
         if kind == "text":
+            from telegram_search.storage.chunking import reset_for_rebuild
+
+            reset_for_rebuild(conn)
             chats = [row[0] for row in conn.execute("SELECT id FROM chats")]
             for chat in chats:
                 days = {
