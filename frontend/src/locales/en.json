@@ -624,6 +624,8 @@
   "Дополнительно сортирует до 50 текстовых и до 50 OCR-фрагментов. Индекс не перестраивается. Поиск может занять больше времени.": "Rescores up to 50 text and OCR candidates per branch. No reindexing is needed. Searches may take longer.",
   "Производительность GPU": "GPU performance",
   "Лимиты GPU": "GPU limits",
+  "CPU, память и очереди": "CPU, memory and queues",
+  "Настройки ресурсов сохранены.": "Resource settings saved.",
   "Видеопамять на модель (МиБ)": "VRAM per model (MiB)",
   "Экономный": "Economy",
   "Сбалансированный": "Balanced",

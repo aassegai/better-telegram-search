@@ -225,7 +225,16 @@ def create_app(
                 parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
             ):
                 return JSONResponse({"detail": "Недопустимый origin."}, status_code=403)
-        if request.headers.get("sec-fetch-site") == "cross-site":
+        # A browser can retain cross-site navigation metadata when reloading
+        # after an update. Only the top-level app shell is a safe entry point;
+        # API data, assets and embedded documents keep the cross-site guard.
+        app_navigation = (
+            request.method == "GET"
+            and request.url.path == "/"
+            and request.headers.get("sec-fetch-mode") == "navigate"
+            and request.headers.get("sec-fetch-dest") == "document"
+        )
+        if request.headers.get("sec-fetch-site") == "cross-site" and not app_navigation:
             return JSONResponse(
                 {"detail": "Доступ разрешён только из локального приложения."}, status_code=403
             )

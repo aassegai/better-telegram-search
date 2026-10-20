@@ -199,6 +199,7 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .limit-presets button { flex: 1 1 auto; min-width: 90px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
 .limit-presets button[aria-pressed="true"] { background: var(--selected-bg, #dfebd3); border-color: var(--accent, #92ae7f); font-weight: 650; }
 .gpu-performance input[type="range"] { width: 100%; accent-color: var(--accent, #2a7153); }
+.resource-settings > section + section { margin-top: 20px; padding-top: 8px; border-top: 1px solid var(--line, #d8e2ce); }
 .vector-storage-list { display: grid; gap: 10px; margin: 16px 0; }
 .vector-storage-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line, #dce4d8); border-radius: 10px; }
 .vector-storage-card > div { min-width: 0; }

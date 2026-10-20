@@ -66,8 +66,8 @@ Select GPU indexing and resume; completed CPU chunks do not need rebuilding.
 Use **Settings → Disk usage** to clear text, image or OCR vectors separately
 across all chats. The app waits for the current batch, reclaims disk space and
 leaves the selected index paused. Messages, models and recognized OCR text are
-preserved; resume indexing from the desired chat menu. **GPU performance** controls
-memory per CUDA model and the target indexing load. Load changes take effect
+preserved; resume indexing from the desired chat menu. **Shared indexing resources**
+combines CPU, RAM, memory per CUDA model and GPU indexing load. Load changes take effect
 while indexing; pause indexing before changing memory.
 
 ### Run from source

@@ -32,6 +32,66 @@ def test_mutations_require_token_host_and_origin(client, tmp_path):
     )
 
 
+def test_cross_site_top_level_entry_keeps_security_headers_and_origin_checks(tmp_path):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    shell = "<!doctype html><title>Local app</title>"
+    (frontend / "index.html").write_text(shell, encoding="utf-8")
+    headers = {
+        "Sec-Fetch-Site": "cross-site",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+    }
+    with TestClient(
+        create_app(tmp_path / "workspace", frontend), base_url="http://127.0.0.1"
+    ) as client:
+        response = client.get("/", headers=headers)
+        assert response.status_code == 200
+        assert response.text == shell
+        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["Referrer-Policy"] == "no-referrer"
+        assert client.get("/", headers={**headers, "Host": "untrusted.test"}).status_code == 400
+        assert (
+            client.get("/", headers={**headers, "Origin": "https://untrusted.test"}).status_code
+            == 403
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "mode", "destination"),
+    [
+        ("/", None, None),
+        ("/", "navigate", "iframe"),
+        ("/", "navigate", "frame"),
+        ("/", "cors", "document"),
+        ("/", "no-cors", "image"),
+        ("/api/session", "navigate", "document"),
+        ("/api/settings", "navigate", "document"),
+        ("/api/search?q=test", "navigate", "document"),
+        ("/api/media/1", "navigate", "document"),
+        ("/assets/app.js", "navigate", "document"),
+    ],
+)
+def test_cross_site_entry_exception_does_not_expose_api_or_embeds(client, path, mode, destination):
+    headers = {"Sec-Fetch-Site": "cross-site"}
+    if mode:
+        headers["Sec-Fetch-Mode"] = mode
+    if destination:
+        headers["Sec-Fetch-Dest"] = destination
+    assert client.get(path, headers=headers).status_code == 403
+    token = client.get("/api/session").json()["token"]
+    assert (
+        client.patch(
+            "/api/settings",
+            headers={**headers, "X-Session-Token": token},
+            json={"gpu_index_load_percent": 25},
+        ).status_code
+        == 403
+    )
+
+
 def test_api_import_search_media_delete_and_shared_blob(client, tmp_path):
     root = tmp_path / "a"
     root.mkdir()

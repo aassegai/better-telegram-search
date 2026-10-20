@@ -42,7 +42,7 @@ test('resource settings persist and closing the panel ignores late media prepara
   await page.getByText('Общие ресурсы индексации', { exact: true }).first().click();
   await page.getByLabel('Потоков CPU', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Сохранить ресурсы' }).click();
-  await expect(page.getByText(/Настройки сохранены/)).toBeVisible();
+  await expect(page.getByText('Настройки ресурсов сохранены.', { exact: true })).toBeVisible();
   let release!: () => void;
   await page.route('**/api/media-index/prepare', async route => {
     await new Promise<void>(resolve => { release = resolve; });
