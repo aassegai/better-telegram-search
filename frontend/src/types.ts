@@ -30,7 +30,14 @@ export type Hit = {
   matched_parts?: { message_id: number; char_start: number; char_end: number }[];
 };
 
+export type IndexEstimate = {
+  lower_seconds: number | null; upper_seconds: number | null;
+  eta_samples?: number; measuring?: boolean; projected?: boolean; paused?: boolean; stale?: boolean;
+};
+
 export type MediaStatus = {
+  ocr_estimate?: IndexEstimate; images_estimate?: IndexEstimate; ocr_dense_estimate?: IndexEstimate;
+  preparation_estimate?: IndexEstimate;
   visual_profile?: 'clip' | 'siglip2';
   visual_profiles?: { profile: string; download_bytes: number }[];
   ocr_batch_size?: number; ocr_region_batch_size?: number;
@@ -54,6 +61,7 @@ export type MediaStatus = {
 };
 
 export type SemanticStatus = {
+  estimate?: IndexEstimate | null;
   batch_size?: number;
   runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;
   backend?: { device: string; provider: string; warning?: string | null; query_execution?: { device: string; provider: string } };

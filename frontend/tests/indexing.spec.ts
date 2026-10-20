@@ -1,5 +1,51 @@
 import { expect, test } from '@playwright/test';
 
+test('index ETA shows ranges, stale measurements and paused pipelines in both languages', async ({ page }) => {
+  let mode: 'running' | 'stale' | 'paused' | 'unknown' = 'running';
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    const estimate = { lower_seconds: mode === 'unknown' ? 0 : 600,
+      upper_seconds: mode === 'unknown' ? 0 : 900, eta_samples: 12,
+      measuring: mode === 'stale', projected: false, stale: mode === 'stale', paused: mode === 'paused' };
+    await route.fulfill({ json: { ...base,
+      semantic: { ...base.semantic, enabled: 1, profile: 'small', preparation_state: 'ready',
+        paused: Number(mode === 'paused'), ready_segments: 2, total_segments: 20,
+        works: [{ state: 'pending', count: 18, chunks_total: 100, chunks_done: 20 }],
+        estimate, estimated_remaining_seconds: mode === 'running' ? 750 : null },
+      media: { ...base.media, images_enabled: 1, ocr_enabled: 1, visual_profile: 'clip',
+        preparation_state: 'ready', paused: Number(mode === 'paused'), ocr_paused: Number(mode === 'paused'),
+        ocr_dense_paused: Number(mode === 'paused'), total_photos: 100, images_ready: 10,
+        ocr_ready: 20, ocr_failed: 0, ocr_nonempty_ready: 10, ocr_dense_ready: 5,
+        ocr_dense_available: true, images_estimated_remaining_seconds: 750,
+        ocr_estimated_remaining_seconds: 750, ocr_dense_estimated_remaining_seconds: 750,
+        images_estimate: estimate, ocr_estimate: estimate, ocr_dense_estimate: estimate,
+        preparation_estimated_remaining_seconds: null,
+        preparation_estimate: { ...estimate, upper_seconds: mode === 'unknown' ? 0 : 1800 },
+        queues: { ocr: { pending: 80, units_per_minute: 20 }, clip: { pending: 90, units_per_minute: 20 } },
+      },
+    } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const text = page.getByRole('region', { name: 'Текст · E5' });
+  await expect(text.locator('.index-eta')).toHaveText('Осталось примерно 10–15 мин.');
+  await page.getByText('Скорость и очереди подготовки', { exact: true }).click();
+  await expect(page.getByText('Вся подготовка: Осталось примерно 10–30 мин.')).toBeVisible();
+  mode = 'unknown';
+  await expect(text.locator('.index-eta')).toHaveText('Оценка появится после первых батчей.');
+  await expect(page.getByText('Вся подготовка: Собираем статистику для оценки времени.')).toBeVisible();
+  mode = 'stale';
+  await expect(text.locator('.index-eta')).toHaveText('Оценка уточняется: давно не было завершённых батчей.');
+  mode = 'paused';
+  await expect(text.locator('.index-eta')).toHaveText('Продолжите индексацию для оценки времени.');
+  await expect(page.getByText('Вся подготовка: Продолжите индексацию для оценки времени.')).toBeVisible();
+  await page.getByRole('slider').press('End');
+  await expect(page.getByText('All preparation: Resume indexing to estimate the remaining time.')).toBeVisible();
+  mode = 'running';
+  const english = page.getByRole('region', { name: 'Text · E5' });
+  await expect(english.locator('.index-eta')).toHaveText('About 10–15 min remaining.');
+});
+
 for (const paused of [false, true]) {
   test(`failed E5 queue shows its error and retries instead of displaying a stale ETA (${paused})`, async ({ page }) => {
     let retried = false;
@@ -135,15 +181,15 @@ for (const recognitionFailed of [0, 5]) {
   });
 }
 
-test('matching text and image cards offer large chat-scoped batches and whole-queue ETA', async ({ page }) => {
+test('matching text and image cards offer large chat-scoped batches without a paused ETA', async ({ page }) => {
   await mockIndex(page);
   await page.goto('/');
   await expect(page.getByLabel('Режим поиска')).toHaveValue('hybrid');
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
   const text = page.getByRole('region', { name: 'Текст · E5' });
   const images = page.getByRole('region', { name: 'Изображения · CLIP' });
-  await expect(text).toContainText('Осталось примерно 2 ч 0 мин.');
-  await expect(images).toContainText('Осталось примерно 10 мин.');
+  await expect(text).toContainText('Продолжите индексацию для оценки времени.');
+  await expect(images).toContainText('Продолжите индексацию для оценки времени.');
   for (const [card, max] of [[text, '128'], [images, '32']] as const) {
     await expect(card.getByRole('spinbutton')).toHaveAttribute('max', max);
     await expect(card.locator('.batch-presets button')).toHaveCount(6);
@@ -154,7 +200,7 @@ test('matching text and image cards offer large chat-scoped batches and whole-qu
   }));
   expect(dimensions[0]).toEqual(dimensions[1]);
   await page.getByRole('slider').press('End');
-  await expect(page.getByRole('region', { name: 'Text · E5' })).toContainText('About 2 h 0 min remaining.');
+  await expect(page.getByRole('region', { name: 'Text · E5' })).toContainText('Resume indexing to estimate the remaining time.');
   await expect(page.getByRole('region', { name: 'Images · CLIP' }).getByRole('spinbutton')).toHaveAccessibleName('Batch size: Images');
 });
 
@@ -308,7 +354,7 @@ test('OCR recognition and semantic progress are visible with chat-scoped ETA and
   await expect(ocr).toBeVisible();
   await expect(ocr).toContainText('Обработано: 25 / 100');
   await expect(ocr).toContainText('На паузе');
-  await expect(ocr).toContainText('Осталось примерно 30 мин.');
+  await expect(ocr).toContainText('Продолжите индексацию для оценки времени.');
   await expect(ocr).toContainText('OCR с ошибкой: 5');
   await expect(ocr.getByRole('progressbar', { name: 'Прогресс распознавания OCR', exact: true })).toHaveAttribute('value', '25');
   await expect(ocr.getByRole('progressbar', { name: 'Прогресс распознавания OCR', exact: true })).toHaveAttribute('max', '100');
@@ -317,7 +363,7 @@ test('OCR recognition and semantic progress are visible with chat-scoped ETA and
   await page.getByRole('slider').press('End');
   const english = page.getByRole('region', { name: 'Text in images · OCR' });
   await expect(english).toContainText('Processed: 25 / 100');
-  await expect(english).toContainText('About 30 min remaining.');
+  await expect(english).toContainText('Resume indexing to estimate the remaining time.');
   await expect(english).toContainText('Semantic OCR: 8 / 15 containing text');
 });
 
@@ -327,7 +373,8 @@ for (const done of [false, true]) {
       const response = await route.fetch();
       const value = await response.json();
       await route.fulfill({ json: { ...value, media: { ...value.media,
-        ocr_enabled: 1, images_enabled: 0, paused: 0, total_photos: 100,
+        ocr_enabled: 1, images_enabled: 0, paused: 0, ocr_paused: 0, ocr_dense_paused: 0, total_photos: 100,
+        ocr_estimate: { lower_seconds: null, upper_seconds: null },
         ocr_ready: done ? 100 : 0, ocr_failed: 0, ocr_dense_ready: 8,
         ocr_nonempty_ready: 15, ocr_dense_available: true,
         ocr_estimated_remaining_seconds: done ? 0 : null,

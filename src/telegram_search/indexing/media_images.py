@@ -65,6 +65,7 @@ class MediaImages:
             return self._index_images(encoder, chat, configured, limit_key, pending, photos)
 
     def _index_images(self, encoder, chat, configured, limit_key, pending, photos):
+        began = time.monotonic()
         photos = [row[0] for row in photos]
         key = (id(encoder), tuple(photos), configured)
         good, data, failures = self.image_prefetch.take(
@@ -104,11 +105,14 @@ class MediaImages:
         if not good:
             return True
 
+        published, errors = 0, len(failures)
+        cold = hasattr(encoder, "sessions") and "image" not in encoder.sessions
+
         def encode(hashes, values):
+            nonlocal published, errors
             with self.lock, self.db.connect() as conn:
                 if self.clip is not encoder or not any(self._current(conn, sha) for sha in hashes):
                     return
-            began = time.perf_counter()
             try:
                 if hasattr(encoder, "prepare_images"):
                     embeddings = encoder.encode_images([None] * len(values), _prepared=values)
@@ -116,6 +120,7 @@ class MediaImages:
                     embeddings = encoder.encode_images(values)
             except Exception as exc:
                 if len(hashes) == 1:
+                    errors += 1
                     self._failure(
                         hashes[0], encoder.space_id, "CLIP не смог обработать фотографию."
                     )
@@ -129,20 +134,41 @@ class MediaImages:
             else:
                 with self.lock:
                     if self.clip is encoder:
-                        self._publish(
+                        published += self._publish(
                             encoder.space_id,
                             getattr(encoder, "dimension", 512),
                             "image",
                             hashes,
                             embeddings,
-                            seconds=time.perf_counter() - began,
                         )
 
         encode(good, data)
-        self.last_used = time.monotonic()
+        finished = self.last_used = time.monotonic()
+        if published and self.clip is encoder:
+            with self.lock, self.db.connect() as conn:
+                record_rate(
+                    conn,
+                    "clip",
+                    encoder,
+                    published,
+                    finished - began,
+                    settings=self.db.settings,
+                    batch=min(configured, self.image_limits.get(limit_key, configured)),
+                    cold=cold,
+                    errors=errors,
+                )
+            self.metrics.record(
+                "clip",
+                self._stage_identity("clip"),
+                began,
+                finished,
+                units=published,
+                errors=errors,
+                phases=getattr(encoder, "last_timings", {}),
+            )
         return True
 
-    def _publish(self, space, dimension, kind, hashes, embeddings, *, seconds=None):
+    def _publish(self, space, dimension, kind, hashes, embeddings):
         self._register_space(space, dimension, kind)
         with self.lock, self.db.connect() as conn:
             chosen = [i for i, sha in enumerate(hashes) if self._current(conn, sha)]
@@ -156,7 +182,7 @@ class MediaImages:
                 for i in chosen
             ]
             if not rows:
-                return
+                return 0
             self.semantic._vector_store().upsert(space, dimension, rows, embeddings[chosen])
             conn.execute(
                 "INSERT OR IGNORE INTO media_spaces VALUES(?,?,?)", (space, dimension, kind)
@@ -165,15 +191,4 @@ class MediaImages:
                 "INSERT OR IGNORE INTO media_embeddings(id,sha256,space_id,kind) VALUES(?,?,?,?)",
                 [(row["id"], row["chat_id"], space, kind) for row in rows],
             )
-            if seconds is not None and self.clip:
-                record_rate(conn, "clip", self.clip, len(rows), seconds)
-        if seconds is not None and self.clip:
-            finished = time.monotonic()
-            self.metrics.record(
-                "clip",
-                self._stage_identity("clip"),
-                finished - seconds,
-                finished,
-                units=len(rows),
-                phases=getattr(self.clip, "last_timings", {}),
-            )
+        return len(rows)

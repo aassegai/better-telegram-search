@@ -124,9 +124,12 @@ class ChatIndexing:
                 self.semantic.estimates.cache.clear()
             if {"ocr_batch_size", "ocr_region_batch_size"} & values.keys():
                 conn.execute("DELETE FROM index_rates WHERE kind='ocr'")
+                conn.execute("DELETE FROM index_rate_samples WHERE kind='ocr'")
                 self.media.metrics.reset("ocr")
         if "embedding_batch" in values and self.semantic.encoder:
             self.semantic.encoder.index_batch_limit = None
+        if {"embedding_batch", "image_batch"} & values.keys():
+            self.semantic.estimates.cache.clear()
         if "image_batch" in values:
             with self.lock:
                 self.media.image_limits = {

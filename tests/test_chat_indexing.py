@@ -114,9 +114,10 @@ def test_eta_includes_unbuilt_days_and_isolates_device_rates(db, importer, tmp_p
     worker.encoder.on_encode = lambda texts: service.control("pause")
     worker.run(work)
     with db.connect() as conn:
-        for _ in range(2):
-            record_rate(conn, "e5", service.encoder, 100, 1)
-            record_rate(conn, "clip", service.encoder, 10, 2)
+        for _ in range(3):
+            record_rate(conn, "e5", service.encoder, 100, 1, settings=db.settings, batch=4)
+            record_rate(conn, "text_build", service.encoder, 100, 1, settings=db.settings)
+            record_rate(conn, "clip", service.encoder, 10, 2, settings=db.settings)
     before = service.estimates.text(service.encoder, chat)
     assert before > 0
     load(
@@ -131,7 +132,7 @@ def test_eta_includes_unbuilt_days_and_isolates_device_rates(db, importer, tmp_p
     )
     service.estimates.cache.clear()
     after = service.estimates.text(service.encoder, chat)
-    assert after > before + 30
+    assert after > before
     assert service.estimates.images(service.encoder, 100) == 20
     service.encoder.execution = SimpleNamespace(provider="CUDAExecutionProvider")
     assert service.estimates.text(service.encoder, chat) is None

@@ -31,12 +31,29 @@ class OcrQueue:
             (version, version),
         )
 
-    def claim(self, version, limit=1, *, configured=False, with_tokens=False, exclude=()):
+    def claim(
+        self,
+        version,
+        limit=1,
+        *,
+        configured=False,
+        with_tokens=False,
+        exclude=(),
+        with_configuration=False,
+    ):
         with self.db.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             self.activate(conn, version)
             if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
-                return ([], self.db.settings.ocr_region_batch_size) if configured else []
+                return (
+                    (
+                        ([], self.db.settings.ocr_region_batch_size, limit)
+                        if with_configuration
+                        else ([], self.db.settings.ocr_region_batch_size)
+                    )
+                    if configured
+                    else []
+                )
             scope, parameters = "", ()
             exclusion = (
                 (" AND w.sha256 NOT IN (" + ",".join("?" for _ in exclude) + ")") if exclude else ""
@@ -53,7 +70,14 @@ class OcrQueue:
                     (version, *exclude),
                 ).fetchone()
                 if not chat:
-                    return [], self.db.settings.ocr_region_batch_size
+                    return (
+                        ([], self.db.settings.ocr_region_batch_size, limit)
+                        if with_configuration
+                        else ([], self.db.settings.ocr_region_batch_size)
+                    )
+                requested = chat["ocr_batch"] or max(
+                    self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers
+                )
                 limit = min(
                     limit,
                     chat["ocr_batch"]
@@ -75,6 +99,8 @@ class OcrQueue:
                 ((token, version, row[0]) for row in rows),
             )
         values = [(row[0], token) if with_tokens else row[0] for row in rows]
+        if configured and with_configuration:
+            return values, region_batch, requested
         return (values, region_batch) if configured else values
 
     def release(self, version, claims):

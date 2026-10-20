@@ -147,6 +147,7 @@ See [Telegram setup](docs/telegram-sync.en.md) for private session storage, hist
 limits and disconnect versus logout.
 
 Preparing BERTA/SigLIP 2/PaddleOCR downloads the models; subsequent searches work offline.
+Remaining time is a range based on recent batches; see [how estimates work](docs/indexing-estimates.en.md).
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.

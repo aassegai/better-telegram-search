@@ -101,7 +101,7 @@ def test_ocr_eta_measures_its_own_queue_and_preserves_progress_on_restart(
     db, importer, tmp_path, monkeypatch
 ):
     chats = []
-    for i, color in enumerate(("red", "blue", "green")):
+    for i, color in enumerate(("red", "blue", "green", "yellow")):
         stream = io.BytesIO()
         Image.new("RGB", (64, 32), color).save(stream, format="PNG")
         chats.append(
@@ -125,8 +125,10 @@ def test_ocr_eta_measures_its_own_queue_and_preserves_progress_on_restart(
     assert media._index_cycle()
     assert media.status()["ocr_estimated_remaining_seconds"] is None
     assert media._index_cycle()
+    assert media.status()["ocr_estimated_remaining_seconds"] is None
+    assert media._index_cycle()
     status = media.status()
-    assert status["ocr_ready"] == 2 and status["total_photos"] == 3
+    assert status["ocr_ready"] == 3 and status["total_photos"] == 4
     assert status["ocr_estimated_remaining_seconds"] == 2
     for chat in chats:
         scoped = media.status(chat)
@@ -135,7 +137,7 @@ def test_ocr_eta_measures_its_own_queue_and_preserves_progress_on_restart(
 
     _, restarted = services(db, importer)
     fake_ocr(restarted)
-    assert restarted.status()["ocr_ready"] == 2
+    assert restarted.status()["ocr_ready"] == 3
     assert restarted.status()["ocr_estimated_remaining_seconds"] == 2
     restarted.ocr.threads = 2
     assert restarted.status()["ocr_estimated_remaining_seconds"] is None
@@ -170,7 +172,11 @@ def test_ocr_failed_items_finish_queue_and_pause_flushes_completed_results(
     status = media.status()
     assert status["ocr_failed"] == 0 and status["ocr_ready"] == 1
     with db.connect() as conn:
-        assert conn.execute("SELECT batches FROM index_rates WHERE kind='ocr'").fetchone()[0] == 2
+        # A timeout is not a throughput sample; the successful retry is preserved.
+        assert (
+            conn.execute("SELECT COUNT(*) FROM index_rate_samples WHERE kind='ocr'").fetchone()[0]
+            == 1
+        )
 
 
 def test_media_publication_does_not_resurrect_deleted_chat(db, importer, tmp_path):

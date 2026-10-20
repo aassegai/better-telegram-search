@@ -46,6 +46,8 @@ class ResourceMetrics:
 
 
 class StageMetrics:
+    """Pipeline diagnostics only; completion forecasts live in indexing.rates."""
+
     def __init__(self, window=64):
         self.samples = {}
         self.lock = threading.Lock()
@@ -103,11 +105,5 @@ class StageMetrics:
             "p95_seconds": round(durations[math.ceil(len(durations) * 0.95) - 1], 4)
             if durations
             else None,
-            "estimated_remaining_seconds": round(pending / rate, 1)
-            if pending > 0 and rate
-            else 0.0
-            if pending <= 0
-            else None,
             "phase_means": phases,
-            "measuring": pending > 0 and rate is None,
         }

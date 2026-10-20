@@ -5,12 +5,14 @@ import { estimatedTime } from './estimatedTime';
 import { useDialogOperation } from './useDialogOperation';
 import type { ReactNode } from 'react';
 import IndexErrors from './IndexErrors';
+import type { IndexEstimate } from './types';
 
 export type Mutation = { onStart?: () => void; onEnd?: () => void; pending?: boolean };
 type Props = Mutation & {
   title: string; model: string; ready: number; total: number; paused: boolean;
   enabled: boolean; preparing: boolean; seconds?: number | null; chatId?: string;
   blocked?: boolean; failed?: number;
+  estimate?: IndexEstimate | null;
   batch: number; kind: 'embedding_batch' | 'image_batch'; busy: boolean;
   onPrepare: () => void; onControl: (action: string) => void; onSaved: (value: unknown) => void;
   children?: ReactNode;
@@ -40,7 +42,7 @@ export default function IndexCard(props: Props) {
     <div className="index-progress-label"><span>{t('Готово: {p0} / {p1}', { p0: ready, p1: total })}</span>
       <span>{preparing ? t('Подготавливаем…') : props.blocked ? t('Ошибка индексации') : paused ? t('На паузе') : enabled ? ready >= total ? t('Готово') : t('Индексация') : t('Не подготовлен')}</span></div>
     <progress aria-label={t('Прогресс индексации {p0}', { p0: title })} value={ready} max={Math.max(1, total)} />
-    {enabled && !props.blocked && <p className="index-eta" role="status">{estimatedTime(seconds)}</p>}
+    {enabled && !props.blocked && !preparing && <p className="index-eta" role="status">{paused && ready < total ? t('Продолжите индексацию для оценки времени.') : estimatedTime(seconds, undefined, props.estimate)}</p>}
     <IndexErrors count={props.failed ?? 0} busy={busy || !enabled} onRetry={() => props.onControl('retry')} />
     <div className="index-batch">
       <label>{t('Размер батча')}<input aria-label={t('Размер батча {p0}', { p0: title })} type="number" min="1" max={max} step="1"

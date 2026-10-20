@@ -151,10 +151,18 @@ class SegmentWorker:
                 "ORDER BY m.timestamp,m.message_id",
                 (work["chat_id"], start, start + 86400),
             )
-            messages = (SourceMessage(**dict(row)) for row in rows)
+            raw_characters = 0
+
+            def messages():
+                nonlocal raw_characters
+                for row in rows:
+                    value = SourceMessage(**dict(row))
+                    raw_characters += len(value.text) + len(value.author) + 32
+                    yield value
+
             pending = []
             for ordinal, chunk in enumerate(
-                builder.build(messages, work["generation"], self.encoder.space_id), 1
+                builder.build(messages(), work["generation"], self.encoder.space_id), 1
             ):
                 pending.append((ordinal, chunk))
                 if len(pending) == 64:
@@ -192,6 +200,8 @@ class SegmentWorker:
                     work["id"],
                 ),
             )
+
+        return raw_characters
 
     def _stage_dependencies(self, work, dependencies):
         with self.lock, self.db.connect() as conn:
@@ -347,7 +357,18 @@ class SegmentWorker:
         prefetch = BatchPrefetch()
         try:
             if work["stage"] == "building":
-                self._build(work)
+                build_started = time.perf_counter()
+                volume = self._build(work)
+                built_seconds = time.perf_counter() - build_started
+                with self.lock, self.db.connect() as conn:
+                    record_rate(
+                        conn,
+                        "text_build",
+                        self.encoder,
+                        volume,
+                        built_seconds,
+                        settings=self.db.settings,
+                    )
             while True:
                 with self.db.connect() as conn:
                     self._guard(conn, work)
@@ -363,6 +384,7 @@ class SegmentWorker:
                     ).fetchone()[0]
                 size = self.batch_size
                 key = (checkpoint, size)
+                began = time.perf_counter()
                 rows, prepared = prefetch.take(
                     key,
                     lambda checkpoint=checkpoint, size=size: self._prepared_batch(
@@ -380,7 +402,7 @@ class SegmentWorker:
                 )
                 with self.db.connect() as conn:
                     self._guard(conn, work)
-                began = time.perf_counter()
+                cold = hasattr(self.encoder, "session") and self.encoder.session is None
                 try:
                     kwargs = {"_prepared": prepared} if prepared is not None else {}
                     embeddings = self.encoder.encode_text(
@@ -403,12 +425,17 @@ class SegmentWorker:
                         "WHERE id=?",
                         (rows[-1]["ordinal"], time.perf_counter() - began, work_id),
                     )
+                finished = time.perf_counter()
+                with self.lock, self.db.connect() as conn:
                     record_rate(
                         conn,
                         "e5",
                         self.encoder,
-                        sum(len(row["text"]) for row in rows),
-                        time.perf_counter() - began,
+                        len(rows) * max(row["tokens"] for row in rows),
+                        finished - began,
+                        settings=self.db.settings,
+                        batch=size,
+                        cold=cold,
                     )
                 if hasattr(self.encoder, "last_timings"):
                     self.encoder.last_timings = {

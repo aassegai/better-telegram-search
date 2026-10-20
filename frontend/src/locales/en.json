@@ -667,5 +667,12 @@
   "Векторы выбранного типа будут удалены во всех диалогах. Для смыслового поиска их потребуется построить заново. Исходные данные и распознавание OCR сохранятся.": "Vectors of the selected type will be removed across all chats. Rebuild them to restore semantic search. Source data and OCR recognition are preserved.",
   "Очистить векторы": "Clear vectors",
   "Очистить": "Clear",
-  "Отмена": "Cancel"
+  "Отмена": "Cancel",
+  "Осталось меньше минуты.": "Less than a minute remaining.",
+  "Осталось примерно {p0}–{p1} мин.": "About {p0}–{p1} min remaining.",
+  "Осталось примерно {p0}–{p1} ч.": "About {p0}–{p1} h remaining.",
+  "Продолжите индексацию для оценки времени.": "Resume indexing to estimate the remaining time.",
+  "Оценка учитывает недавние батчи и параллельную работу этапов. До завершения распознавания объём смыслового OCR оценивается предварительно.": "Estimates use recent batches and overlapping stages. The remaining semantic OCR workload is provisional until recognition finishes.",
+  "Собираем статистику для оценки времени.": "Collecting measurements to estimate the remaining time.",
+  "Оценка уточняется: давно не было завершённых батчей.": "Re-estimating: no batches have finished recently."
 }

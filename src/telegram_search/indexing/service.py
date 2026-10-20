@@ -6,6 +6,7 @@ from collections import OrderedDict
 
 from telegram_search.config.model_registry import model_spec, registry
 from telegram_search.indexing.estimates import Estimates
+from telegram_search.indexing.forecast import paused_forecast
 from telegram_search.indexing.worker import SegmentWorker
 from telegram_search.inference.resources import configure_gpu_load
 from telegram_search.shared.errors import UserError
@@ -322,6 +323,25 @@ class SemanticService:
                 if chat is None:
                     raise UserError("Диалог не найден.")
                 state["paused"] = bool(state["paused"] or chat[0])
+            blocked = bool(state["paused"]) or (
+                chat_id is None
+                and conn.execute(
+                    "SELECT 1 FROM index_work w JOIN chats c ON c.id=w.chat_id "
+                    "JOIN index_segments s ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
+                    "AND s.target_generation=w.generation WHERE c.text_paused=1 "
+                    "AND w.state IN ('pending','running') LIMIT 1"
+                ).fetchone()
+                is not None
+            )
+        estimate = (
+            self.estimates.text_forecast(self.encoder, chat_id)
+            if ready != total
+            and not blocked
+            and any(work["state"] in {"pending", "running"} for work in works)
+            else None
+        )
+        if blocked and ready != total:
+            estimate = paused_forecast({"eta_samples": 0, "projected": False})
         return {
             **state,
             "runtime_installed": self.available,
@@ -334,11 +354,12 @@ class SemanticService:
             "pending_segments": total - ready,
             "works": works,
             "index_error": failed[0] if failed else None,
+            "estimate": estimate,
             "estimated_remaining_seconds": 0.0
             if ready == total
-            else None
-            if works and not any(work["state"] in {"pending", "running"} for work in works)
-            else self.estimates.text(self.encoder, chat_id),
+            else estimate["estimated_remaining_seconds"]
+            if estimate
+            else None,
             "backend": self.encoder.backend_info() if self.encoder else None,
             "profiles": [
                 {

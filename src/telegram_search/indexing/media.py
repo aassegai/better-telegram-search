@@ -6,7 +6,9 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 from telegram_search.indexing.estimates import record_rate
+from telegram_search.indexing.forecast import combine_forecasts, paused_forecast
 from telegram_search.indexing.media_images import MediaImages
+from telegram_search.indexing.media_workload import pending_condition, pending_groups
 from telegram_search.indexing.metrics import ResourceMetrics, StageMetrics
 from telegram_search.indexing.ocr_queue import OcrQueue
 from telegram_search.indexing.prefetch import BatchPrefetch
@@ -37,6 +39,7 @@ class MediaService(MediaImages):
         self.ocr_completed = 0
         self.ocr_timings = {}
         self.metrics = StageMetrics()
+        self.forecast_workloads = {}
         self.resources = ResourceMetrics()
         self.image_prefetch = BatchPrefetch()
         self.ocr_queue = OcrQueue(db)
@@ -302,6 +305,93 @@ class MediaService(MediaImages):
         self.wake.set()
         return self.status()
 
+    @staticmethod
+    def _paused_pending(conn, stage, space, version, failure):
+        column = {"ocr": "ocr_paused", "clip": "media_paused", "ocr_dense": "ocr_dense_paused"}[
+            stage
+        ]
+        if not conn.execute(f"SELECT 1 FROM chats WHERE {column}=1 LIMIT 1").fetchone():
+            return False
+        condition = pending_condition(stage, future=stage == "ocr_dense")
+        return (
+            conn.execute(
+                "SELECT 1 FROM indexable_media_refs r WHERE r.kind='photo' AND r.status='ready' "
+                "AND NOT EXISTS (SELECT 1 FROM indexable_media_refs a "
+                "JOIN chats c ON c.id=a.chat_id WHERE a.sha256=r.sha256 "
+                f"AND a.kind='photo' AND a.status='ready' AND c.{column}=0) "
+                "AND " + condition + " LIMIT 1",
+                {"space": space, "version": version, "failure": failure},
+            ).fetchone()
+            is not None
+        )
+
+    def _global_forecast(self, stage, engine, remaining, version, failure):
+        if not engine:
+            return self.semantic.estimates.media_forecast(stage, engine, remaining)
+        with self.db.connect() as conn:
+            epoch = conn.execute(
+                "SELECT generation FROM search_archive_epoch WHERE id=1"
+            ).fetchone()[0]
+            chats = tuple(
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT id,revision,media_paused,ocr_paused,ocr_dense_paused,"
+                    "image_batch,text_batch,ocr_batch,ocr_region_batch FROM chats ORDER BY id"
+                )
+            )
+            key = (
+                id(engine),
+                version,
+                failure,
+                self.db.settings,
+                epoch,
+                chats,
+                getattr(engine, "index_batch_limit", None),
+                tuple(self.image_limits.items()),
+            )
+            cached = self.forecast_workloads.get(stage)
+            if cached and cached[0] == key and time.monotonic() - cached[1] < 5:
+                rows = cached[2]
+            else:
+                rows = pending_groups(
+                    conn, stage, getattr(engine, "space_id", ""), version, failure
+                )
+                self.forecast_workloads[stage] = (key, time.monotonic(), rows)
+        workloads = {}
+        for row in rows:
+            if stage == "clip":
+                requested = row["image_batch"] or self.db.settings.image_batch
+                key = min(
+                    requested, self.image_limits.get((id(engine), row["id"], requested), requested)
+                )
+            elif stage == "ocr_dense":
+                key = indexing_batch_size(
+                    engine, row["text_batch"] or self.db.settings.embedding_batch
+                )
+            else:
+                key = (
+                    row["ocr_batch"]
+                    or max(self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers),
+                    row["ocr_region_batch"] or self.db.settings.ocr_region_batch_size,
+                )
+            workloads[key] = (
+                workloads.get(key, 0) + row["characters" if stage == "ocr_dense" else "photos"]
+            )
+        kind = "ocr_dense:" + version if stage == "ocr_dense" else stage
+        # Cache only the distribution across configurations. Progress remains fresh
+        # on every poll, even while a large archive's group query is cached.
+        scale = remaining / sum(workloads.values()) if sum(workloads.values()) else 1
+        parts = [
+            self.semantic.estimates.media_forecast(
+                kind,
+                engine,
+                work * scale,
+                **({"variant": key} if stage == "ocr" else {"batch": key}),
+            )
+            for key, work in workloads.items()
+        ]
+        return combine_forecasts(parts, remaining)
+
     def status(self, chat_id=None):
         ocr, clip, encoder = self.ocr, self.clip, self.semantic.encoder
         with self.db.connect() as conn:
@@ -391,15 +481,69 @@ class MediaService(MediaImages):
                 "AND r.kind='photo' AND r.status='ready'" + refs + ")",
                 (ocr_failure_space, *args),
             ).fetchone()[0]
+            ocr_characters, pending_ocr_characters = conn.execute(
+                "SELECT COALESCE(SUM(length(o.text)),0),COALESCE(SUM(CASE WHEN NOT EXISTS "
+                "(SELECT 1 FROM media_embeddings e WHERE e.sha256=o.sha256 AND e.kind='ocr' "
+                "AND e.space_id=? AND e.ocr_version=o.version) AND NOT EXISTS "
+                "(SELECT 1 FROM media_failures f WHERE f.sha256=o.sha256 AND f.space_id=?) "
+                "THEN length(o.text) ELSE 0 END),0) FROM ocr_cache o WHERE o.version=? "
+                "AND o.state='ready' AND o.text<>'' AND EXISTS "
+                "(SELECT 1 FROM indexable_media_refs r "
+                "WHERE r.sha256=o.sha256 AND r.kind='photo' AND r.status='ready'" + refs + ")",
+                (
+                    encoder.space_id if encoder else "",
+                    ocr_failure_space,
+                    ocr.version if ocr else "",
+                    *args,
+                ),
+            ).fetchone()
+            image_batch = dense_batch = ocr_variant = None
             if chat_id is not None:
                 chat = conn.execute(
-                    "SELECT media_paused,ocr_paused,ocr_dense_paused FROM chats WHERE id=?", args
+                    "SELECT media_paused,ocr_paused,ocr_dense_paused,image_batch,"
+                    "text_batch,ocr_batch,ocr_region_batch "
+                    "FROM chats WHERE id=?",
+                    args,
                 ).fetchone()
                 if chat is None:
                     raise UserError("Диалог не найден.")
                 state["paused"] = bool(state["paused"] or chat[0])
                 state["ocr_paused"] = bool(state["ocr_paused"] or chat[1])
                 state["ocr_dense_paused"] = bool(state["ocr_dense_paused"] or chat[2])
+                configured = chat[3] or self.db.settings.image_batch
+                image_batch = min(
+                    configured, self.image_limits.get((id(clip), chat_id, configured), configured)
+                )
+                dense_batch = indexing_batch_size(
+                    encoder, chat[4] or self.db.settings.embedding_batch
+                )
+                ocr_variant = (
+                    chat[5]
+                    or max(self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers),
+                    chat[6] or self.db.settings.ocr_region_batch_size,
+                )
+            blocked = {
+                stage: bool(state[column])
+                or (
+                    chat_id is None
+                    and self._paused_pending(
+                        conn,
+                        stage,
+                        clip.space_id
+                        if stage == "clip" and clip
+                        else encoder.space_id
+                        if encoder
+                        else "",
+                        ocr.version if ocr else "",
+                        ocr_failure_space,
+                    )
+                )
+                for stage, column in (
+                    ("ocr", "ocr_paused"),
+                    ("clip", "paused"),
+                    ("ocr_dense", "ocr_dense_paused"),
+                )
+            }
         queues = {
             stage: self.metrics.snapshot(stage, self._stage_identity(stage), pending)
             for stage, pending in (
@@ -408,27 +552,101 @@ class MediaService(MediaImages):
                 ("ocr_dense", nonempty - ocr_dense - ocr_dense_failed),
             )
         }
-        ocr_eta = queues["ocr"]["estimated_remaining_seconds"]
-        if ocr_eta is None:
-            ocr_eta = self.semantic.estimates.ocr(ocr, total - ready - failed)
-        image_eta = queues["clip"]["estimated_remaining_seconds"]
-        if image_eta is None:
-            image_eta = self.semantic.estimates.images(clip, total - images - images_failed)
-        # Project future nonempty images from observed coverage, without treating
-        # the already-discovered semantic queue as the whole archive.
-        dense_eta = queues["ocr_dense"]["estimated_remaining_seconds"]
-        future_dense = max(0, total - ready - failed) * nonempty / max(1, ready)
-        if ocr and encoder and total > ready + failed:
-            speed = queues["ocr_dense"]["units_per_minute"]
-            dense_eta = (
-                round((queues["ocr_dense"]["pending"] + future_dense) * 60 / speed, 1)
-                if speed and ready >= 2
-                else None
+        estimates = self.semantic.estimates
+        observations = {
+            "ocr": estimates.media_forecast(
+                "ocr", ocr, total - ready - failed, variant=ocr_variant
+            ),
+            "clip": estimates.media_forecast(
+                "clip", clip, total - images - images_failed, batch=image_batch
+            ),
+            "ocr_dense": estimates.media_forecast(
+                "ocr_dense:" + (ocr.version if ocr else ""),
+                encoder,
+                pending_ocr_characters,
+                batch=dense_batch,
+            ),
+        }
+        if chat_id is None:
+            for stage, engine, remaining in (
+                ("ocr", ocr, total - ready - failed),
+                ("clip", clip, total - images - images_failed),
+                ("ocr_dense", encoder, pending_ocr_characters),
+            ):
+                observations[stage] = self._global_forecast(
+                    stage, engine, remaining, ocr.version if ocr else "", ocr_failure_space
+                )
+        for stage, estimate in observations.items():
+            if blocked[stage] and queues[stage]["pending"] > 0:
+                observations[stage] = estimate = paused_forecast(estimate)
+            queues[stage].update(estimate)
+            work_per_image = (
+                pending_ocr_characters / max(1, queues[stage]["pending"])
+                if stage == "ocr_dense"
+                else 1
             )
-        remaining = [ocr_eta, image_eta, dense_eta]
-        enabled = [bool(ocr), bool(clip), bool(ocr and encoder)]
-        known = [eta for eta, active in zip(remaining, enabled, strict=True) if active]
-        preparation_eta = sum(known) if known and all(eta is not None for eta in known) else None
+            rate = estimate["seconds_per_work"]
+            queues[stage]["units_per_minute"] = (
+                round(60 / (rate * work_per_image), 2) if rate and work_per_image else None
+            )
+        ocr_eta = observations["ocr"]["estimated_remaining_seconds"]
+        image_eta = observations["clip"]["estimated_remaining_seconds"]
+        future_dense = max(0, total - ready - failed) * nonempty / max(1, ready)
+        future_characters = max(0, total - ready - failed) * ocr_characters / max(1, ready)
+        dense_estimate = estimates.media_forecast(
+            "ocr_dense:" + (ocr.version if ocr else ""),
+            encoder,
+            pending_ocr_characters + future_characters,
+            projection=future_characters / max(1, pending_ocr_characters + future_characters),
+            batch=dense_batch,
+        )
+        if chat_id is None:
+            # The projected text volume has no per-image text yet. Use the current
+            # effective text configuration only when it is homogeneous; otherwise
+            # wait for recognition instead of mixing historical batch speeds.
+            with self.db.connect() as conn:
+                text_batches = {
+                    indexing_batch_size(encoder, row[0] or self.db.settings.embedding_batch)
+                    for row in conn.execute("SELECT text_batch FROM chats WHERE ocr_dense_paused=0")
+                }
+            if future_characters > 0 and len(text_batches) == 1:
+                dense_estimate = estimates.media_forecast(
+                    "ocr_dense:" + (ocr.version if ocr else ""),
+                    encoder,
+                    pending_ocr_characters + future_characters,
+                    batch=next(iter(text_batches)),
+                    projection=future_characters
+                    / max(1, pending_ocr_characters + future_characters),
+                )
+            elif future_characters > 0:
+                dense_estimate = estimates.media_forecast("unmeasured_projection", encoder, 1)
+            else:
+                dense_estimate = observations["ocr_dense"]
+        if total > ready + failed and ready < 3:
+            dense_estimate["estimated_remaining_seconds"] = None
+            dense_estimate["lower_seconds"] = dense_estimate["upper_seconds"] = None
+        # Shared devices and OCR -> text dependencies prevent assuming perfect
+        # overlap. Report max..sum bounds rather than a fabricated precise total.
+        enabled = {"ocr": bool(ocr), "clip": bool(clip), "ocr_dense": bool(ocr and encoder)}
+        parts = [observations["ocr"], observations["clip"], dense_estimate]
+        active = [part for part, stage in zip(parts, enabled, strict=True) if enabled[stage]]
+        paused = any(
+            blocked[stage]
+            and (queues[stage]["pending"] > 0 or stage == "ocr_dense" and future_dense > 0)
+            for stage in enabled
+            if enabled[stage]
+        )
+        preparation_estimate = {"lower_seconds": None, "upper_seconds": None, "paused": paused}
+        if not paused and active and all(part["lower_seconds"] is not None for part in active):
+            preparation_estimate.update(
+                lower_seconds=max(part["lower_seconds"] for part in active),
+                upper_seconds=sum(part["upper_seconds"] for part in active),
+            )
+        preparation_eta = (
+            0.0
+            if active and all(part["estimated_remaining_seconds"] == 0 for part in active)
+            else None
+        )
         return {
             **state,
             "visual_profiles": self.visual_profiles(),
@@ -444,12 +662,16 @@ class MediaService(MediaImages):
             "ocr_nonempty_ready": nonempty,
             "ocr_dense_available": encoder is not None,
             "ocr_estimated_remaining_seconds": ocr_eta,
+            "ocr_estimate": observations["ocr"],
+            "images_estimate": observations["clip"],
+            "ocr_dense_estimate": observations["ocr_dense"],
             "ocr_dense_estimated_remaining_seconds": queues["ocr_dense"][
                 "estimated_remaining_seconds"
             ],
             "preparation_estimated_remaining_seconds": preparation_eta,
+            "preparation_estimate": preparation_estimate,
             "projected_ocr_dense_photos": round(future_dense, 1),
-            "preparation_estimate_kind": "serial_upper_bound",
+            "preparation_estimate_kind": "pipeline_range",
             "queues": queues,
             "images_ready": images,
             "images_failed": images_failed,
@@ -603,10 +825,11 @@ class MediaService(MediaImages):
                 limit,
                 configured=configured,
                 with_tokens=True,
+                with_configuration=configured,
                 exclude=tuple(self.ocr_claims),
             )
-            assignments, region_batch = (
-                claimed if configured else (claimed, self.db.settings.ocr_region_batch_size)
+            assignments, region_batch, configured_batch = (
+                claimed if configured else (claimed, self.db.settings.ocr_region_batch_size, limit)
             )
             tokens = dict(assignments)
             shas = list(tokens)
@@ -732,15 +955,18 @@ class MediaService(MediaImages):
                         errors=failed,
                         phases=phases,
                     )
-                    snapshot = self.metrics.snapshot("ocr", self._stage_identity("ocr"), 1)
-                    rate = snapshot["units_per_minute"]
                     with self.db.connect() as conn:
                         record_rate(
                             conn,
                             "ocr",
                             owner,
                             published,
-                            published * 60 / rate if rate else time.monotonic() - began,
+                            time.monotonic() - began,
+                            settings=self.db.settings,
+                            lane=lane,
+                            variant=(configured_batch, region_batch),
+                            errors=failed,
+                            cold=bool(phases.get("cold_start", 0)),
                         )
             return True
         finally:
@@ -881,6 +1107,7 @@ class MediaService(MediaImages):
         with self.lock:
             self.ocr_staging_ids.update(ids.values())
         published = False
+        cold = hasattr(encoder, "session") and encoder.session is None
         self._set_active("ocr_dense", True)
         try:
             start = 0
@@ -957,13 +1184,25 @@ class MediaService(MediaImages):
                 self.ocr_staging_ids.difference_update(ids.values())
                 self._set_active("ocr_dense", False)
             if published:
+                finished = time.monotonic()
                 self.metrics.record(
                     "ocr_dense",
                     self._stage_identity("ocr_dense"),
                     began,
-                    time.monotonic(),
+                    finished,
                     phases=getattr(encoder, "last_timings", {}),
                 )
+                with self.lock, self.db.connect() as conn:
+                    record_rate(
+                        conn,
+                        "ocr_dense:" + engine.version,
+                        encoder,
+                        len(row["text"]),
+                        finished - began,
+                        settings=self.db.settings,
+                        cold=cold,
+                        batch=batch_size,
+                    )
         return True
 
     def _ocr_guard(self, conn, sha, encoder, engine):

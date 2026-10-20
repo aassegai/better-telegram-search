@@ -26,7 +26,7 @@ export default function TextIndexPanel({ status, onChange, chatId, onStart, onEn
     paused={Boolean(status.paused)} enabled={status.enabled === 1}
     preparing={['downloading', 'preparing'].includes(status.preparation_state)}
     blocked={blocked} failed={failed}
-    seconds={status.estimated_remaining_seconds} batch={status.batch_size ?? 4} kind="embedding_batch"
+    seconds={status.estimated_remaining_seconds} estimate={status.estimate} batch={status.batch_size ?? 4} kind="embedding_batch"
     chatId={chatId} busy={op.busy || Boolean(pending)} onPrepare={onModels} onControl={control}
     onSaved={value => onChange((value as { semantic: SemanticStatus }).semantic)} onStart={onStart} onEnd={onEnd}>
     {indexError && <p className="warning" role="alert">{t(indexError)}</p>}

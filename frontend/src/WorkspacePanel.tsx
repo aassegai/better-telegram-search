@@ -47,7 +47,7 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         paused={Boolean(media.paused)} enabled={media.images_enabled === 1} preparing={preparing}
         failed={media.images_failed ?? 0}
         blocked={(media.images_failed ?? 0) > 0 && (Boolean(media.paused) || media.images_ready + (media.images_failed ?? 0) >= media.total_photos)}
-        seconds={media.images_estimated_remaining_seconds} batch={media.batch_size ?? 1} kind="image_batch"
+        seconds={media.images_estimated_remaining_seconds} estimate={media.images_estimate} batch={media.batch_size ?? 1} kind="image_batch"
         chatId={chatId} busy={busy} onPrepare={onModels ?? (() => {})} onControl={control}
         onSaved={accept} onStart={onStart} onEnd={onEnd}>
         {[media.error, media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
@@ -59,9 +59,9 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
       {media?.queues && <details className="index-advanced"><summary>{t('Скорость и очереди подготовки')}</summary>
         <p>{t('Уникальных доступных изображений: {p0}', { p0: media.total_photos })}</p>
         {media.photo_attachments != null && <p>{t('Вложений: {p0}. Сообщений с фото: {p1}.', { p0: media.photo_attachments, p1: media.photo_messages ?? 0 })}</p>}
-        <p>{t('Вся подготовка: ')}{estimatedTime(media.preparation_estimated_remaining_seconds, t('Оценка появится, когда будет известна вся очередь смыслового OCR.'))}</p>
+        <p>{t('Вся подготовка: ')}{estimatedTime(media.preparation_estimated_remaining_seconds, t('Собираем статистику для оценки времени.'), media.preparation_estimate)}</p>
         {(['ocr', 'clip', 'ocr_dense'] as const).map(stage => { const queue = media.queues?.[stage]; return queue && <p key={stage}>{stage === 'ocr' ? 'OCR' : stage === 'clip' ? (media.visual_profile === 'siglip2' ? 'SigLIP 2' : 'CLIP') : t('OCR → текстовая модель')}: {t('В очереди: {p0}', { p0: queue.pending })} · {queue.units_per_minute == null ? t('Измеряем скорость…') : t('{p0} изобр./мин.', { p0: queue.units_per_minute })}</p>; })}
-        <small>{t('Скорость измеряется по активной подготовке приложения. Общая оценка — сумма этапов; параллельная работа может закончиться раньше.')}</small>
+        <small>{t('Оценка учитывает недавние батчи и параллельную работу этапов. До завершения распознавания объём смыслового OCR оценивается предварительно.')}</small>
       </details>}
       <p className="baseline-note">{t('Подготовка моделей и выбор устройств находятся в общих настройках.')}</p>
     </>}

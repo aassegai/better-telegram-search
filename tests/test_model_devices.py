@@ -295,6 +295,7 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         ).fetchall():
             conn.execute(f'DROP TRIGGER "{row[0]}"')
         conn.execute("DROP TABLE ocr_work")
+        conn.execute("DROP TABLE index_rate_samples")
         conn.execute("DROP TABLE ocr_queue_version")
         conn.execute("ALTER TABLE chats DROP COLUMN ocr_dense_paused")
         conn.execute("ALTER TABLE media_state DROP COLUMN ocr_dense_paused")
