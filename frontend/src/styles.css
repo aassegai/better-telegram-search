@@ -66,6 +66,18 @@ h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size
 .filters { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1.2fr; gap: 13px; margin-top: 23px; }
 .filters label, .import-form > label { display: flex; flex-direction: column; font-size: 10px; color: var(--text-muted, #85907e); gap: 7px; }
 .filters input, .filters select, .import-form input:not([type="checkbox"]), .import-form select { width: 100%; min-width: 0; background: var(--surface, #fdfefa); color: var(--text-secondary, #52644e); border: 1px solid var(--line, #dbe2d5); border-radius: 6px; padding: 9px 10px; font-size: 12px; }
+.forward-filter { margin-top: 15px; padding: 12px; border: 1px solid var(--line, #dbe2d5); border-radius: 8px; font-size: 12px; }
+.forward-filter summary { cursor: pointer; color: var(--text-secondary, #52644e); }
+.forward-filter fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
+.forward-filter fieldset > label { display: grid; gap: 7px; margin: 12px 0; }
+.forward-filter input[type="search"] { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid var(--line, #dbe2d5); border-radius: 6px; background: var(--surface, #fdfefa); color: var(--text); font: inherit; }
+.forward-source-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 8px; max-height: 240px; overflow-y: auto; }
+.forward-source-list label { display: flex; align-items: flex-start; gap: 8px; padding: 5px; cursor: pointer; }
+.forward-source-list input { flex: none; margin-top: 3px; }
+.forward-source-list span { min-width: 0; overflow-wrap: anywhere; }
+.forward-source-list small { display: block; margin-top: 3px; color: var(--text-muted); }
+.forward-filter button { padding: 6px 10px; border: 1px solid var(--line, #dbe2d5); border-radius: 6px; background: var(--surface-soft); color: var(--text-secondary); font: inherit; }
+.forward-filter .job-actions { flex-wrap: wrap; }
 .search-options { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 15px 0; border-bottom: 1px solid var(--line, #e0e6da); }
 .search-options label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted, #768370); }
 .search-option-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }

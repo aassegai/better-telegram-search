@@ -67,6 +67,21 @@ def normalize_message(message) -> NormalizedMessage:
     cached_sender = getattr(message, "sender", None)
     if cached_sender is not None:
         data["from"] = peer_of(cached_sender).name
+    header = getattr(message, "fwd_from", None)
+    if header is not None:
+        # Use only entities already supplied by Telegram; filtering must not
+        # introduce an RPC per forwarded message or require resolving a user.
+        forward = getattr(message, "forward", None)
+        origin = getattr(forward, "sender", None) or getattr(forward, "chat", None)
+        name = getattr(header, "from_name", None) or (peer_of(origin).name if origin else "")
+        source = getattr(header, "from_id", None)
+        if source:
+            identity = peer_of(source)
+            data["forwarded_from_id"] = f"{identity.kind}{identity.id}"
+            if not name:
+                name = data["forwarded_from_id"]
+        if name:
+            data["forwarded_from"] = name
     if getattr(message, "edit_date", None):
         data["edited_unixtime"] = str(int(message.edit_date.timestamp()))
     if getattr(message, "reply_to_msg_id", None):

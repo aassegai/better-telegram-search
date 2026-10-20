@@ -303,6 +303,32 @@ def test_single_scan_rejects_unpublished_nearest_vectors_before_top_k(db, import
     assert not search.search("unmatched", Filters(["absent"]), mode="meaning")["results"]
 
 
+@pytest.mark.parametrize("mode", ["words", "meaning", "hybrid"])
+def test_forwarded_filter_reuses_ready_chunks_and_filters_the_anchor(db, importer, tmp_path, mode):
+    chat, service, worker, work = setup_index(db, importer, tmp_path)
+    try:
+        assert worker.run(work)["state"] == "done"
+        with db.connect() as conn:
+            conn.execute(
+                "UPDATE messages SET raw_json=json_set(raw_json,'$.forwarded_from',?) "
+                "WHERE chat_id=? AND message_id<=3",
+                ("Синтетический источник", chat),
+            )
+        search = HybridSearch(db, service, importer.lifecycle_lock)
+        filters = Filters(forwarded_from=["Синтетический источник"])
+        hits = search.search("поезд", filters, mode=mode)["results"]
+        assert hits
+        for hit in hits:
+            anchor = next(
+                item for item in hit["messages"] if item["message_id"] == hit["message_id"]
+            )
+            assert anchor["forwarded_from"] == "Синтетический источник"
+            assert anchor["matches_filters"]
+        assert not search.search("поезд", Filters(forwarded_from=["absent"]), mode=mode)["results"]
+    finally:
+        service.shutdown()
+
+
 def test_model_switch_is_explicit_and_only_current_generation_is_eligible(db, importer, tmp_path):
     chat, service, worker, work = setup_index(db, importer, tmp_path)
     assert worker.run(work)["state"] == "done"

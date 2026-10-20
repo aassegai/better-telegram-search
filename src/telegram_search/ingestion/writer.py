@@ -68,6 +68,26 @@ class CanonicalMessageWriter:
                 if same_content:
                     counters["unchanged"] += 1
                     outcomes.append("unchanged")
+                    source = message.get("forwarded_from")
+                    can_replace_source = job["policy"] == "prefer_imported" or (
+                        job.get("source") == "telegram"
+                        and source != message.get("forwarded_from_id")
+                    )
+                    if (
+                        isinstance(source, str)
+                        and source
+                        and source != old["forwarded_from"]
+                        and (not old["forwarded_from"] or can_replace_source)
+                    ):
+                        # Enrich rendering/filter metadata without creating a new
+                        # text revision, losing entities or rebuilding ready vectors.
+                        raw = json.loads(old["raw_json"])
+                        raw["forwarded_from"] = source
+                        conn.execute(
+                            "UPDATE messages SET raw_json=? WHERE rowid=?",
+                            (serialize(raw), old["rowid"]),
+                        )
+                        revision_changed = True
                     if edited and edited > (old["edited_timestamp"] or 0):
                         conn.execute(
                             "UPDATE messages SET edited_timestamp=? WHERE rowid=?",

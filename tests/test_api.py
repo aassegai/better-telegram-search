@@ -142,6 +142,49 @@ def test_missing_frontend_and_invalid_filters(client):
     assert result["database_check"] == "ok"
 
 
+def test_forwarded_source_picker_search_context_and_cached_pages(client, tmp_path):
+    source = "Автор %_ <script>"
+    chat = load(
+        client.app.state.importer,
+        export(
+            tmp_path / "a",
+            [
+                message(i, "велосипед", forwarded_from=source if i % 2 else "Другой источник")
+                for i in range(1, 25)
+            ],
+        ),
+    )["chat_id"]
+    listing = client.get("/api/forwarded-sources", params={"q": "АВТОР %_", "chat_id": chat}).json()
+    assert listing["sources"] == [{"name": source, "messages": 12}]
+    params = {"q": "велосипед", "mode": "words", "forwarded_from": source, "limit": 5}
+    result = client.get("/api/search", params=params).json()
+    assert len(result["results"]) == 5 and result["next_offset"] == 5
+    page = client.get(
+        f"/api/search/{result['search_id']}/page", params={"offset": 5, "limit": 5}
+    ).json()
+    assert all(hit["message_id"] % 2 for hit in [*result["results"], *page["results"]])
+    context = client.get(
+        f"/api/chats/{chat}/context/3", params={"forwarded_from": source, "before": 1, "after": 1}
+    ).json()["messages"]
+    assert [item["matches_filters"] for item in context] == [False, True, False]
+    params["forwarded_from"] = [source, "Другой источник"]
+    assert client.get("/api/search", params=params).json()["cached_results"] == 24
+    params["author_id"] = "absent"
+    assert not client.get("/api/search", params=params).json()["results"]
+
+
+def test_forwarded_filter_and_picker_validation(client):
+    for route in ("/api/search?q=test", "/api/chats/absent/context/1"):
+        for value in ("", "x" * 4097, ["x"] * 501):
+            assert client.get(route, params={"forwarded_from": value}).status_code == 422
+    for params in ({"limit": 101}, {"offset": -1}, {"q": "x" * 201}):
+        assert client.get("/api/forwarded-sources", params=params).status_code == 422
+    assert (
+        client.get("/api/forwarded-sources", headers={"Sec-Fetch-Site": "cross-site"}).status_code
+        == 403
+    )
+
+
 def test_saved_search_options_and_request_overrides(client, tmp_path):
     from telegram_search.config.settings import Settings
 

@@ -54,6 +54,14 @@ def test_ocr_deduplicates_reimports_and_alternative_chats(db, importer, tmp_path
     assert len(hits) == 1 and hits[0]["chat_id"] == second["chat_id"]
     assert hits[0]["matched_by"] == ["ocr_words"]
     assert "<script>" in hits[0]["ocr_text"]
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE messages SET raw_json=json_set(raw_json,'$.forwarded_from',?) WHERE chat_id=?",
+            ("Источник OCR", second["chat_id"]),
+        )
+    forwarded = search.search("12345", Filters(forwarded_from=["Источник OCR"]), kind="ocr")[0]
+    assert len(forwarded) == 1 and forwarded[0]["chat_id"] == second["chat_id"]
+    assert not search.search("12345", Filters(forwarded_from=["absent"]), kind="ocr")[0]
     hits, _ = search.search("ремонта 12345", Filters([first["chat_id"]], ["absent"]), kind="ocr")
     assert not hits
     with db.connect() as conn:
@@ -320,6 +328,17 @@ def test_clip_image_vectors_use_separate_space_and_prefilter(db, importer, tmp_p
     hits, warnings = search.search("Красная фотография", Filters([job["chat_id"]]), kind="images")
     assert len(hits) == 1 and hits[0]["matched_by"] == ["image"] and not warnings
     assert not search.search("Красная фотография", Filters(["wrong"]), kind="images")[0]
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE messages SET raw_json=json_set(raw_json,'$.forwarded_from',?) WHERE chat_id=?",
+            ("Источник фото", job["chat_id"]),
+        )
+    assert search.search(
+        "Красная фотография", Filters(forwarded_from=["Источник фото"]), kind="images"
+    )[0]
+    assert not search.search(
+        "Красная фотография", Filters(forwarded_from=["absent"]), kind="images"
+    )[0]
     combined = UnifiedSearch(HybridSearch(db, semantic, importer.lifecycle_lock), search)
     result = combined.search("подпись", Filters(), False, 20, "words", "all")
     assert len(result["results"]) == 1

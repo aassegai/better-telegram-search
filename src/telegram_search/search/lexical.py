@@ -3,6 +3,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from itertools import islice
 
 from telegram_search.search.presentation import search_options
 from telegram_search.search.stopwords import keyword_terms
@@ -19,12 +20,17 @@ class Filters:
     date_to: int | None = None
     content_type: str = "all"
     exclude_deleted: bool = False
+    forwarded_from: list[str] = field(default_factory=list)
 
     def sql(self, alias: str = "m") -> tuple[str, list]:
         clauses, params = [], []
         if self.exclude_deleted:
             clauses.append(f"{alias}.remote_deleted=0")
-        for column, values in (("chat_id", self.chat_ids), ("author_id", self.author_ids)):
+        for column, values in (
+            ("chat_id", self.chat_ids),
+            ("author_id", self.author_ids),
+            ("forwarded_from", self.forwarded_from),
+        ):
             if values:
                 clauses.append(f"{alias}.{column} IN ({','.join('?' for _ in values)})")
                 params.extend(values)
@@ -49,6 +55,7 @@ class Filters:
             (not self.exclude_deleted or not message.get("remote_deleted", False))
             and (not self.chat_ids or message["chat_id"] in self.chat_ids)
             and (not self.author_ids or message["author_id"] in self.author_ids)
+            and (not self.forwarded_from or message.get("forwarded_from") in self.forwarded_from)
             and (self.date_from is None or message["timestamp"] >= self.date_from)
             and (self.date_to is None or message["timestamp"] < self.date_to)
             and (self.content_type != "photo" or bool(message["has_photo"]))
@@ -103,7 +110,6 @@ class ContextService:
         message.pop("text_normalized", None)
         message.pop("rowid", None)
         message["entities"] = original.get("text_entities", [])
-        message["forwarded_from"] = original.get("forwarded_from")
         message["action"] = original.get("action")
         refs = conn.execute(
             "SELECT id,kind,status FROM media_refs WHERE chat_id=? AND message_id=? "
@@ -248,3 +254,27 @@ class SearchService:
                     params,
                 )
             ]
+
+    def forwarded_sources(
+        self, chat_ids=None, query="", offset=0, limit=100, exclude_deleted=False
+    ):
+        where, params = Filters(chat_ids=chat_ids or [], exclude_deleted=exclude_deleted).sql()
+        needle = normalize_text(query.strip())
+        with self.db.connect() as conn:
+            rows = conn.execute(
+                "SELECT m.forwarded_from AS name,COUNT(*) AS messages FROM indexable_messages m "
+                f"WHERE {where} AND m.forwarded_from IS NOT NULL "
+                "GROUP BY m.forwarded_from ORDER BY m.forwarded_from COLLATE NOCASE,"
+                "m.forwarded_from",
+                params,
+            )
+            # Normalize distinct names, not every message: SQLite's built-in
+            # NOCASE/LIKE does not handle Cyrillic. '%' and '_' remain literal.
+            matches = (dict(row) for row in rows if needle in normalize_text(row["name"]))
+            sources = list(islice(matches, offset, offset + limit + 1))
+        more = len(sources) > limit
+        return {
+            "sources": sources[:limit],
+            "has_more": more,
+            "next_offset": offset + limit if more else None,
+        }

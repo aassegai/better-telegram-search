@@ -10,6 +10,7 @@ import SemanticPanel from './SemanticPanel';
 import RerankPanel from './RerankPanel';
 import WorkspacePanel from './WorkspacePanel';
 import ResourcePanel from './ResourcePanel';
+import ForwardFilter from './ForwardFilter';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
@@ -75,6 +76,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
   const [author, setAuthor] = useState('');
+  const [forwardedFrom, setForwardedFrom] = useState<string[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [contentType, setContentType] = useState('all');
@@ -213,6 +215,7 @@ export default function App() {
     modalities.forEach(kind => params.append('modality', kind));
     selected?.forEach(id => params.append('chat_id', id));
     if (author) params.set('author_id', author);
+    forwardedFrom.forEach(name => params.append('forwarded_from', name));
     if (from) params.set('date_from', from);
     if (to) params.set('date_to', to);
     try {
@@ -348,11 +351,12 @@ export default function App() {
             <label>{t("По дату (UTC)")}<input type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
           </div>
+          <ForwardFilter chatIds={selected} selected={forwardedFrom} onChange={setForwardedFrom} excludeDeleted={excludeDeleted} version={authorsVersion} disabled={busy} />
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />{t("Точная фраза")}</label>
             <label><input type="checkbox" checked={excludeDeleted} onChange={event => setExcludeDeleted(event.target.checked)} />{t('Скрыть удалённые в Telegram')}</label>
             <div className="search-option-actions">
               <button type="button" className="text-button" aria-expanded={showSearchSettings} aria-controls="search-display-settings" onClick={() => setShowSearchSettings(value => !value)}><span aria-hidden="true">{showSearchSettings ? '▾' : '▸'}</span> <span>{t('Выдача поиска')}</span></button>
-              <button type="button" className="text-button" onClick={() => { setAuthor(''); setFrom(''); setTo(''); setContentType('all'); setExact(false); setExcludeDeleted(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
+              <button type="button" className="text-button" onClick={() => { setAuthor(''); setForwardedFrom([]); setFrom(''); setTo(''); setContentType('all'); setExact(false); setExcludeDeleted(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
             </div></div>
           <fieldset className="search-modalities" disabled={busy} aria-describedby="search-modality-help">
             <legend>{t("Искать в")}</legend>

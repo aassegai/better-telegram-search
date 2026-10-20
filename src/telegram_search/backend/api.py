@@ -43,6 +43,8 @@ from telegram_search.telegram_sync.coordinator import SyncCoordinator
 from telegram_search.telegram_sync.models import ERRORS, SourceFailure
 from telegram_search.updates.service import UpdateService
 
+ForwardedSource = Annotated[str, Field(min_length=1, max_length=4096)]
+
 
 class ImportRequest(BaseModel):
     json_path: str = Field(min_length=1, max_length=4096)
@@ -309,11 +311,22 @@ def create_app(
     def authors(chat_id: Annotated[list[str] | None, Query()] = None):
         return search.authors(chat_id)
 
+    @app.get("/api/forwarded-sources")
+    def forwarded_sources(
+        chat_id: Annotated[list[str] | None, Query(max_length=500)] = None,
+        q: Annotated[str, Query(max_length=200)] = "",
+        offset: Annotated[int, Query(ge=0, le=1000000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        exclude_deleted: bool = False,
+    ):
+        return search.forwarded_sources(chat_id, q, offset, limit, exclude_deleted)
+
     @app.get("/api/search")
     def perform_search(
         q: Annotated[str, Query(max_length=2000)],
         chat_id: Annotated[list[str] | None, Query()] = None,
         author_id: Annotated[list[str] | None, Query()] = None,
+        forwarded_from: Annotated[list[ForwardedSource] | None, Query(max_length=500)] = None,
         date_from: str | None = None,
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
@@ -328,12 +341,13 @@ def create_app(
         chunk_size: Annotated[int | None, Query(ge=1, le=100)] = None,
     ):
         filters = Filters(
-            chat_id or [],
-            author_id or [],
-            date_bound(date_from),
-            date_bound(date_to, end=True),
-            content_type,
-            exclude_deleted,
+            chat_ids=chat_id or [],
+            author_ids=author_id or [],
+            date_from=date_bound(date_from),
+            date_to=date_bound(date_to, end=True),
+            content_type=content_type,
+            exclude_deleted=exclude_deleted,
+            forwarded_from=forwarded_from or [],
         )
         if (
             filters.date_from is not None
@@ -549,18 +563,20 @@ def create_app(
         before: Annotated[int, Query(ge=0, le=100)] = 10,
         after: Annotated[int, Query(ge=0, le=100)] = 10,
         author_id: Annotated[list[str] | None, Query()] = None,
+        forwarded_from: Annotated[list[ForwardedSource] | None, Query(max_length=500)] = None,
         date_from: str | None = None,
         date_to: str | None = None,
         content_type: Literal["all", "text", "photo", "service"] = "all",
         exclude_deleted: bool = False,
     ):
         filters = Filters(
-            [chat_id],
-            author_id or [],
-            date_bound(date_from),
-            date_bound(date_to, end=True),
-            content_type,
-            exclude_deleted,
+            chat_ids=[chat_id],
+            author_ids=author_id or [],
+            date_from=date_bound(date_from),
+            date_to=date_bound(date_to, end=True),
+            content_type=content_type,
+            exclude_deleted=exclude_deleted,
+            forwarded_from=forwarded_from or [],
         )
         return {"messages": context.get_context(chat_id, message_id, before, after, filters)}
 

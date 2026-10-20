@@ -39,6 +39,10 @@ this browser. Messages and search queries keep their original language.
 The adjacent ☾ / ☀ button switches light and dark themes. The first launch follows
 your system theme; your subsequent choice is saved.
 
+Use **Forwarded from** to find authors or channels by name and select multiple
+sources with checkboxes. It combines with other filters for text, image and OCR
+search; no reindexing is needed.
+
 For NVIDIA on Windows/Linux x64, choose an archive ending in `-gpu`. Torch and a
 separate CUDA installation are unnecessary; a compatible NVIDIA driver is required.
 Set **Indexing device → GPU** and **Search device → CPU** separately for
