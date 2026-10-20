@@ -63,6 +63,13 @@ and **Update and restart**. Upgrade from 0.2.0 manually the first time: pause te
 and media indexing, fully close the old app, and launch the current release with the same workspace.
 Select GPU indexing and resume; completed CPU chunks do not need rebuilding.
 
+Use **Settings → Disk usage** to clear text, image or OCR vectors separately
+across all chats. The app waits for the current batch, reclaims disk space and
+leaves the selected index paused. Messages, models and recognized OCR text are
+preserved; resume indexing from the desired chat menu. **GPU performance** controls
+memory per CUDA model and the target indexing load. Load changes take effect
+while indexing; pause indexing before changing memory.
+
 ### Run from source
 
 Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/), and

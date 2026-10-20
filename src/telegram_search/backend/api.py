@@ -37,6 +37,7 @@ from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
 from telegram_search.storage.database import Database
+from telegram_search.storage.vector_maintenance import VectorMaintenance
 from telegram_search.telegram_sync.api import router as telegram_router
 from telegram_search.telegram_sync.coordinator import SyncCoordinator
 from telegram_search.telegram_sync.models import ERRORS, SourceFailure
@@ -95,6 +96,10 @@ class ModelDeviceRequest(BaseModel):
     ocr_engine: Literal["tesseract", "paddle"] | None = None
 
 
+class ClearVectorsRequest(BaseModel):
+    confirm: bool = Field(strict=True)
+
+
 class UpdateCheckRequest(BaseModel):
     variant: Literal["cpu", "gpu"] | None = None
 
@@ -119,7 +124,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = semantic = media = updates = telegram = rerank = None
+        importer = semantic = media = updates = telegram = rerank = maintenance = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -140,6 +145,8 @@ def create_app(
             app.state.rerank = rerank
             app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
             app.state.workspace = WorkspaceService(db, importer, semantic, media)
+            maintenance = VectorMaintenance(db, importer.lifecycle_lock, semantic, media)
+            app.state.vector_maintenance = maintenance
             telegram = SyncCoordinator(
                 db, importer.lifecycle_lock, factory=telegram_factory, settings=telegram_settings
             )
@@ -192,6 +199,8 @@ def create_app(
                 updates.close()
             if telegram:
                 await telegram.close()
+            if maintenance:
+                maintenance.close()
             if media:
                 media.shutdown()
             if rerank:
@@ -225,6 +234,11 @@ def create_app(
             if not secrets.compare_digest(supplied, session_token):
                 return JSONResponse(
                     {"detail": "Необходим токен локальной сессии."}, status_code=403
+                )
+            maintenance = getattr(app.state, "vector_maintenance", None)
+            if maintenance and maintenance.busy:
+                return JSONResponse(
+                    {"detail": "Дождитесь очистки векторного индекса."}, status_code=409
                 )
             if app.state.update_verifying and request.url.path != "/api/updates/confirm":
                 return JSONResponse(
@@ -459,6 +473,20 @@ def create_app(
         app.state.semantic.cleanup(compact=True)
         app.state.media.cleanup(compact=True)
         return app.state.workspace.sizes()
+
+    @app.get("/api/storage/vectors")
+    def vector_storage():
+        return app.state.vector_maintenance.inventory()
+
+    @app.get("/api/storage/vectors/clear")
+    def vector_clear_status():
+        return app.state.vector_maintenance.status()
+
+    @app.post("/api/storage/vectors/{kind}/clear")
+    def clear_vectors(kind: Literal["text", "images", "ocr"], body: ClearVectorsRequest):
+        if not body.confirm:
+            raise UserError("Подтвердите очистку векторного индекса.")
+        return app.state.vector_maintenance.start(kind)
 
     @app.get("/api/chats/{chat_id}/deletion-estimate")
     def deletion_estimate(chat_id: str):

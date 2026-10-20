@@ -1,8 +1,11 @@
 import heapq
+import os
+import re
 import threading
 from datetime import timedelta
 from pathlib import Path
 
+from telegram_search.security.paths import owned_vector_path
 from telegram_search.shared.errors import UserError
 
 
@@ -16,16 +19,24 @@ class VectorStore:
     def __init__(self, workspace: Path):
         import lancedb
 
-        location = workspace.resolve() / "data" / "vectors"
-        if not location.resolve().is_relative_to(workspace.resolve()):
-            raise UserError("Векторный индекс должен находиться внутри workspace.")
+        self.workspace = workspace.resolve()
+        location = owned_vector_path(self.workspace, Path("data/vectors"))
         self.db = lancedb.connect(location)
+        self.location = location
         self.lock = threading.RLock()
+
+    def table_path(self, space_id):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", space_id):
+            raise UserError("Недопустимый идентификатор векторной таблицы.")
+        return owned_vector_path(
+            self.workspace, Path("data/vectors") / ("text_" + space_id + ".lance")
+        )
 
     def table(self, space_id: str, dimension: int, *, create: bool = False):
         import pyarrow as pa
 
         name = "text_" + space_id
+        self.table_path(space_id)
         with self.lock:
             try:
                 return self.db.open_table(name)
@@ -178,6 +189,33 @@ class VectorStore:
                 table = self.table(space["id"], space["dimension"])
                 if table is not None:
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
+
+    def clear(self, spaces, *, predicate):
+        """Remove one modality, including old on-disk versions, under the writer lock.
+
+        Text and semantic OCR can share a table. Never drop such a table while
+        the other partition still contains vectors.
+        """
+        removed = 0
+        with self.lock:
+            for space in spaces:
+                path = self.table_path(space["id"])
+                for base, directories, filenames in os.walk(path, followlinks=False):
+                    for name in [*directories, *filenames]:
+                        owned_vector_path(
+                            self.workspace, (Path(base) / name).relative_to(self.workspace)
+                        )
+                table = self.table(space["id"], space["dimension"])
+                if table is None:
+                    continue
+                count, total = table.count_rows(predicate), table.count_rows()
+                if count == total:
+                    self.db.drop_table("text_" + space["id"])
+                else:
+                    table.delete(predicate)
+                    table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
+                removed += count
+        return removed
 
     def prune_media(self, space_id, dimension, eligible):
         """Stream only media IDs; never load corpus vectors into Python during cleanup."""

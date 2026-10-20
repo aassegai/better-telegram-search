@@ -9,8 +9,8 @@ import OcrBatchSettings from './OcrBatchSettings';
 import { estimatedTime } from './estimatedTime';
 import type { Mutation } from './IndexCard';
 import DevicePanel from './DevicePanel';
+import StoragePanel from './StoragePanel';
 
-type Sizes = { database_bytes: number; vectors_bytes: number; models_bytes: number; cache_bytes: number; reclaim_estimate_bytes: number; estimate_note: string };
 const resources = [
   ['cpu_threads', 'Потоков CPU', 1, 32], ['memory_limit_mib', 'Порог RAM для медиа (МиБ)', 1024, 65536],
   ['idle_unload_seconds', 'Выгрузка модели после простоя (сек)', 1, 86400],
@@ -18,11 +18,9 @@ const resources = [
   ['ocr_timeout_seconds', 'Лимит OCR на фото (сек)', 5, 300], ['ocr_max_edge', 'Максимальная сторона OCR (px)', 512, 4096],
   ['ocr_cpu_workers', 'Воркеров OCR на CPU', 1, 4],
 ] as const;
-const mib = (value: number) => t("{p0} МиБ", { p0: (value / 1024 ** 2).toFixed(1) });
 
 export default function WorkspacePanel({ media, onMediaChange, chatId, indexing = false, onStart, onEnd, pending, onModels }: Mutation & { media: MediaStatus | null; onMediaChange: (value: MediaStatus) => void; chatId?: string; indexing?: boolean; onModels?: () => void }) {
   const [settings, setSettings] = useState<Record<string, number> | null>(null);
-  const [sizes, setSizes] = useState<Sizes | null>(null);
   const [offline, setOffline] = useState(false);
   const [visualProfile, setVisualProfile] = useState(media?.images_enabled ? media.visual_profile ?? 'clip' : 'siglip2');
   const chosenVisual = useRef(false);
@@ -36,8 +34,8 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
   const busy = op.busy || Boolean(pending);
   useEffect(() => {
     let alive = true;
-    Promise.all([api<Record<string, number>>('/api/settings'), api<Sizes>('/api/storage')])
-      .then(([settings, sizes]) => { if (alive) { setSettings(settings); setSizes(sizes); } })
+    api<Record<string, number>>('/api/settings')
+      .then(settings => { if (alive) setSettings(settings); })
       .catch(error => { if (alive) setNotice(error instanceof Error ? error.message : t('Не удалось прочитать настройки.')); });
     return () => { alive = false; };
   }, []);
@@ -116,10 +114,7 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
     {settings && <div className="resource-fields">{resources.map(([key, label, min, max]) => <label key={key}>{t(label)}<input aria-label={t(label)} type="number" min={min} max={max} step="1" value={settings[key]} disabled={busy} onChange={event => setSettings({ ...settings, [key]: Number(event.target.value) })} /></label>)}</div>}
     <button disabled={!settings || op.busy || preparing} onClick={save}>{t("Сохранить ресурсы")}</button>
     </details>
-    <h3>{t("Место на диске")}</h3>
-    {sizes && <><dl className="diagnostics"><dt>{t("База")}</dt><dd>{mib(sizes.database_bytes)}</dd><dt>{t("Векторы")}</dt><dd>{mib(sizes.vectors_bytes)}</dd><dt>{t("Модели и словари")}</dt><dd>{mib(sizes.models_bytes)}</dd><dt>{t("Кэш")}</dt><dd>{mib(sizes.cache_bytes)}</dd><dt>{t("Можно освободить в SQLite")}</dt><dd>{mib(sizes.reclaim_estimate_bytes)}</dd></dl><p>{t(sizes.estimate_note)}</p></>}
-    <div className="job-actions"><button disabled={busy || !sizes} onClick={() => void op.run(async current => { const value = await api<Sizes>('/api/storage'); if (current()) setSizes(value); })}>{t("Обновить сведения о месте")}</button>
-    <button disabled={busy || !sizes} onClick={() => void op.run(async current => { const value = await api<Sizes>('/api/storage/compact', { method: 'POST' }); if (current()) setSizes(value); })}>{t("Уплотнить базу и индексы")}</button></div>
+    <StoragePanel />
     </>}
     {notice && <p role="status">{t(notice)}</p>}{op.error && <p className="error" role="alert">{t(op.error)}</p>}
   </section>;

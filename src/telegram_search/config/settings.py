@@ -20,6 +20,7 @@ class Settings:
     ocr_engine: str = "tesseract"
     gpu_device_id: int = 0
     gpu_memory_limit_mib: int = 4096
+    gpu_index_load_percent: int = 100
     search_backend: str = "fts5_messages"
     cpu_threads: int = 4
     embedding_batch: int = 4
@@ -100,6 +101,7 @@ class Settings:
             ("cpu_threads", 1, 32),
             ("gpu_device_id", 0, 15),
             ("gpu_memory_limit_mib", 512, 65536),
+            ("gpu_index_load_percent", 10, 100),
             ("embedding_batch", 1, 128),
             ("idle_unload_seconds", 1, 86400),
             ("query_cache_entries", 0, 256),

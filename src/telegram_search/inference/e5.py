@@ -178,7 +178,14 @@ class E5Encoder:
         inputs = self.tokenizer.batch([prefix + text for text in texts], limit)
         return (inputs, len(texts), purpose, time.perf_counter() - started, self)
 
-    def encode_text(
+    def encode_text(self, texts, purpose, *, interactive=False, _prepared=None) -> np.ndarray:
+        # Wait for GPU cooldown before taking the model's encoding slot, so a
+        # background batch cannot keep an interactive query behind that pause.
+        execution = getattr(self, "query_execution" if purpose == "query" else "execution", None)
+        with compute_gate(execution).slot(interactive=interactive):
+            return self._encode_text(texts, purpose, interactive=interactive, _prepared=_prepared)
+
+    def _encode_text(
         self,
         texts: Sequence[str],
         purpose: Literal["query", "passage"],

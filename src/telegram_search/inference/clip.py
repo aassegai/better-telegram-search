@@ -211,7 +211,7 @@ class ClipEncoder:
         if not 1 <= len(texts) <= 32:
             raise UserError("Батч CLIP должен содержать от 1 до 32 текстов.")
         inputs = self.tokenizer.batch(texts, limit=128)
-        with self.lock, compute_gate(self.query_execution).slot(interactive=True):
+        with compute_gate(self.query_execution).slot(interactive=True), self.lock:
             self.last_used = time.monotonic()
             session = self._session("text")
             hidden = session.run(
@@ -240,7 +240,7 @@ class ClipEncoder:
             raise UserError("Подготовленный батч CLIP не соответствует изображениям.")
         pixels = np.stack([value[0] for value in values])
         prepared = time.perf_counter()
-        with self.lock, compute_gate(self.execution):
+        with compute_gate(self.execution), self.lock:
             self.last_used = time.monotonic()
             acquired = time.perf_counter()
             session = self._session("image")

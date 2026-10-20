@@ -1,9 +1,11 @@
 import os
+from contextlib import nullcontext
 from dataclasses import asdict, replace
 from pathlib import Path
 from threading import Lock
 
 from telegram_search.inference.bundles import checksum
+from telegram_search.inference.resources import configure_gpu_load
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.storage.generations import bump_revision, invalidate_segments, utc_day
@@ -169,6 +171,7 @@ class WorkspaceService:
 
     def update_settings(self, values):
         display_keys = {"search_result_limit", "display_chunk_size", "giga_rerank_enabled"}
+        live_keys = display_keys | {"gpu_index_load_percent"}
         allowed = {
             "cpu_threads",
             "embedding_batch",
@@ -185,14 +188,16 @@ class WorkspaceService:
             "ocr_region_batch_size",
             "ocr_cpu_workers",
             "memory_limit_mib",
-        } | display_keys
+            "gpu_memory_limit_mib",
+        } | live_keys
         if set(values) - allowed:
             raise UserError("Неизвестные или недоступные настройки.")
-        if set(values) <= display_keys:
+        if set(values) <= live_keys:
             with self.settings_lock:
                 candidate = replace(self.db.settings, **values)
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
+                configure_gpu_load(candidate.gpu_index_load_percent)
                 return asdict(candidate)
         with self.lock, self.settings_lock:
             candidate = replace(self.db.settings, **values)
@@ -213,24 +218,38 @@ class WorkspaceService:
                 new_ocr.verify()
             candidate.save(self.db.workspace)
             self.db.settings = candidate
+            configure_gpu_load(candidate.gpu_index_load_percent)
             if self.semantic.encoder:
                 self.semantic.encoder.suspend()
                 self.semantic.encoder.threads = candidate.cpu_threads
+                self._execution_limits(self.semantic.encoder, candidate)
                 self.semantic.encoder.index_batch_limit = None
                 self.semantic.encoder.resume()
             self.semantic.query_cache.clear()
             if self.media.clip:
-                if hasattr(self.media.clip, "update_threads"):
-                    self.media.clip.update_threads(candidate.cpu_threads)
-                else:
-                    self.media.clip.unload()
-                    self.media.clip.threads = candidate.cpu_threads
+                # Resource options and session invalidation are one model-level
+                # operation: a concurrent query must not reload the old cap.
+                with getattr(self.media.clip, "lock", nullcontext()):
+                    if hasattr(self.media.clip, "update_threads"):
+                        self.media.clip.update_threads(candidate.cpu_threads)
+                    else:
+                        self.media.clip.unload()
+                        self.media.clip.threads = candidate.cpu_threads
+                    self._execution_limits(self.media.clip, candidate)
             if self.media.ocr:
                 if hasattr(self.media.ocr, "unload"):
                     self.media.ocr.unload()
                 self.media.ocr = new_ocr
         self.media.wake.set()
         return self.settings()
+
+    @staticmethod
+    def _execution_limits(encoder, settings):
+        for name in ("execution", "query_execution"):
+            execution = getattr(encoder, name, None)
+            if execution is not None:
+                execution.memory_limit_mib = settings.gpu_memory_limit_mib
+                execution.threads = settings.cpu_threads
 
     def sizes(self):
         sizes = {"database_bytes": 0, "vectors_bytes": 0, "models_bytes": 0, "cache_bytes": 0}

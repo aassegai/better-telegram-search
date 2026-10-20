@@ -7,6 +7,7 @@ from collections import OrderedDict
 from telegram_search.config.model_registry import model_spec, registry
 from telegram_search.indexing.estimates import Estimates
 from telegram_search.indexing.worker import SegmentWorker
+from telegram_search.inference.resources import configure_gpu_load
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 from telegram_search.storage.generations import invalidate_segments
@@ -17,6 +18,7 @@ class SemanticService:
 
     def __init__(self, db, lifecycle_lock, *, start_background=True):
         self.db = db
+        configure_gpu_load(db.settings.gpu_index_load_percent)
         self.lock = lifecycle_lock
         self.encoder = None
         self.vectors = None

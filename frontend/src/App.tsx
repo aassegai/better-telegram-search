@@ -9,6 +9,7 @@ import TelegramPanel from './TelegramPanel';
 import SemanticPanel from './SemanticPanel';
 import RerankPanel from './RerankPanel';
 import WorkspacePanel from './WorkspacePanel';
+import GpuPerformancePanel from './GpuPerformancePanel';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
@@ -414,6 +415,7 @@ export default function App() {
       <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
       {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
       <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
+      <GpuPerformancePanel />
       <SemanticPanel status={semantic} onChange={setSemantic} />
       <RerankPanel />
       <WorkspacePanel media={media} onMediaChange={setMedia} />

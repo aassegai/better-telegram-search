@@ -160,7 +160,7 @@ class SiglipEncoder(ClipEncoder):
         if not 1 <= len(texts) <= 32:
             raise UserError("Батч визуальной модели должен содержать от 1 до 32 текстов.")
         batch = self.tokenizer.batch(texts, limit=64, fixed_length=64)
-        with self.lock, compute_gate(self.query_execution).slot(interactive=True):
+        with compute_gate(self.query_execution).slot(interactive=True), self.lock:
             self.last_used = time.monotonic()
             vector = normalize(
                 self._session("text").run(["pooler_output"], {"input_ids": batch["input_ids"]})[0]
@@ -185,7 +185,7 @@ class SiglipEncoder(ClipEncoder):
             raise UserError("Подготовленный батч не соответствует изображениям.")
         pixels = np.stack([v[0] for v in values])
         prepared = time.perf_counter()
-        with self.lock, compute_gate(self.execution):
+        with compute_gate(self.execution), self.lock:
             acquired = time.perf_counter()
             raw = self._session("image").run(["pooler_output"], {"pixel_values": pixels})[0]
             inferred = time.perf_counter()
