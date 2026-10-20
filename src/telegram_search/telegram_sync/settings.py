@@ -2,8 +2,9 @@
 
 import json
 import os
+import tempfile
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from telegram_search.config.runtime import bundled_directory
@@ -35,6 +36,52 @@ class SyncSettings:
             and all(char in "0123456789abcdef" for char in self.api_hash.lower())
         )
 
+    @staticmethod
+    def credentials_locked():
+        return bool(
+            os.environ.get("BTS_TELEGRAM_API_ID") or os.environ.get("BTS_TELEGRAM_API_HASH")
+        )
+
+    @classmethod
+    def save_credentials(cls, workspace: Path, api_id: int, api_hash: str):
+        """Write only application identifiers, independently of resource settings."""
+        workspace = workspace.resolve()
+        if cls.credentials_locked():
+            raise UserError("Реквизиты Telegram заданы окружением. Измените их перед запуском.")
+        candidate = replace(cls.load(workspace), api_id=api_id, api_hash=api_hash.lower())
+        if not candidate.configured:
+            raise UserError("Проверьте API ID и API Hash приложения Telegram.")
+        temporary = None
+        try:
+            root = owned_path(workspace, "private")
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if os.name != "nt":
+                root.chmod(0o700)
+            path = owned_path(workspace, "private/telegram-app.json")
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=root,
+                prefix=".telegram-app-",
+                suffix=".tmp",
+                delete=False,
+            ) as file:
+                temporary = Path(file.name)
+                json.dump({"api_id": candidate.api_id, "api_hash": candidate.api_hash}, file)
+                file.flush()
+                os.fsync(file.fileno())
+            owned_path(workspace, path)
+            os.replace(temporary, path)
+            temporary = None
+        except (OSError, SourceFailure):
+            raise UserError(
+                "Не удалось сохранить настройки Telegram. Проверьте права папки."
+            ) from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return candidate
+
     @classmethod
     def load(cls, workspace: Path):
         values = {}
@@ -50,18 +97,26 @@ class SyncSettings:
                     values = {**json.loads(bundle.read_text(encoding="utf-8")), **values}
             if not isinstance(values, dict):
                 raise ValueError("format")
+            local = owned_path(workspace.resolve(), "private/telegram-app.json")
+            if local.exists():
+                credentials = json.loads(local.read_text(encoding="utf-8"))
+                if not isinstance(credentials, dict) or set(credentials) != {"api_id", "api_hash"}:
+                    raise ValueError("credentials")
+                values.update(credentials)
         except (OSError, ValueError, TypeError, SourceFailure) as exc:
             raise UserError("Проверьте формат приватной конфигурации Telegram.") from exc
         allowed = set(cls.__dataclass_fields__)
         values = {key: value for key, value in values.items() if key in allowed}
         try:
-            api_id = os.environ.get("BTS_TELEGRAM_API_ID", values.get("api_id", 0))
+            api_id = os.environ.get("BTS_TELEGRAM_API_ID") or values.get("api_id", 0)
             if type(api_id) not in (str, int):
                 raise ValueError("api_id")
             values["api_id"] = int(api_id)
             if not 0 <= values["api_id"] <= 2_147_483_647:
                 raise ValueError("api_id")
-            values["api_hash"] = os.environ.get("BTS_TELEGRAM_API_HASH", values.get("api_hash", ""))
+            values["api_hash"] = os.environ.get("BTS_TELEGRAM_API_HASH") or values.get(
+                "api_hash", ""
+            )
             settings = cls(**values)
             for key, low, high in (
                 ("reconcile_interval_minutes", 1, 1440),

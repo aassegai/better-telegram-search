@@ -35,7 +35,89 @@ test('Telegram login clears secrets, cancels the flow on close, and translates n
   await expect.poll(() => cancelled).toBe(true);
   await page.getByRole('button', { name: 'Источники · Telegram' }).click();
   await expect(page.getByLabel('Номер телефона с кодом страны')).toHaveValue('');
-  await expect(page.locator('input[type=password]')).toHaveCount(0);
+  await expect(page.getByLabel('Пароль двухэтапной проверки')).toHaveCount(0);
+});
+
+test('Telegram app setup clears the API hash, applies immediately and translates', async ({ page }) => {
+  let connection = { ...disconnected, configured: false, configuration_editable: true };
+  let fail = true;
+  await page.route('**/api/telegram/connection', route => route.fulfill({ json: connection }));
+  await page.route('**/api/telegram/configuration', route => {
+    expect(route.request().method()).toBe('PUT');
+    expect(route.request().postDataJSON()).toEqual({ api_id: 123456, api_hash: 'a'.repeat(32) });
+    if (fail) return route.fulfill({ status: 400, json: { detail: 'Не удалось сохранить настройки Telegram. Проверьте права папки.' } });
+    connection = { ...connection, configured: true };
+    return route.fulfill({ json: connection });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Источники · Telegram' }).click();
+  await expect(page.getByLabel('Номер телефона с кодом страны')).toHaveCount(0);
+  await page.getByLabel('API ID', { exact: true }).fill('123456');
+  await page.getByLabel('API Hash', { exact: true }).fill('a'.repeat(32));
+  await page.getByRole('button', { name: 'Сохранить настройку Telegram' }).click();
+  await expect(page.getByRole('alert')).toContainText('Не удалось сохранить');
+  await expect(page.getByLabel('API Hash', { exact: true })).toHaveValue('');
+  fail = false;
+  await page.getByLabel('API Hash', { exact: true }).fill('a'.repeat(32));
+  await page.getByRole('button', { name: 'Сохранить настройку Telegram' }).click();
+  await expect(page.getByLabel('Номер телефона с кодом страны')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Настройка Telegram сохранена.' })).toBeVisible();
+  await expect(page.getByLabel('API Hash', { exact: true })).toHaveValue('');
+  expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('a'.repeat(32));
+  await page.keyboard.press('Escape');
+  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'Sources · Telegram' }).click();
+  await expect(page.getByText('Telegram connection setup', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Phone number with country code')).toBeVisible();
+});
+
+test('expired Telegram OTP returns to phone entry and allows a new code', async ({ page }) => {
+  let connection = disconnected;
+  await page.route('**/api/telegram/connection', route => route.fulfill({ json: connection }));
+  await page.route('**/api/telegram/auth/start', route => {
+    connection = { ...disconnected, state: 'awaiting_code' };
+    return route.fulfill({ json: { flow_id: 'synthetic-flow', state: 'awaiting_code' } });
+  });
+  await page.route('**/api/telegram/auth/synthetic-flow/code', route => {
+    connection = { ...disconnected, state: 'auth_required' };
+    return route.fulfill({ status: 400, json: { detail: 'Код Telegram истёк. Запросите новый код входа.' } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Источники · Telegram' }).click();
+  await page.getByLabel('Номер телефона с кодом страны').fill('+10000000000');
+  await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+  await page.getByLabel('Код входа из Telegram').fill('12345');
+  await page.getByRole('button', { name: 'Подтвердить вход' }).click();
+  await expect(page.getByRole('alert')).toContainText('Код Telegram истёк.');
+  await expect(page.getByLabel('Номер телефона с кодом страны')).toBeVisible();
+  await expect(page.getByLabel('Код входа из Telegram')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+  await expect(page.getByLabel('Код входа из Telegram')).toBeVisible();
+});
+
+test('a failed reconnect can be disconnected before changing app credentials', async ({ page }) => {
+  let connection = { ...disconnected, reconnect: true, state: 'degraded', account_user_id: 999 };
+  await page.route('**/api/telegram/connection', route => route.fulfill({ json: connection }));
+  await page.route('**/api/telegram/disconnect', route => {
+    expect(route.request().method()).toBe('POST');
+    connection = { ...connection, reconnect: false, state: 'disconnected' };
+    return route.fulfill({ json: connection });
+  });
+  await page.route('**/api/telegram/logout', () => { throw new Error('Changing app credentials must not require logout'); });
+  await page.route('**/api/telegram/configuration', route => {
+    expect(connection.reconnect).toBe(false);
+    return route.fulfill({ json: connection });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Источники · Telegram' }).click();
+  await page.getByRole('button', { name: 'Отключить Telegram', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Отключить Telegram', exact: true })).toHaveCount(0);
+  await page.getByText('Настройка подключения Telegram', { exact: true }).click();
+  await page.getByLabel('API ID', { exact: true }).fill('123456');
+  await page.getByLabel('API Hash', { exact: true }).fill('a'.repeat(32));
+  await page.getByRole('button', { name: 'Сохранить настройку Telegram' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Настройка Telegram сохранена.' })).toBeVisible();
 });
 
 test('Telegram binding requires preview and account confirmation; success follows language', async ({ page }) => {

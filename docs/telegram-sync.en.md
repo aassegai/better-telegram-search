@@ -14,6 +14,13 @@ Register your own developer application with
 [Telegram](https://core.telegram.org/api/obtaining_api_id). Sample application IDs are
 not suitable for distribution. Users of a configured build do not register developer apps.
 
+If the build has no application credentials, open **Sources · Telegram → Telegram
+connection setup**. Follow **API Development tools** to register your own application,
+enter its **API ID** and **API Hash**, and save. Phone login becomes available
+immediately, without restarting. Credentials stay in the local
+`workspace/private/telegram-app.json`; the API Hash is never returned to the UI.
+Disconnect Telegram before changing the application credentials.
+
 Set `BTS_TELEGRAM_API_ID` and `BTS_TELEGRAM_API_HASH` in the environment, or create
 `workspace/private/telegram.toml` with your own values:
 
@@ -30,8 +37,10 @@ Restart after changing the configuration.
 For native builds, set GitHub Actions secrets `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`.
 The builder embeds only the developer application identifiers in the backend package,
 not the frontend. They can be extracted from the distribution and do not authorize
-access to a user's account. Builds without them support search/import but cannot
-connect to Telegram. Telethon is included on all build platforms; Torch is unnecessary.
+access to a user's account. Builds without them allow configuration through the UI.
+Telethon is included on all build platforms; Torch is unnecessary. UI configuration
+overrides the bundled and TOML application credentials while preserving TOML resource
+limits. Environment variables take precedence and disable credential editing in the UI.
 
 ## Connect and sync
 
@@ -50,7 +59,11 @@ connect to Telegram. Telethon is included on all build platforms; Torch is unnec
 History up to the export's highest ID remains the seed archive. Its completeness is
 not proven, and old export gaps are not automatically filled. New chats download
 available history after the chosen date. Pages contain up to 100 messages, with
-20 pages per bounded run and durable resume cursors. Recent edits are reconciled
+20 pages per bounded run and durable resume cursors. Live messages arrive through
+Telegram events. After a network interruption, the app reconnects and downloads the
+gap from the saved cursor. Restarting the app restores the connection and sync
+automatically without another login code while the saved session remains valid.
+Explicit disconnect or logout disables automatic login. Recent edits are reconciled
 every 15 minutes across the last seven days by default. Missing items in a history
 page are not deletion evidence. Older edits outside the window may remain unknown.
 Sync runs only while the application is open.

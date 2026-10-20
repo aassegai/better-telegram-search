@@ -3,6 +3,7 @@
 import asyncio
 import random
 import time
+from dataclasses import replace
 
 from telegram_search.shared.errors import UserError
 from telegram_search.telegram_sync.adapter import normalize_message, peer_of, safe_failure
@@ -12,6 +13,7 @@ from telegram_search.telegram_sync.media import MediaDownloadWorker
 from telegram_search.telegram_sync.models import Peer, SourceFailure
 from telegram_search.telegram_sync.settings import SyncSettings
 from telegram_search.telegram_sync.store import SyncStore
+from telegram_search.telegram_sync.tasks import committed_thread
 
 
 class SyncCoordinator:
@@ -31,6 +33,7 @@ class SyncCoordinator:
         self.bindings = DialogBindingService(self.store, self.connection)
         self.media = MediaDownloadWorker(self.store, self.settings)
         self.tasks = []
+        self.reconnect_task = None
         self.wake = asyncio.Event()
         self.closed = False
         self.degraded = False
@@ -56,14 +59,60 @@ class SyncCoordinator:
 
     def connected(self):
         self.degraded = False
-        with self.db.connect() as conn:
+        if self.reconnect_task is None or self.reconnect_task.done():
+            self.reconnect_task = asyncio.create_task(
+                self._after_connect(), name="telegram-reconnect"
+            )
+
+    async def _after_connect(self):
+        try:
+            await asyncio.to_thread(self._queue_reconnect)
+            self.wake.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if not self.closed:
+                await self._degrade("storage")
+
+    def _queue_reconnect(self):
+        with self.store.lock, self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             ids = [
                 row[0]
                 for row in conn.execute("SELECT id FROM dialog_sync_bindings WHERE enabled=1")
             ]
+            # Keep durable history coverage, but refresh the snapshot's upper bound.
+            # An unfinished run may have started before the network/process gap.
+            conn.execute(
+                "UPDATE dialog_sync_cursors SET upper_bound=NULL,recent_upper_bound=NULL,"
+                "recent_offset_id=NULL,recent_since=NULL WHERE binding_id IN "
+                "(SELECT id FROM dialog_sync_bindings WHERE enabled=1)"
+            )
         for binding_id in ids:
             self.store.request(binding_id, "reconnect")
-        self.wake.set()
+
+    async def configure(self, api_id, api_hash):
+        async with self.connection.lock:
+            row = self.connection.row()
+            if (
+                self.closed
+                or self.connection.flow
+                or self.connection.client
+                or (row and row["reconnect"])
+            ):
+                raise UserError("Отключите Telegram перед изменением реквизитов приложения.")
+            saved, cancelled = await committed_thread(
+                SyncSettings.save_credentials, self.db.workspace, api_id, api_hash
+            )
+            settings = replace(self.settings, api_id=saved.api_id, api_hash=saved.api_hash)
+            self.settings = self.connection.settings = self.media.settings = settings
+            self.connection.configuration_error = None
+            _, status_cancelled = await committed_thread(
+                self.connection.update, "disconnected", reconnect=False
+            )
+            if cancelled or status_cancelled:
+                raise asyncio.CancelledError
+            return self.connection.status()
 
     async def _schedule(self):
         next_gc = 0
@@ -104,6 +153,7 @@ class SyncCoordinator:
     async def _worker(self, kind):
         while not self.closed:
             claimed = None
+            generation = self.connection.generation
             try:
                 row = self.connection.row()
                 if (
@@ -115,6 +165,9 @@ class SyncCoordinator:
                     and row["state"] in {"live", "catching_up", "waiting_rate_limit"}
                     and row["retry_after"] <= time.time()
                 ):
+                    if self.reconnect_task and not self.reconnect_task.done():
+                        await asyncio.shield(self.reconnect_task)
+                    generation = self.connection.generation
                     claimed = await asyncio.to_thread(self.store.claim, kind)
                 if not claimed:
                     await self._wait(1)
@@ -129,7 +182,7 @@ class SyncCoordinator:
                 raise
             except Exception as exc:
                 if claimed:
-                    await self.failed(*claimed, exc)
+                    await self.failed(*claimed, exc, connection_generation=generation)
                 else:
                     await self._degrade("storage")
                 await self._wait(1)
@@ -160,17 +213,24 @@ class SyncCoordinator:
             task = asyncio.create_task(self._degrade("storage"))
             self.tasks.append(task)
 
-    async def _degrade(self, code):
-        self.degraded = True
-        try:
-            self.connection.update("degraded", code, int(time.time()) + 15)
-        except Exception:
-            pass
+    async def _degrade(self, code, generation=None):
         async with self.connection.lock:
+            if generation is not None and generation != self.connection.generation:
+                return
+            self.degraded = True
+            cancelled = False
+            try:
+                _, cancelled = await committed_thread(
+                    self.connection.update, "degraded", code, int(time.time()) + 15
+                )
+            except Exception:
+                pass
             await self.connection._close_client()
+            if cancelled:
+                raise asyncio.CancelledError
 
     async def _call(self, awaitable):
-        return await asyncio.wait_for(awaitable, timeout=45)
+        return await self.connection.rpc(awaitable)
 
     def cursor(self, binding):
         with self.db.connect() as conn:
@@ -206,15 +266,16 @@ class SyncCoordinator:
 
     async def scan(self, job, binding):
         client, peer = self.connection.client, Peer.from_binding(binding)
+        generation = self.connection.generation
         if client is None:
-            return await asyncio.to_thread(self._partial, job, binding)
+            return await asyncio.to_thread(self._partial, job, binding, generation)
         cursor = await asyncio.to_thread(self.cursor, binding)
         if not cursor:
             return
         if cursor["upper_bound"] is None:
             upper = await self._call(client.latest(peer))
             if not await asyncio.to_thread(self._upper, job, binding, upper):
-                return await asyncio.to_thread(self._partial, job, binding)
+                return await asyncio.to_thread(self._partial, job, binding, generation)
             cursor = await asyncio.to_thread(self.cursor, binding)
         upper = cursor["upper_bound"]
         # Small point overlap also catches edits around a committed restart boundary.
@@ -235,7 +296,7 @@ class SyncCoordinator:
                 )
                 is None
             ):
-                return await asyncio.to_thread(self._partial, job, binding)
+                return await asyncio.to_thread(self._partial, job, binding, generation)
         budget = self.settings.pages_per_run
         while cursor["scanned_through_id"] < upper and budget:
             await asyncio.to_thread(self.store.renew, job)
@@ -250,14 +311,14 @@ class SyncCoordinator:
                 self.store.merge, binding, records, run_id=job["run_id"], cursor=through, job=job
             )
             if result is None:
-                return await asyncio.to_thread(self._partial, job, binding)
+                return await asyncio.to_thread(self._partial, job, binding, generation)
             cursor["scanned_through_id"] = through
             budget -= 1
             await asyncio.sleep(0.2)
         if cursor["scanned_through_id"] < upper:
-            return await asyncio.to_thread(self._partial, job, binding)
+            return await asyncio.to_thread(self._partial, job, binding, generation)
         if not await asyncio.to_thread(self._tail, job, binding, upper):
-            return await asyncio.to_thread(self._partial, job, binding)
+            return await asyncio.to_thread(self._partial, job, binding, generation)
         cursor = await asyncio.to_thread(self.cursor, binding)
         while budget:
             await asyncio.to_thread(self.store.renew, job)
@@ -287,33 +348,56 @@ class SyncCoordinator:
                 job=job,
             )
             if result is None:
-                return await asyncio.to_thread(self._partial, job, binding)
+                return await asyncio.to_thread(self._partial, job, binding, generation)
             if len(records) < 100:
-                return await asyncio.to_thread(self._complete, job, binding)
+                return await asyncio.to_thread(self._complete, job, binding, generation)
             cursor["recent_offset_id"] = offset
             budget -= 1
             await asyncio.sleep(0.2)
-        await asyncio.to_thread(self._partial, job, binding)
+        await asyncio.to_thread(self._partial, job, binding, generation)
 
-    def _partial(self, job, binding):
+    @staticmethod
+    def _reset_bounds(conn, binding_id):
+        conn.execute(
+            "UPDATE dialog_sync_cursors SET upper_bound=NULL,recent_upper_bound=NULL,"
+            "recent_offset_id=NULL,recent_since=NULL WHERE binding_id=?",
+            (binding_id,),
+        )
+
+    def _partial(self, job, binding, generation=None):
         with self.store.lock, self.db.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             if not self.store.job_current(conn, job):
                 return
+            reconnect = generation is not None and generation != self.connection.generation
+            if reconnect:
+                self._reset_bounds(conn, binding["id"])
             conn.execute(
                 "UPDATE telegram_jobs SET state='pending',available_at=?,lease_until=0 "
                 "WHERE id=? AND attempt=? AND state='running'",
-                (int(time.time()) + 5, job["id"], job["attempt"]),
+                (0 if reconnect else int(time.time()) + 5, job["id"], job["attempt"]),
             )
             conn.execute(
                 "UPDATE sync_runs SET state='partial' WHERE id=? AND state='running'",
                 (job["run_id"],),
             )
 
-    def _complete(self, job, binding):
+    def _complete(self, job, binding, generation=None):
         with self.store.lock, self.db.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             if not self.store.job_current(conn, job):
+                return
+            if generation is not None and generation != self.connection.generation:
+                self._reset_bounds(conn, binding["id"])
+                conn.execute(
+                    "UPDATE telegram_jobs SET state='pending',available_at=0,lease_until=0 "
+                    "WHERE id=?",
+                    (job["id"],),
+                )
+                conn.execute(
+                    "UPDATE sync_runs SET state='partial' WHERE id=? AND state='running'",
+                    (job["run_id"],),
+                )
                 return
             if not self.store.current(conn, binding):
                 conn.execute(
@@ -350,7 +434,10 @@ class SyncCoordinator:
                 (job["id"],),
             )
 
-    async def failed(self, job, binding, exc):
+    async def failed(self, job, binding, exc, *, connection_generation=None):
+        generation = (
+            self.connection.generation if connection_generation is None else connection_generation
+        )
         failure = safe_failure(exc)
         code = failure.code
         if isinstance(exc, OSError) and getattr(exc, "errno", None) == 28:
@@ -365,50 +452,72 @@ class SyncCoordinator:
             0, 3
         )
         try:
-            with self.store.lock, self.db.connect() as conn:
-                conn.execute("BEGIN IMMEDIATE")
-                if not self.store.job_current(conn, job):
-                    return
-                if not self.store.current(conn, binding):
+
+            def persist():
+                with self.store.lock, self.db.connect() as conn:
+                    conn.execute("BEGIN IMMEDIATE")
+                    if not self.store.job_current(conn, job):
+                        return False
+                    if (
+                        not self.store.current(conn, binding)
+                        or generation != self.connection.generation
+                    ):
+                        if job["kind"] == "scan" and generation != self.connection.generation:
+                            self._reset_bounds(conn, binding["id"])
+                        conn.execute(
+                            "UPDATE telegram_jobs SET state='pending',lease_until=0 WHERE id=?",
+                            (job["id"],),
+                        )
+                        return False
                     conn.execute(
-                        "UPDATE telegram_jobs SET state='pending',lease_until=0 WHERE id=?",
-                        (job["id"],),
+                        "UPDATE telegram_jobs SET state=?,available_at=?,"
+                        "lease_until=0,error_code=? "
+                        "WHERE id=? AND state='running'",
+                        ("pending" if retry else "failed", now + delay, code, job["id"]),
                     )
-                    return
-                conn.execute(
-                    "UPDATE telegram_jobs SET state=?,available_at=?,lease_until=0,error_code=? "
-                    "WHERE id=? AND state='running'",
-                    ("pending" if retry else "failed", now + delay, code, job["id"]),
-                )
-                conn.execute(
-                    "UPDATE dialog_sync_bindings SET error_code=? WHERE id=?", (code, binding["id"])
-                )
-                if job["run_id"]:
                     conn.execute(
-                        "UPDATE sync_runs SET state=?,error_code=?,retry_after=? WHERE id=? "
-                        "AND state='running'",
-                        (
-                            "waiting_rate_limit" if retry else "failed",
-                            code,
-                            now + delay if retry else 0,
-                            job["run_id"],
-                        ),
+                        "UPDATE dialog_sync_bindings SET error_code=? WHERE id=?",
+                        (code, binding["id"]),
                     )
-                if job["asset_id"]:
-                    conn.execute(
-                        "UPDATE telegram_assets SET state=?,error_code=? WHERE id=?",
-                        ("pending" if retry else "failed", code, job["asset_id"]),
-                    )
-            if code == "waiting_rate_limit":
-                self.connection.update("waiting_rate_limit", code, now + delay)
-            elif code == "auth_required":
-                self.connection.update("auth_required", code, reconnect=False)
+                    if job["run_id"]:
+                        conn.execute(
+                            "UPDATE sync_runs SET state=?,error_code=?,retry_after=? WHERE id=? "
+                            "AND state='running'",
+                            (
+                                "waiting_rate_limit" if retry else "failed",
+                                code,
+                                now + delay if retry else 0,
+                                job["run_id"],
+                            ),
+                        )
+                    if job["asset_id"]:
+                        conn.execute(
+                            "UPDATE telegram_assets SET state=?,error_code=? WHERE id=?",
+                            ("pending" if retry else "failed", code, job["asset_id"]),
+                        )
+                return True
+
+            if not await asyncio.to_thread(persist):
+                return
+            if code in {"waiting_rate_limit", "auth_required"}:
                 async with self.connection.lock:
-                    await self.connection._close_client()
+                    if generation != self.connection.generation:
+                        return
+                    if code == "waiting_rate_limit":
+                        _, cancelled = await committed_thread(
+                            self.connection.update, "waiting_rate_limit", code, now + delay
+                        )
+                    else:
+                        _, cancelled = await committed_thread(
+                            self.connection.update, "auth_required", code, reconnect=False
+                        )
+                        await self.connection._close_client()
+                    if cancelled:
+                        raise asyncio.CancelledError
             elif code == "storage":
-                await self._degrade(code)
+                await self._degrade(code, generation)
         except Exception:
-            await self._degrade("storage")
+            await self._degrade("storage", generation)
 
     def retry(self, chat_id):
         binding = self.store.binding(chat_id)
@@ -433,10 +542,11 @@ class SyncCoordinator:
 
     async def close(self):
         self.closed = True
-        for task in self.tasks:
+        tasks = self.tasks + ([self.reconnect_task] if self.reconnect_task else [])
+        for task in tasks:
             task.cancel()
-        if self.tasks:
-            await asyncio.gather(*self.tasks, return_exceptions=True)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         await self.connection.close()
         # In-flight writes ran under lifecycle_lock and finish before releasing the workspace lease.
         await asyncio.to_thread(self.store.shutdown)

@@ -299,5 +299,10 @@
   "Недопустимый идентификатор векторной таблицы.": "Invalid vector table identifier.",
   "Векторный индекс не может быть символической ссылкой.": "The vector index cannot be a symbolic link.",
   "Недопустимое значение настройки gpu_index_load_percent.": "Invalid GPU indexing load limit.",
-  "Векторный индекс не может содержать ссылки или junction.": "The vector index cannot contain symlinks, junctions or reparse points."
+  "Векторный индекс не может содержать ссылки или junction.": "The vector index cannot contain symlinks, junctions or reparse points.",
+  "Проверьте API ID и API Hash приложения Telegram.": "Check your Telegram application API ID and API Hash.",
+  "Не удалось сохранить настройки Telegram. Проверьте права папки.": "Could not save Telegram settings. Check folder permissions.",
+  "Отключите Telegram перед изменением реквизитов приложения.": "Disconnect Telegram before changing application credentials.",
+  "Код Telegram истёк. Запросите новый код входа.": "The Telegram code has expired. Request a new sign-in code.",
+  "Telegram отклонил API ID или API Hash. Проверьте реквизиты приложения.": "Telegram rejected the API ID or API Hash. Check your application credentials."
 }

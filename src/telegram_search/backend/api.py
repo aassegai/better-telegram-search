@@ -284,7 +284,10 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
-        if request.url.path.startswith("/api/telegram/auth/"):
+        if (
+            request.url.path.startswith("/api/telegram/auth/")
+            or request.url.path == "/api/telegram/configuration"
+        ):
             return JSONResponse(
                 {"detail": "Проверьте данные для входа в Telegram."}, status_code=422
             )

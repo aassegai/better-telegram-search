@@ -73,10 +73,14 @@ class SourceFailure(Exception):
 
 
 ERRORS = {
-    "not_configured": "Разработчик ещё не настроил подключение Telegram в этой сборке.",
+    "not_configured": "Добавьте API ID и API Hash приложения Telegram перед входом.",
     "runtime_missing": "Для подключения Telegram установите дополнительный модуль telegram.",
     "auth_required": "Нужно войти в Telegram заново.",
     "invalid_code": "Код Telegram неверен или истёк. Повторите вход.",
+    "code_expired": "Код Telegram истёк. Запросите новый код входа.",
+    "invalid_app_credentials": (
+        "Telegram отклонил API ID или API Hash. Проверьте реквизиты приложения."
+    ),
     "invalid_password": "Неверный пароль двухэтапной проверки.",
     "phone_invalid": "Проверьте номер телефона с кодом страны.",
     "waiting_rate_limit": "Telegram ограничил частоту запросов. Дождитесь указанного времени.",

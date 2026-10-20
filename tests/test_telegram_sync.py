@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import threading
 import time
 from dataclasses import replace
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from telegram_fake import FakeAdapter, remote
 from telegram_search.search.lexical import Filters, SearchService
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import content_hash
+from telegram_search.telegram_sync.adapter import safe_failure
 from telegram_search.telegram_sync.coordinator import SyncCoordinator
 from telegram_search.telegram_sync.models import Peer, SourceFailure, desktop_peer
 from telegram_search.telegram_sync.settings import SyncSettings
@@ -75,6 +77,289 @@ def scan(service):
     assert claimed
     asyncio.run(service.scan(*claimed))
     return claimed
+
+
+def test_automatic_sync_recovers_network_and_application_restart(sync, importer, tmp_path):
+    service, fake = sync
+    binding = bind(service, fake, importer, tmp_path)
+    fake.messages.update({mid: remote(mid) for mid in (2, 3)})
+
+    def cursor():
+        with service.db.connect() as conn:
+            return conn.execute("SELECT scanned_through_id FROM dialog_sync_cursors").fetchone()[0]
+
+    async def until(predicate):
+        async with asyncio.timeout(8):
+            while not predicate():
+                await asyncio.sleep(0.02)
+
+    async def no_login_again(*_):
+        raise AssertionError("Persistent authorized session must not request another OTP")
+
+    fake.request_code = no_login_again
+
+    async def exercise():
+        service.start()
+        await until(lambda: cursor() >= 3)
+        # Live events arrive without waiting for the reconciliation interval.
+        fake.messages[4] = remote(4)
+        await fake.handler("message", fake.messages[4], None)
+        assert service.store.status(binding["chat_id"])["run"]["added"] >= 2
+        # A disconnected existing client must connect again and fetch the gap.
+        fake.connected = False
+        fake.messages[5] = remote(5)
+        service.wake.set()
+        await until(lambda: fake.connected and cursor() >= 5)
+        await service.close()
+        # A new process restores the saved session and bindings without user action.
+        fake.messages[6] = remote(6)
+        restored = SyncCoordinator(
+            service.db, importer.lifecycle_lock, factory=lambda *_: fake, settings=service.settings
+        )
+        try:
+            restored.start()
+            await until(lambda: cursor() >= 6)
+            assert restored.connection.status()["state"] == "live"
+            with service.db.connect() as conn:
+                assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 6
+                assert conn.execute("SELECT COUNT(*) FROM dialog_sync_bindings").fetchone()[0] == 1
+                assert not conn.execute(
+                    "SELECT 1 FROM telegram_jobs WHERE state='failed'"
+                ).fetchone()
+        finally:
+            await restored.close()
+
+    asyncio.run(exercise())
+
+
+def test_reconnect_refreshes_snapshot_after_a_budget_limited_run(sync, importer, tmp_path):
+    service, fake = sync
+    bind(service, fake, importer, tmp_path)
+    service.settings = replace(service.settings, pages_per_run=1)
+    fake.messages.update({mid: remote(mid) for mid in range(2, 201)})
+    latest = fake.latest
+    interrupted = False
+
+    async def reconnect_during_latest(peer):
+        nonlocal interrupted
+        upper = await latest(peer)
+        if not interrupted:
+            interrupted = True
+            fake.connected = False
+            assert await service.connection.restore()
+            await service.reconnect_task
+            fake.messages[201] = remote(201)
+        return upper
+
+    fake.latest = reconnect_during_latest
+
+    async def exercise():
+        await service.scan(*service.store.claim("scan"))
+        with service.db.connect() as conn:
+            cursor = conn.execute("SELECT * FROM dialog_sync_cursors").fetchone()
+            assert cursor["scanned_through_id"] == 101
+            assert cursor["upper_bound"] is None
+        # Resume each bounded page; no periodic 15-minute scan should be necessary.
+        for _ in range(8):
+            with service.db.connect() as conn:
+                conn.execute("UPDATE telegram_jobs SET available_at=0 WHERE state='pending'")
+            claim = service.store.claim("scan")
+            if not claim:
+                break
+            await service.scan(*claim)
+        with service.db.connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 201
+            assert (
+                conn.execute("SELECT scanned_through_id FROM dialog_sync_cursors").fetchone()[0]
+                == 201
+            )
+            assert not conn.execute(
+                "SELECT 1 FROM telegram_jobs WHERE state IN ('pending','running','failed')"
+            ).fetchone()
+
+    asyncio.run(exercise())
+
+
+def test_reconnect_queue_does_not_block_login_during_index_writes(sync, importer, tmp_path):
+    service, fake = sync
+    bind(service, fake, importer, tmp_path)
+    acquired, release = threading.Event(), threading.Event()
+
+    def hold_writer():
+        with importer.lifecycle_lock:
+            acquired.set()
+            release.wait(8)
+
+    async def exercise():
+        worker = threading.Thread(target=hold_writer)
+        worker.start()
+        assert await asyncio.to_thread(acquired.wait, 2)
+        try:
+            await asyncio.wait_for(service.connection._ready(), 1)
+            assert service.connection.status()["state"] == "live"
+            # The durable reconnect job can wait for indexing without stalling HTTP/auth.
+            assert not service.reconnect_task.done()
+            await asyncio.sleep(0)
+        finally:
+            release.set()
+            await asyncio.to_thread(worker.join, 2)
+        await asyncio.wait_for(service.reconnect_task, 2)
+
+    asyncio.run(exercise())
+
+
+def test_cancelled_configuration_cannot_overwrite_a_newer_save(sync, monkeypatch):
+    service, _ = sync
+    entered, release = threading.Event(), threading.Event()
+    original = SyncSettings.save_credentials
+
+    def delayed(workspace, api_id, api_hash):
+        if api_id == 11:
+            entered.set()
+            assert release.wait(5)
+        return original(workspace, api_id, api_hash)
+
+    monkeypatch.setattr(SyncSettings, "save_credentials", staticmethod(delayed))
+
+    async def exercise():
+        await service.connection.disconnect()
+        old = asyncio.create_task(service.configure(11, "b" * 32))
+        assert await asyncio.to_thread(entered.wait, 2)
+        old.cancel()
+        new = asyncio.create_task(service.configure(12, "c" * 32))
+        try:
+            await asyncio.sleep(0)
+            old.cancel()
+            await asyncio.sleep(0)
+            assert not new.done()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await old
+        assert (await asyncio.wait_for(new, 3))["configured"]
+        assert service.settings.api_id == 12
+        assert SyncSettings.load(service.db.workspace).api_id == 12
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("error", ["auth_required", "waiting_rate_limit"])
+def test_previous_connection_failure_cannot_close_or_delay_a_new_login(
+    sync, importer, tmp_path, monkeypatch, error
+):
+    service, fake = sync
+    bind(service, fake, importer, tmp_path)
+    job, binding = service.store.claim("scan")
+    original = asyncio.to_thread
+
+    async def exercise():
+        committed, resume = asyncio.Event(), asyncio.Event()
+
+        async def pause_after_persist(function, *args, **kwargs):
+            result = await original(function, *args, **kwargs)
+            if function.__name__ == "persist":
+                committed.set()
+                await resume.wait()
+            return result
+
+        monkeypatch.setattr(asyncio, "to_thread", pause_after_persist)
+        failure = asyncio.create_task(service.failed(job, binding, SourceFailure(error)))
+        await asyncio.wait_for(committed.wait(), 2)
+        try:
+            await service.connection.disconnect()
+            # The new login and old failure deliberately share the same fake adapter.
+            # Client identity alone cannot distinguish these connection generations.
+            fake.authenticated = False
+            flow = await service.connection.auth_start("+10000000000")
+            await service.connection.auth_code(flow["flow_id"], "12345")
+        finally:
+            resume.set()
+        await asyncio.wait_for(failure, 2)
+        status = service.connection.status()
+        assert status["connected"] and status["state"] == "live"
+        assert status["reconnect"] and status["retry_after"] == 0
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("error", ["waiting_rate_limit", "storage"])
+def test_cancelled_status_write_finishes_before_the_next_login(
+    sync, importer, tmp_path, monkeypatch, error
+):
+    service, fake = sync
+    bind(service, fake, importer, tmp_path)
+    job, binding = service.store.claim("scan")
+    entered, release = threading.Event(), threading.Event()
+    original = service.connection.update
+    delayed_state = "degraded" if error == "storage" else error
+
+    def delayed_update(state, *args, **kwargs):
+        if state == delayed_state:
+            entered.set()
+            assert release.wait(5)
+        return original(state, *args, **kwargs)
+
+    monkeypatch.setattr(service.connection, "update", delayed_update)
+
+    async def login_again():
+        await service.connection.disconnect()
+        fake.authenticated = False
+        flow = await service.connection.auth_start("+10000000000")
+        await service.connection.auth_code(flow["flow_id"], "12345")
+
+    async def exercise():
+        failure = asyncio.create_task(service.failed(job, binding, SourceFailure(error)))
+        assert await asyncio.to_thread(entered.wait, 2)
+        failure.cancel()
+        login = asyncio.create_task(login_again())
+        try:
+            await asyncio.sleep(0)
+            assert not login.done()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(failure, 2)
+        await asyncio.wait_for(login, 2)
+        status = service.connection.status()
+        assert status["connected"] and status["state"] == "live"
+        assert status["retry_after"] == 0
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    ("error_name", "public_code", "keep_flow"),
+    [
+        ("PhoneCodeInvalidError", "invalid_code", True),
+        ("PhoneCodeExpiredError", "code_expired", False),
+        ("ApiIdInvalidError", "invalid_app_credentials", False),
+    ],
+)
+def test_login_recovery_distinguishes_invalid_and_expired_codes(
+    sync, error_name, public_code, keep_flow
+):
+    service, fake = sync
+
+    async def fail(*_):
+        raise type(error_name, (Exception,), {})("synthetic-private-error")
+
+    async def exercise():
+        await service.connection.disconnect()
+        fake.authenticated = False
+        flow = await service.connection.auth_start("+10000000000")
+        service.connection.flow.expires_at -= 50
+        assert 240 <= service.connection.flow_status()["expires_in"] <= 250
+        fake.login_code = fail
+        with pytest.raises(UserError) as exc:
+            await service.connection.auth_code(flow["flow_id"], "12345")
+        assert "synthetic-private-error" not in str(exc.value)
+        status = service.connection.status()
+        assert status["error_code"] == public_code
+        assert bool(service.connection.flow) == keep_flow
+        assert fake.connected == keep_flow
+        assert safe_failure(type(error_name, (Exception,), {})()).code == public_code
+
+    asyncio.run(exercise())
 
 
 def test_typed_peer_ids_and_equivalent_entities():

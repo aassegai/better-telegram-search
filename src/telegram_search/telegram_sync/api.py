@@ -27,6 +27,11 @@ class LoginPassword(StrictBody):
     password: str = Field(min_length=1, max_length=256, repr=False)
 
 
+class AppConfiguration(StrictBody):
+    api_id: int = Field(ge=1, le=2147483647, strict=True, repr=False)
+    api_hash: str = Field(pattern=r"^[a-fA-F0-9]{32}$", repr=False)
+
+
 class BindingPreview(StrictBody):
     peer_key: str = Field(pattern=r"^(user|chat|channel):[1-9][0-9]{0,19}$")
     chat_id: str | None = Field(default=None, max_length=64)
@@ -58,6 +63,11 @@ def sync(request):
 @router.get("/api/telegram/connection")
 def connection(request: Request):
     return sync(request).connection.status()
+
+
+@router.put("/api/telegram/configuration")
+async def configure(request: Request, body: AppConfiguration):
+    return await sync(request).configure(body.api_id, body.api_hash)
 
 
 @router.post("/api/telegram/auth/start")

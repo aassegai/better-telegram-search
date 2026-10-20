@@ -32,6 +32,7 @@ class TelegramConnectionManager:
             factory is not None or importlib.util.find_spec("telethon") is not None
         )
         self.client = None
+        self.generation = 0
         self.flow = None
         self.lease = None
         self.lock = asyncio.Lock()
@@ -73,6 +74,8 @@ class TelegramConnectionManager:
         # Deliberate allowlist: no path, phone, access hash or SDK/session state.
         return {
             "configured": self.settings.configured,
+            "configuration_editable": not self.settings.credentials_locked(),
+            "reconnect": bool(row and row["reconnect"]),
             "runtime_installed": self.runtime_installed,
             "state": self.flow.stage if self.flow else (row["state"] if row else "disconnected"),
             "account_user_id": row["account_user_id"] if row else None,
@@ -129,6 +132,9 @@ class TelegramConnectionManager:
 
     async def _open(self):
         if self.client:
+            if not self.client.is_connected():
+                self.generation += 1
+                await asyncio.wait_for(self.client.connect(), timeout=30)
             return
         if not self.settings.configured:
             raise SourceFailure("not_configured")
@@ -142,6 +148,7 @@ class TelegramConnectionManager:
             raise SourceFailure("session_busy") from exc
         self.lease = lease
         try:
+            self.generation += 1
             self.client = self.factory(path, self.settings)
             if self.handler:
                 self.client.set_handler(self.handler)
@@ -151,6 +158,7 @@ class TelegramConnectionManager:
             raise
 
     async def _close_client(self):
+        self.generation += 1
         client, self.client = self.client, None
         try:
             if client:
@@ -234,7 +242,11 @@ class TelegramConnectionManager:
                 await self._auth_failure(exc)
 
     def flow_status(self):
-        return {"flow_id": self.flow.id, "state": self.flow.stage, "expires_in": 300}
+        return {
+            "flow_id": self.flow.id,
+            "state": self.flow.stage,
+            "expires_in": max(0, int(self.flow.expires_at - time.monotonic())),
+        }
 
     def _validate_flow(self, flow_id, stage):
         if (

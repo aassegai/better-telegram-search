@@ -23,8 +23,12 @@ def safe_failure(exc: Exception) -> SourceFailure:
         return SourceFailure("auth_required")
     if name in {"FileReferenceExpiredError", "FileReferenceInvalidError"}:
         return SourceFailure("network")
-    if name in {"PhoneCodeInvalidError", "PhoneCodeExpiredError", "PhoneCodeEmptyError"}:
+    if name in {"PhoneCodeInvalidError", "PhoneCodeEmptyError"}:
         return SourceFailure("invalid_code")
+    if name in {"PhoneCodeExpiredError", "PhoneCodeHashEmptyError", "PhoneCodeHashInvalidError"}:
+        return SourceFailure("code_expired")
+    if name in {"ApiIdInvalidError", "ApiIdPublishedFloodError"}:
+        return SourceFailure("invalid_app_credentials")
     if name == "PasswordHashInvalidError":
         return SourceFailure("invalid_password")
     if name in {"PhoneNumberInvalidError", "PhoneNumberBannedError"}:
