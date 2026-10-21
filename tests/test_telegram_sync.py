@@ -748,6 +748,50 @@ def test_shutdown_fences_delayed_thread_writes(sync, importer, tmp_path):
         assert not conn.execute("SELECT 1 FROM messages WHERE message_id=2").fetchone()
 
 
+def test_shutdown_collects_finished_errors_and_awaits_pending_cleanup(sync):
+    import gc
+
+    service, _ = sync
+    unhandled = []
+
+    async def previous_loop():
+        asyncio.get_running_loop().set_exception_handler(
+            lambda _, context: unhandled.append(context)
+        )
+
+        async def failed():
+            raise RuntimeError("synthetic completed task failure")
+
+        task = asyncio.create_task(failed())
+        await asyncio.sleep(0)
+        return task
+
+    finished = asyncio.run(previous_loop())
+    service.tasks.append(finished)
+
+    async def shutdown():
+        cleaned = asyncio.Event()
+
+        async def pending():
+            try:
+                await asyncio.sleep(30)
+            finally:
+                await asyncio.sleep(0)
+                cleaned.set()
+
+        task = asyncio.create_task(pending())
+        service.tasks.append(task)
+        await asyncio.sleep(0)
+        await service.close()
+        assert task.cancelled() and cleaned.is_set()
+
+    asyncio.run(shutdown())
+    service.tasks.clear()
+    del finished
+    gc.collect()
+    assert not unhandled
+
+
 def test_gc_skips_symlinks_and_reparse_points(sync, tmp_path, monkeypatch):
     import stat
     from pathlib import Path

@@ -542,9 +542,16 @@ class SyncCoordinator:
 
     async def close(self):
         self.closed = True
-        tasks = self.tasks + ([self.reconnect_task] if self.reconnect_task else [])
-        for task in tasks:
-            task.cancel()
+        tasks = []
+        for task in self.tasks + ([self.reconnect_task] if self.reconnect_task else []):
+            # Completed tasks need no callbacks on their former loop. Retrieve
+            # failures just as gather(return_exceptions=True) did before.
+            if task.done():
+                if not task.cancelled():
+                    task.exception()
+            else:
+                task.cancel()
+                tasks.append(task)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         await self.connection.close()
