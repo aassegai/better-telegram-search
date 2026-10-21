@@ -33,7 +33,12 @@ The full pipeline's lower bound allows overlap; its upper bound includes serial
 execution and the OCR-to-text dependency.
 
 Failures leave the runnable queue until explicitly retried. A pause that prevents
-completion hides the estimate, including future semantic OCR. Stale observations
+completion hides the estimate, including future semantic OCR. While waiting for RAM,
+the UI shows app memory use, the configured threshold and available system memory
+instead of an ETA. The threshold applies to the summed RSS of the app and OCR child
+processes; free system RAM does not override it. To continue, pause indexing and
+raise the threshold under shared indexing resources. Processing resumes automatically
+when memory falls below the threshold. Stale observations
 stop producing a numeric forecast after ten typical batch durations, bounded
 between one minute and one hour.
 

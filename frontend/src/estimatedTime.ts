@@ -3,6 +3,7 @@ import type { IndexEstimate } from './types';
 
 export function estimatedTime(seconds: number | null | undefined, unknown = t('Оценка появится после первых батчей.'), estimate?: IndexEstimate | null): string {
   if (estimate?.paused) return t('Продолжите индексацию для оценки времени.');
+  if (estimate?.waiting_reason === 'memory') return t('Оценка времени недоступна: индексация ожидает памяти.');
   if (estimate?.stale) return t('Оценка уточняется: давно не было завершённых батчей.');
   if (seconds != null && Number.isFinite(seconds) && seconds <= 0) return t('Индексация завершена.');
   const lower = estimate?.lower_seconds, upper = estimate?.upper_seconds;

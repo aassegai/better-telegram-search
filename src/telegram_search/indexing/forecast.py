@@ -18,6 +18,17 @@ def paused_forecast(value):
     }
 
 
+def memory_forecast(value):
+    return {
+        **value,
+        "estimated_remaining_seconds": None,
+        "lower_seconds": None,
+        "upper_seconds": None,
+        "measuring": False,
+        "waiting_reason": "memory",
+    }
+
+
 def combine_forecasts(parts, remaining):
     """Consecutive workload groups; each group uses its own current batch configuration."""
     if not parts:

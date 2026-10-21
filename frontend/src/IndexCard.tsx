@@ -40,7 +40,7 @@ export default function IndexCard(props: Props) {
   return <section className="index-card" aria-label={`${title} · ${model}`}>
     <header className="index-card-heading"><h3>{title}</h3><span className="index-model">{model}</span></header>
     <div className="index-progress-label"><span>{t('Готово: {p0} / {p1}', { p0: ready, p1: total })}</span>
-      <span>{preparing ? t('Подготавливаем…') : props.blocked ? t('Ошибка индексации') : paused ? t('На паузе') : enabled ? ready >= total ? t('Готово') : t('Индексация') : t('Не подготовлен')}</span></div>
+      <span>{preparing ? t('Подготавливаем…') : props.blocked ? t('Ошибка индексации') : paused ? t('На паузе') : enabled ? ready >= total ? t('Готово') : props.estimate?.waiting_reason === 'memory' ? t('Ожидание RAM') : t('Индексация') : t('Не подготовлен')}</span></div>
     <progress aria-label={t('Прогресс индексации {p0}', { p0: title })} value={ready} max={Math.max(1, total)} />
     {enabled && !props.blocked && !preparing && <p className="index-eta" role="status">{paused && ready < total ? t('Продолжите индексацию для оценки времени.') : estimatedTime(seconds, undefined, props.estimate)}</p>}
     <IndexErrors count={props.failed ?? 0} busy={busy || !enabled} onRetry={() => props.onControl('retry')} />

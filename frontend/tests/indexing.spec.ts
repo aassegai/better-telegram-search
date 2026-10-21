@@ -1,5 +1,54 @@
 import { expect, test } from '@playwright/test';
 
+test('memory waits explain the app threshold and stop promising an ETA', async ({ page }) => {
+  let mode: 'waiting' | 'paused' | 'running' = 'waiting';
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    const estimate = { lower_seconds: 120, upper_seconds: 240,
+      waiting_reason: mode === 'waiting' ? 'memory' : null, paused: mode === 'paused' };
+    await route.fulfill({ json: { ...base, media: { ...base.media,
+      visual_profile: 'siglip2', images_enabled: 1, ocr_enabled: 1, preparation_state: 'ready',
+      paused: Number(mode === 'paused'), ocr_paused: Number(mode === 'paused'),
+      ocr_dense_paused: Number(mode === 'paused'), total_photos: 100, images_ready: 20,
+      ocr_ready: 20, ocr_failed: 0, ocr_nonempty_ready: 10, ocr_dense_ready: 5,
+      ocr_dense_available: true, images_estimated_remaining_seconds: 180,
+      ocr_estimated_remaining_seconds: 180, ocr_dense_estimated_remaining_seconds: 180,
+      images_estimate: estimate, ocr_estimate: estimate, ocr_dense_estimate: estimate,
+      preparation_estimated_remaining_seconds: null, preparation_estimate: estimate,
+      memory_wait: mode === 'waiting' ? { stages: ['clip', 'ocr', 'ocr_dense'],
+        rss_bytes: 6000 * 1024 ** 2, limit_bytes: 4096 * 1024 ** 2, available_bytes: 20000 * 1024 ** 2 } : null,
+      resource_error: mode === 'waiting' ? 'Достигнут предел RAM: медиа ожидает освобождения памяти.' : null,
+    } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const images = page.getByRole('region', { name: 'Изображения · SigLIP 2' });
+  const ocr = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
+  await expect(images.getByText('Ожидание RAM', { exact: true })).toBeVisible();
+  await expect(images.locator('.index-eta')).toHaveText('Оценка времени недоступна: индексация ожидает памяти.');
+  await expect(images.getByText('RAM приложения: 6000 МиБ · порог: 4096 МиБ.')).toBeVisible();
+  await expect(ocr.getByText('Свободно в системе: 20000 МиБ.')).toBeVisible();
+  await expect(ocr.locator('.index-eta')).toHaveText([
+    'Оценка времени недоступна: индексация ожидает памяти.',
+    'Оценка времени недоступна: индексация ожидает памяти.',
+  ]);
+  await expect(images.getByText('Достигнут предел RAM: медиа ожидает освобождения памяти.')).toHaveCount(0);
+  await page.getByRole('slider').press('End');
+  const english = page.getByRole('region', { name: 'Images · SigLIP 2' });
+  await expect(english.getByText('Waiting for RAM', { exact: true })).toBeVisible();
+  await expect(english.getByText('App RAM: 6000 MiB · threshold: 4096 MiB.')).toBeVisible();
+  mode = 'paused';
+  await expect(english.locator('.index-eta')).toHaveText('Resume indexing to estimate the remaining time.');
+  await expect(english.locator('.memory-wait')).toHaveCount(0);
+  mode = 'running';
+  await expect(english.locator('.index-eta')).toHaveText('About 2–4 min remaining.');
+  await expect(english).toContainText('20 / 100');
+  mode = 'waiting';
+  await english.getByRole('button', { name: 'Open general settings', exact: true }).click();
+  await page.locator('.resource-settings').getByText('Shared indexing resources', { exact: true }).click();
+  await expect(page.getByLabel('Media RAM threshold (MiB)', { exact: true })).toBeVisible();
+});
+
 test('index ETA shows ranges, stale measurements and paused pipelines in both languages', async ({ page }) => {
   let mode: 'running' | 'stale' | 'paused' | 'unknown' = 'running';
   await page.route('**/api/chats/*/index', async route => {

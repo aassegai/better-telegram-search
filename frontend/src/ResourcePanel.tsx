@@ -46,6 +46,7 @@ export default function ResourcePanel() {
     <section aria-label={t('CPU, память и очереди')}>
       <h3>{t('CPU, память и очереди')}</h3>
       <p>{t('Перед сохранением приостановите индексацию текста и медиа. Порог RAM проверяется перед фоновой обработкой фотографии; он не ограничивает память процесса жёстко.')}</p>
+      <p className="baseline-note">{t('Порог RAM учитывает всё приложение и дочерние OCR-процессы. Даже при свободной памяти системы превышение этого порога приостанавливает медиаиндексацию.')}</p>
       {limits && <div className="resource-fields">{resources.map(([key, label, min, max]) => <label key={key}>{t(label)}<input
         aria-label={t(label)} type="number" min={min} max={max} step="1" value={limits[key]} disabled={op.busy}
         onChange={event => setLimits({ ...limits, [key]: Number(event.target.value) })} /></label>)}</div>}

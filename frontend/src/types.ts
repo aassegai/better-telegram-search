@@ -33,9 +33,11 @@ export type Hit = {
 export type IndexEstimate = {
   lower_seconds: number | null; upper_seconds: number | null;
   eta_samples?: number; measuring?: boolean; projected?: boolean; paused?: boolean; stale?: boolean;
+  waiting_reason?: 'memory' | null;
 };
 
 export type MediaStatus = {
+  memory_wait?: { stages: ('clip' | 'ocr' | 'ocr_dense')[]; rss_bytes: number; limit_bytes: number; available_bytes: number | null } | null;
   ocr_estimate?: IndexEstimate; images_estimate?: IndexEstimate; ocr_dense_estimate?: IndexEstimate;
   preparation_estimate?: IndexEstimate;
   visual_profile?: 'clip' | 'siglip2';

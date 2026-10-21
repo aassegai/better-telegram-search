@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 
 from telegram_search.indexing.estimates import record_rate
-from telegram_search.indexing.forecast import combine_forecasts, paused_forecast
+from telegram_search.indexing.forecast import combine_forecasts, memory_forecast, paused_forecast
 from telegram_search.indexing.media_images import MediaImages
 from telegram_search.indexing.media_workload import pending_condition, pending_groups
 from telegram_search.indexing.metrics import ResourceMetrics, StageMetrics
@@ -33,6 +33,8 @@ class MediaService(MediaImages):
         self.running = False
         self.ocr_cpu_running = False
         self.resource_error = None
+        self.memory_lock = threading.Lock()
+        self.memory_waiting_stages = set()
         self.image_limits = {}
         self.ocr_staging_ids = set()
         self.ocr_claims = set()
@@ -552,6 +554,21 @@ class MediaService(MediaImages):
                 ("ocr_dense", nonempty - ocr_dense - ocr_dense_failed),
             )
         }
+        resource_usage = self.resources.snapshot()
+        memory_limit = self.db.settings.memory_limit_mib * 1024**2
+        with self.memory_lock:
+            waiting = set(self.memory_waiting_stages)
+        if resource_usage["rss_bytes"] <= memory_limit:
+            waiting.clear()
+        # OCR may still make progress on its other lane. Hide its ETA only
+        # when all configured lanes have stopped admitting background work.
+        if getattr(ocr, "cpu_peer", None) is not None and "ocr_cpu" not in waiting:
+            waiting.discard("ocr")
+        memory_stages = {
+            stage
+            for stage in ("ocr", "clip", "ocr_dense")
+            if stage in waiting and not blocked[stage] and queues[stage]["pending"] > 0
+        }
         estimates = self.semantic.estimates
         observations = {
             "ocr": estimates.media_forecast(
@@ -579,6 +596,8 @@ class MediaService(MediaImages):
         for stage, estimate in observations.items():
             if blocked[stage] and queues[stage]["pending"] > 0:
                 observations[stage] = estimate = paused_forecast(estimate)
+            elif stage in memory_stages:
+                observations[stage] = estimate = memory_forecast(estimate)
             queues[stage].update(estimate)
             work_per_image = (
                 pending_ocr_characters / max(1, queues[stage]["pending"])
@@ -636,8 +655,18 @@ class MediaService(MediaImages):
             for stage in enabled
             if enabled[stage]
         )
-        preparation_estimate = {"lower_seconds": None, "upper_seconds": None, "paused": paused}
-        if not paused and active and all(part["lower_seconds"] is not None for part in active):
+        preparation_estimate = {
+            "lower_seconds": None,
+            "upper_seconds": None,
+            "paused": paused,
+            "waiting_reason": "memory" if memory_stages else None,
+        }
+        if (
+            not paused
+            and not memory_stages
+            and active
+            and all(part["lower_seconds"] is not None for part in active)
+        ):
             preparation_estimate.update(
                 lower_seconds=max(part["lower_seconds"] for part in active),
                 upper_seconds=sum(part["upper_seconds"] for part in active),
@@ -654,7 +683,15 @@ class MediaService(MediaImages):
             "photo_attachments": attachments,
             "photo_messages": photo_messages,
             "ocr_retries": retries,
-            "resource_usage": self.resources.snapshot(),
+            "resource_usage": resource_usage,
+            "memory_wait": {
+                "stages": sorted(memory_stages),
+                "rss_bytes": resource_usage["rss_bytes"],
+                "limit_bytes": memory_limit,
+                "available_bytes": resource_usage.get("ram_available_bytes"),
+            }
+            if memory_stages
+            else None,
             "ocr_ready": ready,
             "ocr_failed": failed,
             "ocr_dense_ready": ocr_dense,
@@ -695,7 +732,12 @@ class MediaService(MediaImages):
             else {"device": "cpu", "provider": "tesseract"},
             "ocr_timings": self.ocr_timings,
             "running": self.running or self.ocr_cpu_running,
-            "resource_error": self.resource_error,
+            "resource_error": self.resource_error
+            or (
+                "Достигнут предел RAM: медиа ожидает освобождения памяти."
+                if memory_stages
+                else None
+            ),
             "device": clip.execution.info()["device"]
             if clip
             else self.db.settings.model_device("clip"),
@@ -1009,6 +1051,17 @@ class MediaService(MediaImages):
         worked |= self._ocr_embeddings()
         return worked
 
+    def _memory_available(self, stage):
+        over_limit = (
+            self.resources.snapshot()["rss_bytes"] > self.db.settings.memory_limit_mib * 1024**2
+        )
+        with self.memory_lock:
+            if over_limit:
+                self.memory_waiting_stages.add(stage)
+            else:
+                self.memory_waiting_stages.discard(stage)
+        return not over_limit
+
     def _loop(self):
         self._stage_loop("ocr", self._ocr_run)
 
@@ -1031,18 +1084,15 @@ class MediaService(MediaImages):
                         else self.ocr and self.semantic.encoder
                     )
                 if available:
-                    if (
-                        self.resources.snapshot()["rss_bytes"]
-                        > self.db.settings.memory_limit_mib * 1024**2
-                    ):
-                        self.resource_error = (
-                            "Достигнут предел RAM: медиа ожидает освобождения памяти."
-                        )
+                    if not self._memory_available(stage):
                         self._relieve_memory(stage)
                     else:
                         self.resource_error = None
                         if operation():
                             continue
+                else:
+                    with self.memory_lock:
+                        self.memory_waiting_stages.discard(stage)
             except Exception:
                 self.resource_error = (
                     "Медиа-индекс остановился на ошибке. Проверьте источник и повторите."
@@ -1053,6 +1103,8 @@ class MediaService(MediaImages):
                     self.clip.unload_idle(idle_seconds=self.db.settings.idle_unload_seconds)
             # A bounded wait also covers callers sharing the legacy wake Event.
             self.stop.wait(0.25)
+        with self.memory_lock:
+            self.memory_waiting_stages.discard(stage)
 
     def _ocr_embeddings(self):
         began = time.monotonic()

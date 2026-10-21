@@ -674,5 +674,12 @@
   "Продолжите индексацию для оценки времени.": "Resume indexing to estimate the remaining time.",
   "Оценка учитывает недавние батчи и параллельную работу этапов. До завершения распознавания объём смыслового OCR оценивается предварительно.": "Estimates use recent batches and overlapping stages. The remaining semantic OCR workload is provisional until recognition finishes.",
   "Собираем статистику для оценки времени.": "Collecting measurements to estimate the remaining time.",
-  "Оценка уточняется: давно не было завершённых батчей.": "Re-estimating: no batches have finished recently."
+  "Оценка уточняется: давно не было завершённых батчей.": "Re-estimating: no batches have finished recently.",
+  "Оценка времени недоступна: индексация ожидает памяти.": "Time estimate unavailable: indexing is waiting for memory.",
+  "Ожидание RAM": "Waiting for RAM",
+  "RAM приложения: {p0} МиБ · порог: {p1} МиБ.": "App RAM: {p0} MiB · threshold: {p1} MiB.",
+  "Свободно в системе: {p0} МиБ.": "Available system RAM: {p0} MiB.",
+  "Порог учитывает приложение и OCR-процессы. Приостановите индексацию и увеличьте порог RAM в общих ресурсах индексации. Готовые индексы сохранятся.": "The threshold covers the app and OCR processes. Pause indexing and raise the RAM threshold under shared indexing resources. Completed indexes will be preserved.",
+  "Открыть общие настройки": "Open general settings",
+  "Порог RAM учитывает всё приложение и дочерние OCR-процессы. Даже при свободной памяти системы превышение этого порога приостанавливает медиаиндексацию.": "The RAM threshold covers the entire app and its OCR child processes. Exceeding it suspends media indexing even when system memory is available."
 }

@@ -128,6 +128,7 @@ def test_memory_throttle_can_release_idle_model_then_resume(db, importer):
 
     media._stage_loop("ocr", operation)
     assert released.is_set() and media.resource_error is None
+    assert not media.memory_waiting_stages
 
 
 def test_clip_idle_eviction_preserves_recent_or_busy_query_session():

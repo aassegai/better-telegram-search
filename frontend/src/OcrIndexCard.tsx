@@ -3,6 +3,7 @@ import { estimatedTime } from './estimatedTime';
 import type { MediaStatus } from './types';
 import IndexErrors from './IndexErrors';
 import type { ReactNode } from 'react';
+import MemoryWaitNotice from './MemoryWaitNotice';
 
 type Props = {
   media: MediaStatus; busy: boolean; preparing: boolean;
@@ -20,7 +21,7 @@ export default function OcrIndexCard({ media, busy, preparing, onModels, onContr
   const denseEta = densePending <= 0 ? denseFailed > 0 ? t('Обработка завершена. Ошибки нужно повторить.') : done ? t('Смысловая индексация OCR завершена.') : t('Ждём новые распознанные изображения.') : media.ocr_dense_paused ? t('Продолжите индексацию для оценки времени.') : estimatedTime(media.ocr_dense_estimated_remaining_seconds, t('Оценка смыслового OCR появится после первых изображений.'), media.ocr_dense_estimate);
   const paused = media.ocr_paused ?? media.paused;
   const status = preparing ? t('Подготавливаем…') : !enabled ? t('Не подготовлен') : done ?
-    failed > 0 ? t('Требуется повтор') : t('Готово') : paused ? t('На паузе') : t('Распознавание');
+    failed > 0 ? t('Требуется повтор') : t('Готово') : paused ? t('На паузе') : media.ocr_estimate?.waiting_reason === 'memory' ? t('Ожидание RAM') : t('Распознавание');
   return <section className="index-card" aria-label={t('Текст на изображениях · OCR')}>
     <header className="index-card-heading"><h3>{t('Текст на изображениях')}</h3><span className="index-model">OCR · {(media.ocr_backend?.device ?? 'cpu').toUpperCase().split('+').join(' + ')}</span></header>
     <div className="index-progress-label"><span>{t('Обработано: {p0} / {p1}', { p0: completed, p1: media.total_photos })}</span><span>{status}</span></div>
@@ -45,6 +46,7 @@ export default function OcrIndexCard({ media, busy, preparing, onModels, onContr
     {enabled && <div className="job-actions index-actions">
       <button className="primary" disabled={busy || preparing} onClick={() => onControl(paused ? 'resume' : 'pause')}>{paused ? t('Продолжить OCR') : t('Пауза OCR')}</button>
     </div>}
+    <MemoryWaitNotice wait={media.memory_wait} stages={['ocr', 'ocr_dense']} onSettings={onModels} />
     {children}
   </section>;
 }

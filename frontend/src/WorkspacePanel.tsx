@@ -10,6 +10,7 @@ import { estimatedTime } from './estimatedTime';
 import type { Mutation } from './IndexCard';
 import DevicePanel from './DevicePanel';
 import StoragePanel from './StoragePanel';
+import MemoryWaitNotice from './MemoryWaitNotice';
 
 export default function WorkspacePanel({ media, onMediaChange, chatId, indexing = false, onStart, onEnd, pending, onModels }: Mutation & { media: MediaStatus | null; onMediaChange: (value: MediaStatus) => void; chatId?: string; indexing?: boolean; onModels?: () => void }) {
   const [offline, setOffline] = useState(false);
@@ -50,7 +51,8 @@ export default function WorkspacePanel({ media, onMediaChange, chatId, indexing 
         seconds={media.images_estimated_remaining_seconds} estimate={media.images_estimate} batch={media.batch_size ?? 1} kind="image_batch"
         chatId={chatId} busy={busy} onPrepare={onModels ?? (() => {})} onControl={control}
         onSaved={accept} onStart={onStart} onEnd={onEnd}>
-        {[media.error, media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
+        {[media.error, media.memory_wait && t(media.resource_error) === t('Достигнут предел RAM: медиа ожидает освобождения памяти.') ? null : media.resource_error].filter(Boolean).map(value => <p className="warning" key={value}>{t(value)}</p>)}
+        <MemoryWaitNotice wait={media.memory_wait} stages={['clip']} onSettings={onModels} />
         {media.missing_refs > 0 && <p className="warning">{t('Недоступных фотографий в источниках: ')}{media.missing_refs}</p>}
       </IndexCard>}
       {media && <OcrIndexCard media={media} busy={busy} preparing={preparing} onModels={onModels ?? (() => {})} onControl={action => control(action, 'ocr')} onDenseControl={action => control(action, 'ocr_dense')}>
