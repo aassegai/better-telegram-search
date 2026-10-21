@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -11,14 +12,45 @@ def gh(*args, payload=None):
     command = ["gh", *args]
     if payload is not None:
         command += ["--input", "-"]
-    result = subprocess.run(
-        command,
-        input=json.dumps(payload) if payload is not None else None,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            input=json.dumps(payload) if payload is not None else None,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError("GitHub command failed: " + (exc.stderr or "")[:1000]) from None
     return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def write_report(repository, result):
+    endpoint = f"repos/{repository}/contents/latest.json"
+    for attempt in range(3):
+        content = subprocess.run(
+            ["gh", "api", endpoint + "?ref=build-status"], capture_output=True, text=True
+        )
+        payload = {
+            "message": f"Build report for {result['commit'][:12]}",
+            "branch": "build-status",
+            "content": base64.b64encode(json.dumps(result, indent=2).encode()).decode(),
+        }
+        if content.returncode == 0:
+            current = json.loads(content.stdout)
+            previous = json.loads(base64.b64decode(current["content"]))
+            if int(previous["run_id"]) > int(result["run_id"]):
+                return False
+            payload["sha"] = current["sha"]
+        elif "(HTTP 404)" not in content.stderr:
+            raise RuntimeError("Cannot read build report: " + content.stderr[:1000])
+        try:
+            gh("api", "--method", "PUT", endpoint, payload=payload)
+            return True
+        except RuntimeError as exc:
+            if "(HTTP 409)" not in str(exc) or attempt == 2:
+                raise
+            time.sleep(0.25 * 2**attempt)
 
 
 def main():
@@ -110,19 +142,7 @@ def main():
             f"repos/{repository}/git/refs",
             payload={"ref": f"refs/heads/{branch}", "sha": os.environ["GITHUB_SHA"]},
         )
-    content = subprocess.run(
-        ["gh", "api", f"repos/{repository}/contents/latest.json?ref={branch}"],
-        capture_output=True,
-        text=True,
-    )
-    payload = {
-        "message": f"Build report for {os.environ['GITHUB_SHA'][:12]}",
-        "branch": branch,
-        "content": base64.b64encode(json.dumps(result, indent=2).encode()).decode(),
-    }
-    if content.returncode == 0:
-        payload["sha"] = json.loads(content.stdout)["sha"]
-    gh("api", "--method", "PUT", f"repos/{repository}/contents/latest.json", payload=payload)
+    write_report(repository, result)
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as out:
         out.write(
             f"Native CPU/GPU builds: {result['result']}\n\n"
