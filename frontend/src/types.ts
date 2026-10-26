@@ -86,9 +86,17 @@ export type Job = {
   updated: number; unchanged: number; conflicts: number; missing_media: number;
   invalid_media: number; error: string | null; warnings: string[];
   pending_conflicts: number;
+  total_messages?: number | null;
+  progress?: ImportTaskProgress | null;
+};
+export type ImportTaskProgress = {
+  phase: string; completed: number; total: number | null; unit: 'bytes' | 'messages';
+  elapsed_seconds: number; phase_elapsed_seconds: number; rate: number | null; eta_seconds: number | null;
+  activity?: { phase: string; completed: number; total: number | null; unit: string } | null;
 };
 export type Preview = Omit<Job, 'pending_conflicts'> & {
   scope: string; root_relative_path: string; json_relative_path: string;
+  preparing?: boolean; operation?: 'preview' | 'apply'; applied_import_id?: string | null;
 };
 export type Conflict = {
   message_id: number; reason: string; current: Message | null; current_version: string | null;

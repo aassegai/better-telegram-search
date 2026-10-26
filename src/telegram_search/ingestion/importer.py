@@ -1,4 +1,3 @@
-import hashlib
 import itertools
 import threading
 import time
@@ -11,7 +10,14 @@ from filelock import FileLock, Timeout
 from PIL import Image, UnidentifiedImageError
 
 from telegram_search.ingestion.conflicts import ConflictService
+from telegram_search.ingestion.inspection import checking_media, file_hash, scan_export
 from telegram_search.ingestion.previews import PreviewService
+from telegram_search.ingestion.progress import (
+    ImportInterrupted,
+    ImportProgress,
+    freeze_progress,
+    progress_snapshot,
+)
 from telegram_search.ingestion.writer import CanonicalMessageWriter
 from telegram_search.security.paths import relative_root, safe_media_path
 from telegram_search.security.privacy import repository_warning
@@ -23,30 +29,8 @@ from telegram_search.storage.database import Database
 from telegram_search.storage.revisions import message_version
 
 
-def file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def read_metadata(path: Path) -> dict:
-    metadata = {}
-    has_messages = False
-    try:
-        # Only keep scalar header values, including headers appearing after messages.
-        with path.open("rb") as stream:
-            for prefix, event, value in ijson.parse(stream, use_float=True):
-                if prefix in {"id", "name", "type"} and event in {"string", "number", "null"}:
-                    metadata[prefix] = value
-                if prefix == "messages" and event == "start_array":
-                    has_messages = True
-    except (OSError, ValueError, ijson.JSONError) as exc:
-        raise UserError("Не удалось прочитать JSON экспорта Telegram.") from exc
-    if not has_messages:
-        raise UserError("Нужен JSON одного диалога из Telegram Desktop с массивом messages.")
-    return metadata
+    return scan_export(path)[0]
 
 
 def inspect_media(root: Path, message: dict) -> list[dict]:
@@ -80,7 +64,7 @@ def inspect_media(root: Path, message: dict) -> list[dict]:
 class ImportService:
     """One bounded streaming writer; every batch and its checkpoint commit together."""
 
-    def __init__(self, db: Database, batch_size: int = 100):
+    def __init__(self, db: Database, batch_size: int = 100, *, progress_observer=None):
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
         self.db = db
@@ -94,6 +78,7 @@ class ImportService:
         self.closed = False
         self.source_warnings = {}
         self.batch_size = batch_size
+        self.progress_observer = progress_observer
         self.stopping = threading.Event()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="telegram-import")
         self.futures = {}
@@ -128,9 +113,9 @@ class ImportService:
         root = Path(source_root).expanduser().resolve() if source_root else path.parent
         if not root.is_dir() or not path.is_file() or not path.is_relative_to(root):
             raise UserError("JSON должен находиться внутри существующей папки экспорта.")
-        metadata = read_metadata(path)
+        progress = ImportProgress(self, "import")
+        metadata, fingerprint, total_messages = scan_export(path, progress)
         external_id = str(metadata["id"]) if metadata.get("id") is not None else None
-        fingerprint = file_hash(path)
         with self.db.connect() as conn:
             if target_chat_id:
                 chat = conn.execute("SELECT * FROM chats WHERE id=?", (target_chat_id,)).fetchone()
@@ -175,7 +160,7 @@ class ImportService:
             job_id = str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO imports(id,chat_id,source_root_id,json_relative_path,file_sha256,"
-                "state,policy,started_at) VALUES(?,?,?,?,?,'queued',?,?)",
+                "state,policy,started_at,total_messages) VALUES(?,?,?,?,?,'queued',?,?,?)",
                 (
                     job_id,
                     chat_id,
@@ -184,6 +169,7 @@ class ImportService:
                     fingerprint,
                     policy,
                     int(time.time()),
+                    total_messages,
                 ),
             )
         return job_id
@@ -208,9 +194,15 @@ class ImportService:
             if row is None:
                 raise UserError("Задача импорта не найдена.")
             result = dict(row)
+            result["progress"] = progress_snapshot(
+                result.pop("progress_json"), result["state"], processed=result["processed"]
+            )
             root = conn.execute(
-                "SELECT relative_path FROM source_roots WHERE id=?", (row["source_root_id"],)
+                "SELECT s.relative_path,c.name AS chat_name FROM source_roots s "
+                "JOIN chats c ON c.id=s.chat_id WHERE s.id=?",
+                (row["source_root_id"],),
             ).fetchone()
+            result["chat_name"] = root["chat_name"]
             if root[0] not in self.source_warnings:
                 self.source_warnings[root[0]] = repository_warning(self.db.source_path(root[0]))
             warning = self.source_warnings[root[0]]
@@ -237,6 +229,7 @@ class ImportService:
             if job["state"] not in {"queued", "running", "paused", "interrupted"}:
                 raise UserError("Эта задача уже завершена.")
             with self.db.connect() as conn:
+                freeze_progress(conn, "imports", job_id)
                 conn.execute(
                     "UPDATE imports SET state=? WHERE id=?",
                     ("paused" if action == "pause" else "cancelled", job_id),
@@ -246,9 +239,15 @@ class ImportService:
         return self.get(job_id)
 
     def run(self, job_id: str) -> dict:
-        job = self.get(job_id)
-        if job["state"] not in {"queued", "running", "interrupted", "failed"}:
-            return job
+        with self.lifecycle_lock, self.db.connect() as conn:
+            job = self.get(job_id)
+            if job["state"] not in {"queued", "running", "interrupted", "failed"}:
+                return job
+            conn.execute(
+                "UPDATE imports SET state='running',error=NULL,finished_at=NULL WHERE id=?",
+                (job_id,),
+            )
+        progress = ImportProgress(self, "import", job_id)
         try:
             with self.db.connect() as conn:
                 source = conn.execute(
@@ -256,15 +255,9 @@ class ImportService:
                 ).fetchone()
             root = self.db.source_path(source["relative_path"])
             path = safe_media_path(root, job["json_relative_path"])
-            if file_hash(path) != job["file_sha256"]:
+            if file_hash(path, progress) != job["file_sha256"]:
                 raise UserError("JSON изменился после начала импорта. Создайте новую задачу.")
-            with self.db.connect() as conn:
-                # A queued task may be paused while its fingerprint is checked.
-                conn.execute(
-                    "UPDATE imports SET state='running',error=NULL WHERE id=? "
-                    "AND state IN ('queued','running','interrupted','failed')",
-                    (job_id,),
-                )
+            progress.check(force=True)
             if job["preview_id"] and job["processed"] == 0:
                 preview = self.previews.get(job["preview_id"])
                 with self.db.connect() as conn:
@@ -273,22 +266,29 @@ class ImportService:
                     ).fetchone()[0]
                     if revision != preview["base_revision"]:
                         raise UserError("Диалог изменился после проверки. Создайте новую проверку.")
-            for prepared in self._prepared_batches(job, root, path):
-                current = self.get(job_id)
-                if current["state"] in {"paused", "cancelled"}:
-                    return current
-                if self.stopping.is_set():
-                    with self.db.connect() as conn:
-                        conn.execute("UPDATE imports SET state='interrupted' WHERE id=?", (job_id,))
-                    return self.get(job_id)
+            processed = job["processed"]
+            for prepared in self._prepared_batches(job, root, path, progress):
+                progress.check(force=True)
                 if self._apply_batch(job, prepared) is False:
                     return self.get(job_id)
+                processed += len(prepared)
+                progress.update(processed)
+            progress.finish("import_completed", processed)
             with self.db.connect() as conn:
+                freeze_progress(conn, "imports", job_id)
                 conn.execute(
                     "UPDATE imports SET state='completed',finished_at=? WHERE id=? "
                     "AND state='running'",
                     (int(time.time()), job_id),
                 )
+        except ImportInterrupted:
+            with self.db.connect() as conn:
+                if self.stopping.is_set():
+                    freeze_progress(conn, "imports", job_id)
+                    conn.execute(
+                        "UPDATE imports SET state='interrupted' WHERE id=? AND state='running'",
+                        (job_id,),
+                    )
         except Exception as exc:
             error = (
                 str(exc)
@@ -299,24 +299,41 @@ class ImportService:
                 )
             )
             with self.db.connect() as conn:
+                freeze_progress(conn, "imports", job_id)
                 conn.execute(
-                    "UPDATE imports SET state='failed',error=? WHERE id=?", (error, job_id)
+                    "UPDATE imports SET state='failed',error=? WHERE id=? AND state='running'",
+                    (error, job_id),
                 )
         return self.get(job_id)
 
-    def _prepared_batches(self, job: dict, root: Path, path: Path):
+    def _prepared_batches(self, job: dict, root: Path, path: Path, progress):
         if job["preview_id"]:
+            progress.phase(
+                "writing_messages", total=job["total_messages"], completed=job["processed"]
+            )
             for prepared in self.previews.batches(job):
-                for entry in prepared:
-                    self.validate_media_snapshot(root, entry[0], entry[1])
+                with checking_media(progress):
+                    for entry in prepared:
+                        progress.check()
+                        self.validate_media_snapshot(root, entry[0], entry[1])
                 yield prepared
             return
         with path.open("rb") as stream:
             iterator = ijson.items(stream, "messages.item", use_float=True)
-            for _ in itertools.islice(iterator, job["processed"]):
-                pass
+            if job["processed"]:
+                progress.phase("resume_scan", total=job["processed"])
+                for ordinal, _ in enumerate(itertools.islice(iterator, job["processed"]), 1):
+                    progress.update(ordinal)
+            progress.phase(
+                "writing_messages", total=job["total_messages"], completed=job["processed"]
+            )
             while batch := list(itertools.islice(iterator, self.batch_size)):
-                yield [(message, inspect_media(root, message)) for message in batch]
+                with checking_media(progress):
+                    prepared = []
+                    for message in batch:
+                        progress.check()
+                        prepared.append((message, inspect_media(root, message)))
+                yield prepared
 
     @staticmethod
     def validate_media_snapshot(root: Path, message: dict, expected: list[dict]) -> None:

@@ -15,6 +15,7 @@ dependencies = [
   "pillow>=11,<13",
   "psutil>=6,<8",
   "filelock>=3.16,<4",
+  "tqdm>=4.67,<5",
 ]
 
 [project.scripts]

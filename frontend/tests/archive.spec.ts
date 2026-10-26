@@ -90,7 +90,7 @@ test('late apply response cannot close a newly opened settings dialog', async ({
   let received: () => void = () => {};
   const waiting = new Promise<void>(resolve => { release = resolve; });
   const requestReceived = new Promise<void>(resolve => { received = resolve; });
-  await page.route('**/api/import-previews/*/apply', async route => {
+  await page.route('**/api/import-previews/*/apply*', async route => {
     const response = await route.fetch(); received();
     await waiting; await route.fulfill({ response });
   });
@@ -98,12 +98,18 @@ test('late apply response cannot close a newly opened settings dialog', async ({
   await requestReceived;
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  const finished = page.waitForResponse(response => response.url().endsWith('/apply'));
+  const finished = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/apply'));
   release(); await finished;
   await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toBeVisible();
 });
 
 test('pause blocks concurrent discard and resumed preview preserves counts', async ({ page }) => {
+  let checking = true;
+  await page.route('**/api/import-previews/*', async route => {
+    if (route.request().method() !== 'GET' || !checking) return route.continue();
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), state: 'running' } });
+  });
   await page.goto('/');
   await page.route('**/api/import-previews', async route => {
     if (route.request().method() !== 'POST') { await route.continue(); return; }
@@ -115,6 +121,7 @@ test('pause blocks concurrent discard and resumed preview preserves counts', asy
   let release: () => void = () => {};
   const waiting = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/import-previews/*/pause', async route => {
+    checking = false;
     const response = await route.fetch(); await waiting; await route.fulfill({ response });
   });
   await page.getByRole('button', { name: 'Проверить экспорт', exact: true }).click();

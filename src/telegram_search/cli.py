@@ -12,6 +12,7 @@ from telegram_search.config.browser import open_browser
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import default_workspace
 from telegram_search.ingestion.importer import ImportService
+from telegram_search.ingestion.progress import TerminalProgress
 from telegram_search.shared.errors import UserError
 from telegram_search.storage.database import Database
 
@@ -36,6 +37,9 @@ def main() -> None:
     load.add_argument("--create-new", action="store_true")
     load.add_argument(
         "--preview", action="store_true", help="Только проверить, без изменения сообщений"
+    )
+    load.add_argument(
+        "--no-progress", action="store_true", help="Не показывать прогресс в терминале"
     )
     prepare = commands.add_parser("prepare-model")
     prepare.add_argument("--profile", choices=["small", "base", "berta"])
@@ -92,7 +96,8 @@ def main() -> None:
                 threading.Thread(target=open_when_ready, daemon=True).start()
             server.run()
         elif args.command == "import":
-            importer = ImportService(db)
+            progress = TerminalProgress(enabled=sys.stderr.isatty() and not args.no_progress)
+            importer = ImportService(db, progress_observer=progress)
             try:
                 prepare = importer.previews.create if args.preview else importer.prepare
                 job = prepare(
@@ -124,6 +129,7 @@ def main() -> None:
                 if result["state"] != ("ready" if args.preview else "completed"):
                     sys.exit(1)
             finally:
+                progress.close()
                 importer.shutdown()
         elif args.command == "doctor":
             print(json.dumps(doctor(db), ensure_ascii=False, indent=2))

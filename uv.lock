@@ -79,6 +79,7 @@ dependencies = [
     { name = "ijson" },
     { name = "pillow" },
     { name = "psutil" },
+    { name = "tqdm" },
     { name = "uvicorn" },
 ]
 
@@ -160,6 +161,7 @@ requires-dist = [
     { name = "tesserocr", marker = "(python_full_version < '3.11' and extra == 'ocr') or (python_full_version >= '3.14' and extra == 'ocr') or (sys_platform != 'win32' and extra == 'ocr')", specifier = ">=2.11,<3" },
     { name = "tokenizers", marker = "extra == 'gpu'", specifier = ">=0.21,<1" },
     { name = "tokenizers", marker = "extra == 'semantic'", specifier = ">=0.21,<1" },
+    { name = "tqdm", specifier = ">=4.67,<5" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
 ]
 provides-extras = ["semantic", "ocr", "gpu", "telegram"]
@@ -1582,7 +1584,7 @@ name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-22-better-telegram-search-gpu' and extra == 'extra-22-better-telegram-search-semantic')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0d/ea/b2a5bd54b28a324dae8211928b2d730b6547500342c7e6c6dea08bd0a485/tqdm-4.70.1.tar.gz", hash = "sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4", size = 171846, upload-time = "2026-09-11T07:25:16.601Z" }
 wheels = [

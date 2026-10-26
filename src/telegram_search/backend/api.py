@@ -658,7 +658,7 @@ def create_app(
     def preview_export(body: ImportRequest):
         service = app.state.importer.previews
         with app.state.importer.lifecycle_lock:
-            preview_id = service.create(**body.model_dump())
+            preview_id = service.create(**body.model_dump(), defer=True)
             service.submit(preview_id)
         return service.get(preview_id)
 
@@ -676,7 +676,9 @@ def create_app(
         return app.state.importer.previews.get(preview_id)
 
     @app.post("/api/import-previews/{preview_id}/apply", status_code=202)
-    def apply_preview(preview_id: str):
+    def apply_preview(preview_id: str, background: bool = False):
+        if background:
+            return app.state.importer.previews.enqueue_apply(preview_id)
         job_id = app.state.importer.previews.apply(preview_id)
         return app.state.importer.get(job_id)
 
@@ -704,6 +706,10 @@ def create_app(
                     "ORDER BY i.started_at DESC,i.rowid DESC LIMIT 50"
                 )
             ]
+
+    @app.get("/api/imports/{job_id}")
+    def import_status(job_id: str):
+        return app.state.importer.get(job_id)
 
     @app.post("/api/imports/{job_id}/{action}")
     def control(job_id: str, action: Literal["pause", "resume", "cancel"]):

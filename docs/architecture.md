@@ -107,6 +107,10 @@ Python разделён по ответственности:
 
 Корневой `cli.py` — точка входа команды `telegram-search`.
 
+Подготовка preview, проверка и фоновое применение импорта используют сохраняемые
+этапы и общий UI/CLI-прогресс. Контракты и совместимость старых checkpoints:
+[прогресс импорта](import-progress.ru.md).
+
 Проверка lifecycle этапа на Linux/WSL: 36 Python-тестов, 7 Chromium e2e,
 Ruff и production frontend build прошли. Default frontend route после переноса
 пакетов проверен отдельно. Локальная база с 221 сообщением обновлена с v1 до v2;

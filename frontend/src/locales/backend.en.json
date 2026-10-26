@@ -315,5 +315,6 @@
   "Отключите Telegram перед изменением реквизитов приложения.": "Disconnect Telegram before changing application credentials.",
   "Код Telegram истёк. Запросите новый код входа.": "The Telegram code has expired. Request a new sign-in code.",
   "Telegram отклонил API ID или API Hash. Проверьте реквизиты приложения.": "Telegram rejected the API ID or API Hash. Check your application credentials.",
-  "Неизвестные настройки производительности диалога.": "Unknown chat performance settings."
+  "Неизвестные настройки производительности диалога.": "Unknown chat performance settings.",
+  "JSON изменился во время чтения. Повторите проверку.": "The JSON changed while being read. Run the check again."
 }

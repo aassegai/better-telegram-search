@@ -376,3 +376,11 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
   .resource-fields { grid-template-columns: 1fr; }
   .date-control { min-width: 0; }
 }
+
+.import-progress { margin: 12px 0; font-size: 12px; color: var(--text-secondary, #47633e); }
+.import-progress progress { display: block; width: 100%; height: 7px; margin: 7px 0; accent-color: var(--accent, #356449); }
+.import-progress-measurements { display: flex; flex-wrap: wrap; gap: 6px 14px; font-variant-numeric: tabular-nums; }
+.import-progress.compact { margin: 5px 0; font-size: 10px; }
+.import-progress.compact progress { height: 5px; }
+.import-activity { margin-top: 8px; overflow-wrap: anywhere; }
+.import-job-panel details { margin: 18px 0; }

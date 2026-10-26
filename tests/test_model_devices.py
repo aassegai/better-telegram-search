@@ -379,6 +379,15 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         conn.execute("DROP INDEX messages_chat_forwarded_source")
         conn.execute("ALTER TABLE messages DROP COLUMN forwarded_from")
         conn.execute("ALTER TABLE source_roots DROP COLUMN managed")
+        for table, columns in (
+            ("imports", ("total_messages", "progress_json")),
+            (
+                "import_previews",
+                ("total_messages", "progress_json", "preparation_json", "operation"),
+            ),
+        ):
+            for column in columns:
+                conn.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
         conn.execute("DELETE FROM schema_migrations WHERE version>=6")
     importer.shutdown()
     db.initialize()

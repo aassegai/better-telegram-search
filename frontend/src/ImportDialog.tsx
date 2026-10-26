@@ -1,13 +1,15 @@
-import Icon from './Icon';
+import SettingsDialog from './SettingsDialog';
+import ImportProgress from './ImportProgress';
+import ImportJobPanel from './ImportJobPanel';
 import { t } from './i18n';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from './api';
 import { useDialogOperation } from './useDialogOperation';
-import type { Chat, Preview } from './types';
+import type { Chat, Job, Preview } from './types';
 
-export default function ImportDialog({ chats, initialPreview = null, onClose, onApplied }: {
-  chats: Chat[]; initialPreview?: Preview | null; onClose: () => void; onApplied: () => Promise<void>;
+export default function ImportDialog({ chats, initialPreview = null, initialImport = null, onClose, onApplied }: {
+  chats: Chat[]; initialPreview?: Preview | null; initialImport?: Job | null; onClose: () => void; onApplied: () => void;
 }) {
   const [jsonPath, setJsonPath] = useState('');
   const [root, setRoot] = useState('');
@@ -21,15 +23,19 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
   useEffect(() => {
     if (busy || !preview || !['queued', 'running'].includes(preview.state)) return;
     let alive = true;
+    let pending = false;
+    const controller = new AbortController();
     const poll = async () => {
+      if (pending) return; pending = true;
       const current = guard();
       try {
-        const next = await api<Preview>(`/api/import-previews/${preview.id}`);
+        const next = await api<Preview>(`/api/import-previews/${preview.id}`, { signal: controller.signal });
         if (alive && current()) setPreview(next);
       } catch (error) { if (alive && current()) setError(error instanceof Error ? error.message : t('Ошибка проверки.')); }
+      finally { pending = false; }
     };
-    const timer = window.setInterval(() => void poll(), 750);
-    return () => { alive = false; clearInterval(timer); };
+    const timer = window.setInterval(() => void poll(), 500); void poll();
+    return () => { alive = false; controller.abort(); clearInterval(timer); };
   }, [preview?.id, preview?.state, busy]);
 
   async function inspect(event: FormEvent) {
@@ -46,9 +52,9 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
   async function apply() {
     if (!preview) return;
     await run(async current => {
-      await api(`/api/import-previews/${preview.id}/apply`, { method: 'POST' });
+      await api(`/api/import-previews/${preview.id}/apply?background=true`, { method: 'POST' });
       if (!current()) return;
-      await onApplied(); if (current()) onClose();
+      onClose(); onApplied();
     });
   }
 
@@ -64,16 +70,22 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
     if (!preview) return;
     await run(async current => {
       await api(`/api/import-previews/${preview.id}/cancel`, { method: 'POST' });
-      if (current()) { setPreview(null); setError(''); await onApplied(); }
+      if (current()) { setPreview(null); setError(''); onApplied(); }
     });
   }
 
-  return <section className="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
-    <button className="close" aria-label={t("Закрыть")} disabled={busy} onClick={onClose}><Icon name="close" /></button>
+  const importId = initialImport?.id ?? (preview?.state === 'applied' ? preview.applied_import_id : null);
+  if (importId) return <SettingsDialog titleId="import-title" onClose={onClose}>
+    <h2 id="import-title">{t('Импорт сообщений')}</h2>
+    <ImportJobPanel id={importId} initialJob={initialImport ?? undefined} onChanged={onApplied} />
+  </SettingsDialog>;
+
+  return <SettingsDialog titleId="import-title" onClose={onClose}>
     <h2 id="import-title">{t('Импорт сообщений')}</h2>
     <p>{t('Поддерживается JSON одного диалога из Telegram Desktop.')}</p>
     <p>{t("Сначала проверим экспорт и покажем изменения. Сообщения попадут в базу после применения отчёта. Фотографии останутся в папке источника.")}</p>
     {error && <div className="error" role="alert">{t(error)}</div>}
+    {busy && !preview && <ImportProgress state="queued" />}
     {!preview ? <form onSubmit={inspect} className="import-form">
       <label>{t("Путь к JSON")}<input required value={jsonPath} placeholder={t("/папка/экспорта/result.json")} onChange={event => setJsonPath(event.target.value)} /></label>
       <label>{t("Папка выгрузки (необязательно)")}<input value={root} placeholder={t("По умолчанию — папка, содержащая result.json")} onChange={event => setRoot(event.target.value)} /></label>
@@ -85,19 +97,23 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
       <label className="check-label"><input type="checkbox" checked={preferImported} onChange={event => setPreferImported(event.target.checked)} />{t("Считать экспорт актуальным при неоднозначных редакциях")}</label>
       <button className="primary" disabled={busy}>{busy ? t('Проверяем источник…') : t('Проверить экспорт')}</button>
     </form> : <div className="preview-report">
-      <p><strong>{preview.chat_name}</strong>{t(" · аккаунт: ")}{preview.scope}</p>
+      <p><strong>{preview.chat_name || t('Подготовка выгрузки')}</strong>{t(" · аккаунт: ")}{preview.scope}</p>
       <p className="source-summary">{t("Источник: ")}{preview.root_relative_path}/{preview.json_relative_path}</p>
-      <h3>{preview.state === 'ready' ? t('Отчёт готов') : preview.state === 'running' ? t('Проверяем сообщения…') : preview.state === 'queued' ? t('Проверка в очереди') : preview.state === 'paused' ? t('Проверка приостановлена') : t('Проверка остановлена')}</h3>
-      <dl className="diagnostics"><dt>{t("Обработано")}</dt><dd>{preview.processed}</dd><dt>{t("Новые")}</dt><dd>{preview.added}</dd><dt>{t("Без изменений")}</dt><dd>{preview.unchanged}</dd><dt>{t("Обновлённые редакции")}</dt><dd>{preview.updated}</dd><dt>{t("Конфликты")}</dt><dd>{preview.conflicts}</dd><dt>{t("Недоступные вложения")}</dt><dd>{preview.missing_media + preview.invalid_media}</dd></dl>
+      <h3>{preview.operation === 'apply' ? t('Применение отчёта') : preview.state === 'ready' ? t('Отчёт готов') : preview.state === 'running' ? t('Проверяем сообщения…') : preview.state === 'queued' ? t('Проверка в очереди') : preview.state === 'paused' ? t('Проверка приостановлена') : t('Проверка остановлена')}</h3>
+      <ImportProgress progress={preview.progress} state={preview.state} />
+      {preview.state === 'ready' && <p>{t('Проверка завершена. Для записи сообщений примените отчёт.')}</p>}
+      <details open={preview.state === 'ready'}><summary>{t('Изменения в выгрузке')}</summary>
+        <dl className="diagnostics"><dt>{t("Обработано")}</dt><dd>{preview.processed}</dd><dt>{t("Новые")}</dt><dd>{preview.added}</dd><dt>{t("Без изменений")}</dt><dd>{preview.unchanged}</dd><dt>{t("Обновлённые редакции")}</dt><dd>{preview.updated}</dd><dt>{t("Конфликты")}</dt><dd>{preview.conflicts}</dd><dt>{t("Недоступные вложения")}</dt><dd>{preview.missing_media + preview.invalid_media}</dd></dl>
+      </details>
       {preview.error && <div className="error" role="alert">{t(preview.error)}</div>}
       {preview.warnings.map(warning => <p className="warning-note" key={warning}>{t(warning)}</p>)}
       {preview.conflicts > 0 && <p>{t("Конфликтующие версии пока сохранятся отдельно. После импорта вы сможете сравнить их и выбрать нужную.")}</p>}
       <div className="dialog-actions">
-        {preview.state === 'ready' && <button className="primary" disabled={busy} onClick={() => void apply()}>{busy ? t('Применяем…') : t('Применить изменения')}</button>}
+        {preview.state === 'ready' && preview.operation !== 'apply' && <button className="primary" disabled={busy} onClick={() => void apply()}>{busy ? t('Применяем…') : t('Применить изменения')}</button>}
         {['running', 'queued'].includes(preview.state) && <button disabled={busy} onClick={() => void control('pause')}>{t("Пауза")}</button>}
-        {['paused', 'interrupted'].includes(preview.state) && <button disabled={busy} onClick={() => void control('resume')}>{t("Продолжить проверку")}</button>}
+        {['paused', 'interrupted', 'failed'].includes(preview.state) && <button disabled={busy} onClick={() => void control('resume')}>{preview.operation === 'apply' ? t('Продолжить импорт') : t("Продолжить проверку")}</button>}
         <button disabled={busy} onClick={() => void discard()}>{t("Проверить другой экспорт")}</button>
       </div>
     </div>}
-  </section>;
+  </SettingsDialog>;
 }

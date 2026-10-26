@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, initializeSession } from './api';
 import ImportDialog from './ImportDialog';
+import ImportProgress from './ImportProgress';
 import ConflictDialog from './ConflictDialog';
 import ChatIndexDialog from './ChatIndexDialog';
 import TelegramPanel from './TelegramPanel';
@@ -75,6 +76,7 @@ export default function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [previews, setPreviews] = useState<Preview[]>([]);
   const [activePreview, setActivePreview] = useState<Preview | null>(null);
+  const [activeImport, setActiveImport] = useState<Job | null>(null);
   const [authors, setAuthors] = useState<{ author_id: string; name: string }[]>([]);
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
@@ -367,19 +369,24 @@ export default function App() {
         {chatsLoaded && !chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
       </div>
       <button className="import-button telegram-sources-button" disabled={!connected} onClick={() => setModal('sources')}>{t('Источники · Telegram')}</button>
-      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><Icon name="plus" />{t("Импорт сообщений")}</button>
+      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setActiveImport(null); setModal('import'); }}><Icon name="plus" />{t("Импорт сообщений")}</button>
       {previews.length > 0 && <div className="jobs"><div className="sidebar-title">{t("Проверки экспорта")}</div>
-        {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name}</strong> · {preview.scope}</small><small>{preview.processed}{t(" проверено · ")}{preview.state === 'ready' ? t('отчёт готов') : t(stateNames[preview.state] || preview.state)}</small><div className="job-actions"><button onClick={() => { setActivePreview(preview); setModal('import'); }}>{t("Открыть отчёт")}</button></div></div>)}
+        {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name || t('Подготовка выгрузки')}</strong> · {preview.scope}</small>
+          <ImportProgress progress={preview.progress} state={preview.state} compact />
+          <div className="job-actions"><button onClick={() => { setActivePreview(preview); setActiveImport(null); setModal('import'); }}>{t("Открыть отчёт")}</button></div></div>)}
       </div>}
       {jobs.length > 0 && <div className="jobs"><div className="sidebar-title">{t("Последние импорты")}</div>
         {jobs.slice(0, 4).map(job => <div className="job" key={job.id}>
+          <small><strong>{job.chat_name}</strong></small>
           <div className={`job-state ${job.state}`}><span className="dot" />{t(stateNames[job.state] || job.state)}</div>
+          <ImportProgress progress={job.progress} state={job.state} compact />
           <small>{job.processed}{t(" обработано · ")}{job.added}{t(" новых · ")}{job.updated}{t(" обновлено")}</small>
           {job.pending_conflicts > 0 && <small className="warning">{t("Неразрешённых конфликтов: ")}{job.pending_conflicts}</small>}
           {(job.missing_media + job.invalid_media) > 0 && <small className="warning">{t("Недоступных вложений: ")}{job.missing_media + job.invalid_media}</small>}
           {job.error && <small className="warning">{t(job.error)}</small>}
           {job.warnings?.map(warning => <small className="warning" key={warning}>{t(warning)}</small>)}
           <div className="job-actions">
+            <button onClick={() => { setActiveImport(job); setActivePreview(null); setModal('import'); }}>{t('Открыть импорт')}</button>
             {job.pending_conflicts > 0 && <button onClick={() => setConflictJob(job)}>{t("Разобрать конфликты")}</button>}
             {['queued', 'running'].includes(job.state) && <button onClick={() => void control(job, 'pause')}>{t("Пауза")}</button>}
             {['paused', 'interrupted', 'failed'].includes(job.state) && <button onClick={() => void control(job, 'resume')}>{t("Продолжить")}</button>}
@@ -395,7 +402,7 @@ export default function App() {
       <header className="topbar"><div className="topbar-actions">
         <button className="theme-toggle mobile-settings-button" type="button" aria-label={t('Настройки')} title={t('Настройки')} onClick={() => void settings()}><Icon name="settings" /></button>
         <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
-        {modal !== 'settings' && modal !== 'sources' && !indexChat && <LanguageSwitch value={language} onChange={changeLanguage} />}
+        {!modal && !indexChat && <LanguageSwitch value={language} onChange={changeLanguage} />}
       </div></header>
       <div className="content">
         <div className="heading"><h1>{t('Поиск')}</h1></div>
@@ -472,7 +479,7 @@ export default function App() {
       </div><footer className="main-footer">{t("Сообщения хранятся и обрабатываются на этом компьютере.")}</footer>
     </main>
 
-    {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
+    {modal === 'import' && <ImportDialog chats={chats} initialPreview={activePreview} initialImport={activeImport} onClose={() => setModal(null)} onApplied={() => { void refresh().catch(reportError); }} />}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
     {indexChat && <ChatIndexDialog onResources={() => { setIndexChat(null); settings('performance', null); }} onSources={() => { setIndexChat(null); setModal('sources'); }} onModels={() => { setIndexChat(null); settings('models', null); }} onPerformance={() => { const id = indexChat.id; setIndexChat(null); settings('performance', id); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
     {modal === 'sources' && <SettingsDialog titleId="sources-title" onClose={() => { setModal(null); void refresh().catch(reportError); }}>

@@ -6,6 +6,13 @@ from pathlib import Path
 
 import ijson
 
+from telegram_search.ingestion.inspection import checking_media, scan_export
+from telegram_search.ingestion.progress import (
+    ImportInterrupted,
+    ImportProgress,
+    freeze_progress,
+    progress_snapshot,
+)
 from telegram_search.security.paths import relative_root, safe_media_path
 from telegram_search.security.privacy import repository_warning
 from telegram_search.shared.errors import UserError
@@ -20,6 +27,25 @@ class PreviewService:
         self.importer = importer
         self.db = importer.db
 
+    @staticmethod
+    def _target(conn, metadata, scope, target_chat_id, create_new):
+        external_id = str(metadata["id"]) if metadata.get("id") is not None else None
+        if target_chat_id:
+            chat = conn.execute("SELECT * FROM chats WHERE id=?", (target_chat_id,)).fetchone()
+            if (
+                not chat
+                or chat["scope"] != scope
+                or (external_id is not None and chat["external_id"] != external_id)
+            ):
+                raise UserError("ID диалога или область аккаунта не совпадает с выбранной целью.")
+            return target_chat_id, chat
+        if external_id is not None:
+            chat_id = str(uuid.uuid5(uuid.NAMESPACE_URL, serialize([scope, external_id])))
+            return chat_id, conn.execute("SELECT * FROM chats WHERE id=?", (chat_id,)).fetchone()
+        if create_new:
+            return str(uuid.uuid4()), None
+        raise UserError("Нет ID диалога: выберите существующий диалог или явно создайте новый.")
+
     def create(
         self,
         json_path: str,
@@ -28,50 +54,42 @@ class PreviewService:
         target_chat_id: str | None = None,
         policy: str = "preserve",
         create_new: bool = False,
+        *,
+        defer=False,
     ) -> str:
-        from telegram_search.ingestion.importer import file_hash, read_metadata
-
         if not scope.strip() or policy not in {"preserve", "prefer_imported"}:
             raise UserError("Проверьте область аккаунта и режим конфликтов.")
         path = Path(json_path).expanduser().resolve()
         root = Path(source_root).expanduser().resolve() if source_root else path.parent
         if not root.is_dir() or not path.is_file() or not path.is_relative_to(root):
             raise UserError("JSON должен находиться внутри существующей папки экспорта.")
-        metadata = read_metadata(path)
-        external_id = str(metadata["id"]) if metadata.get("id") is not None else None
-        fingerprint = file_hash(path)
+        preview_id = str(uuid.uuid4())
+        metadata, fingerprint, total = (
+            ({}, "", None) if defer else scan_export(path, ImportProgress(self.importer, "preview"))
+        )
+        request = (
+            serialize({"target_chat_id": target_chat_id, "create_new": create_new})
+            if defer
+            else None
+        )
         with self.importer.lifecycle_lock, self.db.connect() as conn:
-            if target_chat_id:
-                chat = conn.execute("SELECT * FROM chats WHERE id=?", (target_chat_id,)).fetchone()
-                if (
-                    not chat
-                    or chat["scope"] != scope
-                    or (external_id is not None and chat["external_id"] != external_id)
-                ):
-                    raise UserError(
-                        "ID диалога или область аккаунта не совпадает с выбранной целью."
-                    )
-                chat_id = target_chat_id
-            elif external_id is not None:
-                chat_id = str(uuid.uuid5(uuid.NAMESPACE_URL, serialize([scope, external_id])))
-                chat = conn.execute("SELECT * FROM chats WHERE id=?", (chat_id,)).fetchone()
-            elif create_new:
-                chat_id, chat = str(uuid.uuid4()), None
+            if defer:
+                # This provisional ID belongs only to the preview. No canonical
+                # chat or source root is created before metadata validation.
+                chat_id, chat = target_chat_id or "pending:" + preview_id, None
             else:
-                raise UserError(
-                    "Нет ID диалога: выберите существующий диалог или явно создайте новый."
-                )
-            preview_id = str(uuid.uuid4())
+                chat_id, chat = self._target(conn, metadata, scope, target_chat_id, create_new)
             conn.execute(
                 "INSERT INTO import_previews(id,chat_id,scope,external_id,chat_name,chat_kind,"
                 "target_existed,base_revision,root_relative_path,json_relative_path,file_sha256,"
-                "state,policy,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)",
+                "state,policy,created_at,total_messages,preparation_json) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?)",
                 (
                     preview_id,
                     chat_id,
                     scope,
-                    external_id,
-                    metadata.get("name") or "Без названия",
+                    str(metadata["id"]) if metadata.get("id") is not None else None,
+                    metadata.get("name") or ("" if defer else "Без названия"),
                     metadata.get("type") or "unknown",
                     int(chat is not None),
                     chat["revision"] if chat else 0,
@@ -80,9 +98,40 @@ class PreviewService:
                     fingerprint,
                     policy,
                     int(time.time()),
+                    total,
+                    request,
                 ),
             )
         return preview_id
+
+    def _prepare_pending(self, preview, path, progress):
+        with self.db.connect() as conn:
+            request = json.loads(
+                conn.execute(
+                    "SELECT preparation_json FROM import_previews WHERE id=?", (preview["id"],)
+                ).fetchone()[0]
+            )
+        metadata, fingerprint, total = scan_export(path, progress)
+        with self.importer.lifecycle_lock, self.db.connect() as conn:
+            progress.check(force=True)
+            chat_id, chat = self._target(conn, metadata, preview["scope"], **request)
+            conn.execute(
+                "UPDATE import_previews SET chat_id=?,external_id=?,chat_name=?,chat_kind=?,"
+                "target_existed=?,base_revision=?,file_sha256=?,total_messages=?,"
+                "preparation_json=NULL WHERE id=? AND state='running'",
+                (
+                    chat_id,
+                    str(metadata["id"]) if metadata.get("id") is not None else None,
+                    metadata.get("name") or "Без названия",
+                    metadata.get("type") or "unknown",
+                    int(chat is not None),
+                    chat["revision"] if chat else 0,
+                    fingerprint,
+                    total,
+                    preview["id"],
+                ),
+            )
+        return self.get(preview["id"])
 
     def get(self, preview_id: str) -> dict:
         with self.db.connect() as conn:
@@ -90,6 +139,10 @@ class PreviewService:
         if row is None:
             raise UserError("Проверка экспорта не найдена.")
         result = dict(row)
+        result["progress"] = progress_snapshot(
+            result.pop("progress_json"), result["state"], processed=result["processed"]
+        )
+        result["preparing"] = result.pop("preparation_json") is not None
         warning = repository_warning(self.db.source_path(row["root_relative_path"]))
         result["warnings"] = [warning] if warning else []
         return result
@@ -113,40 +166,50 @@ class PreviewService:
     def run(self, preview_id: str) -> dict:
         from telegram_search.ingestion.importer import file_hash, inspect_media
 
-        preview = self.get(preview_id)
-        if preview["state"] not in {"queued", "running", "interrupted", "failed"}:
-            return preview
+        with self.importer.lifecycle_lock, self.db.connect() as conn:
+            preview = self.get(preview_id)
+            if preview["state"] not in {"queued", "running", "interrupted", "failed"}:
+                return preview
+            conn.execute(
+                "UPDATE import_previews SET state='running',error=NULL,finished_at=NULL WHERE id=?",
+                (preview_id,),
+            )
+        progress = ImportProgress(self.importer, "preview", preview_id)
         root = self.db.source_path(preview["root_relative_path"])
         try:
             path = safe_media_path(root, preview["json_relative_path"])
-            if file_hash(path) != preview["file_sha256"]:
+            if preview["operation"] == "apply":
+                self._apply(preview_id, progress=progress, expected_state="running")
+                return self.get(preview_id)
+            if preview["preparing"]:
+                preview = self._prepare_pending(preview, path, progress)
+            if file_hash(path, progress) != preview["file_sha256"]:
                 raise UserError("JSON изменился. Создайте новую проверку экспорта.")
             with self.db.connect() as conn:
                 self.assert_target(conn, preview)
-                conn.execute(
-                    "UPDATE import_previews SET state='running',error=NULL WHERE id=? "
-                    "AND state IN ('queued','running','interrupted','failed')",
-                    (preview_id,),
-                )
+            progress.check(force=True)
             with path.open("rb") as stream:
                 iterator = ijson.items(stream, "messages.item", use_float=True)
-                for _ in itertools.islice(iterator, preview["processed"]):
-                    pass
+                if preview["processed"]:
+                    progress.phase("resume_scan", total=preview["processed"])
+                    for ordinal, _ in enumerate(
+                        itertools.islice(iterator, preview["processed"]), 1
+                    ):
+                        progress.update(ordinal)
+                processed = preview["processed"]
+                progress.phase(
+                    "checking_messages", total=preview["total_messages"], completed=processed
+                )
                 while True:
-                    current = self.get(preview_id)
-                    if current["state"] in {"cancelled", "paused"}:
-                        return current
-                    if self.importer.stopping.is_set():
-                        with self.db.connect() as conn:
-                            conn.execute(
-                                "UPDATE import_previews SET state='interrupted' WHERE id=?",
-                                (preview_id,),
-                            )
-                        return self.get(preview_id)
+                    progress.check(force=True)
                     batch = list(itertools.islice(iterator, self.importer.batch_size))
                     if not batch:
                         break
-                    prepared = [(message, inspect_media(root, message)) for message in batch]
+                    with checking_media(progress):
+                        prepared = []
+                        for message in batch:
+                            progress.check()
+                            prepared.append((message, inspect_media(root, message)))
                     with self.importer.lifecycle_lock, self.db.connect() as conn:
                         self.assert_target(conn, preview)
                         live = conn.execute(
@@ -196,13 +259,26 @@ class PreviewService:
                             f"UPDATE import_previews SET {assignments} WHERE id=?",
                             (*counters.values(), preview_id),
                         )
+                    processed += len(batch)
+                    progress.update(processed)
+            progress.finish("preview_ready", processed)
             with self.importer.lifecycle_lock, self.db.connect() as conn:
                 self.assert_target(conn, preview)
+                freeze_progress(conn, "import_previews", preview_id)
                 conn.execute(
                     "UPDATE import_previews SET state='ready',finished_at=? WHERE id=? "
                     "AND state='running'",
                     (int(time.time()), preview_id),
                 )
+        except ImportInterrupted:
+            with self.db.connect() as conn:
+                if self.importer.stopping.is_set():
+                    freeze_progress(conn, "import_previews", preview_id)
+                    conn.execute(
+                        "UPDATE import_previews SET state='interrupted' "
+                        "WHERE id=? AND state='running'",
+                        (preview_id,),
+                    )
         except Exception as exc:
             error = (
                 str(exc)
@@ -210,23 +286,47 @@ class PreviewService:
                 else ("Проверка остановлена из-за ошибки формата или повторяющихся ID сообщений.")
             )
             with self.db.connect() as conn:
+                freeze_progress(conn, "import_previews", preview_id)
                 conn.execute(
-                    "UPDATE import_previews SET state='failed',error=? WHERE id=?",
+                    "UPDATE import_previews SET state='failed',error=? "
+                    "WHERE id=? AND state='running'",
                     (error, preview_id),
                 )
         return self.get(preview_id)
 
     def apply(self, preview_id: str) -> str:
-        from telegram_search.ingestion.importer import file_hash
+        return self._apply(preview_id)
 
-        with self.importer.lifecycle_lock:
+    def enqueue_apply(self, preview_id):
+        with self.importer.lifecycle_lock, self.db.connect() as conn:
             preview = self.get(preview_id)
             if preview["state"] != "ready":
                 raise UserError("Сначала дождитесь готового отчёта проверки.")
-            root = self.db.source_path(preview["root_relative_path"])
-            path = safe_media_path(root, preview["json_relative_path"])
-            if file_hash(path) != preview["file_sha256"]:
-                raise UserError("JSON изменился после проверки. Пересчитайте отчёт.")
+            freeze_progress(conn, "import_previews", preview_id)
+            conn.execute(
+                "UPDATE import_previews SET operation='apply',state='queued',error=NULL,"
+                "progress_json='{}' WHERE id=?",
+                (preview_id,),
+            )
+        self.submit(preview_id)
+        return self.get(preview_id)
+
+    def _apply(self, preview_id, *, progress=None, expected_state="ready"):
+        from telegram_search.ingestion.importer import file_hash
+
+        preview = self.get(preview_id)
+        if preview["state"] != expected_state:
+            raise UserError("Сначала дождитесь готового отчёта проверки.")
+        root = self.db.source_path(preview["root_relative_path"])
+        path = safe_media_path(root, preview["json_relative_path"])
+        if file_hash(path, progress) != preview["file_sha256"]:
+            raise UserError("JSON изменился после проверки. Пересчитайте отчёт.")
+        if progress:
+            progress.phase("import_queued", total=preview["total_messages"])
+        with self.importer.lifecycle_lock:
+            preview = self.get(preview_id)
+            if preview["state"] != expected_state:
+                raise UserError("Сначала дождитесь готового отчёта проверки.")
             with self.db.connect() as conn:
                 self.assert_target(conn, preview)
                 conn.execute(
@@ -252,7 +352,8 @@ class PreviewService:
                 job_id = str(uuid.uuid4())
                 conn.execute(
                     "INSERT INTO imports(id,chat_id,source_root_id,json_relative_path,file_sha256,"
-                    "state,policy,started_at,preview_id) VALUES(?,?,?,?,?,'queued',?,?,?)",
+                    "state,policy,started_at,preview_id,total_messages) "
+                    "VALUES(?,?,?,?,?,'queued',?,?,?,?)",
                     (
                         job_id,
                         preview["chat_id"],
@@ -262,6 +363,7 @@ class PreviewService:
                         preview["policy"],
                         int(time.time()),
                         preview_id,
+                        preview["total_messages"],
                     ),
                 )
                 conn.execute(
@@ -298,6 +400,7 @@ class PreviewService:
         with self.importer.lifecycle_lock:
             with self.db.connect() as conn:
                 preview = self.get(preview_id)
+                freeze_progress(conn, "import_previews", preview_id)
                 if action == "resume" and preview["state"] in {"paused", "interrupted", "failed"}:
                     conn.execute(
                         "UPDATE import_previews SET state='queued',error=NULL WHERE id=?",
