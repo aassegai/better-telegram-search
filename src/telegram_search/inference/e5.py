@@ -15,6 +15,7 @@ from telegram_search.inference.compatibility import check_vectors, compatible_ma
 from telegram_search.inference.providers import CPU, Execution, runtime_version
 from telegram_search.inference.resources import compute_gate
 from telegram_search.inference.tokenization import ModelTokenizer
+from telegram_search.search.execution import checkpoint, current_execution
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
@@ -213,11 +214,13 @@ class E5Encoder:
                     not interactive
                     and (self.interactive_waiters or self.background_tickets[0] is not ticket)
                 ):
+                    checkpoint()
                     if self.suspended:
                         raise UserError(
                             "Модель временно остановлена для подготовки нового профиля."
                         )
-                    self.condition.wait()
+                    self.condition.wait(timeout=0.05 if current_execution() else None)
+                checkpoint()
                 if self.suspended:
                     raise UserError("Модель временно остановлена для подготовки нового профиля.")
                 self.encoding = True
@@ -239,9 +242,11 @@ class E5Encoder:
                 with compute_gate(execution).slot(interactive=interactive):
                     granted = time.perf_counter()
                     session = self._load(query=purpose == "query")
+                    checkpoint()
                     feed = {item.name: inputs[item.name] for item in session.get_inputs()}
                     inference = time.perf_counter()
                     hidden = session.run([self.spec.manifest["output_name"]], feed)[0]
+                    checkpoint()
                     inferred = time.perf_counter()
             except UserError:
                 # Preserve actionable device/precision errors; native exceptions

@@ -9,6 +9,7 @@ from telegram_search.indexing.estimates import Estimates
 from telegram_search.indexing.forecast import paused_forecast
 from telegram_search.indexing.worker import SegmentWorker
 from telegram_search.inference.resources import configure_gpu_load
+from telegram_search.search.execution import checkpoint, search_lock
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 from telegram_search.storage.chunking import reset_for_rebuild
@@ -264,7 +265,7 @@ class SemanticService:
         if self.encoder is None:
             raise UserError("Сначала подготовьте модель смыслового поиска.")
         self.last_used = time.monotonic()
-        with self.lock:
+        with search_lock(self.lock):
             if self.preparing_encoder.is_set():
                 raise UserError("Модель поиска готовится. Поиск по словам доступен.")
             encoder = self.encoder
@@ -273,7 +274,8 @@ class SemanticService:
                 self.query_cache.move_to_end(query)
                 return encoder, cached
         value = encoder.encode_text([query], "query", interactive=True)[0]
-        with self.lock:
+        checkpoint()
+        with search_lock(self.lock):
             if self.encoder is encoder:
                 self.query_cache[query] = value
                 while len(self.query_cache) > self.db.settings.query_cache_entries:
@@ -281,7 +283,7 @@ class SemanticService:
         return encoder, value
 
     def status(self, chat_id=None):
-        with self.lock:
+        with search_lock(self.lock):
             return self._status_locked(chat_id)
 
     def _status_locked(self, chat_id=None):

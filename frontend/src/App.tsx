@@ -14,12 +14,13 @@ import ForwardFilter from './ForwardFilter';
 import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
+import SearchProgress from './SearchProgress';
 import SettingsDialog from './SettingsDialog';
 import ImageViewer from './ImageViewer';
 import type { OpenImage } from './ImageViewer';
 import { useTheme } from './theme';
 import './theme.css';
-import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchModality, SemanticStatus } from './types';
+import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchJobStatus, SearchModality, SemanticStatus } from './types';
 
 const dates = {
   ru: new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }),
@@ -33,7 +34,8 @@ const stateNames: Record<string, string> = {
 };
 const reasons: Record<string, string> = { words: 'Совпали слова', meaning: 'Близкий смысл', image: 'Фотография по описанию', ocr_words: 'Слова на фотографии', ocr_meaning: 'Смысл текста на фотографии' };
 type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
-  rerank_applied?: boolean; limit: number; search_id?: string | null; next_offset?: number | null; cached_results?: number };
+  rerank_applied?: boolean; limit: number; job_id: string; browse_cursor?: string | null;
+  next_offset?: number | null; cached_results?: number };
 
 const allModalities: SearchModality[] = ['text', 'images', 'ocr'];
 const modalityLabels: Record<SearchModality, string> = { text: 'Текст', images: 'Изображения', ocr: 'OCR' };
@@ -68,6 +70,7 @@ export default function App() {
   const [language, changeLanguage] = useLanguage();
   const [theme, toggleTheme] = useTheme();
   const [chats, setChats] = useState<Chat[]>([]);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [previews, setPreviews] = useState<Preview[]>([]);
@@ -96,9 +99,13 @@ export default function App() {
   const [submittedLimit, setSubmittedLimit] = useState(20);
   const [searchId, setSearchId] = useState<string | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [browseCursor, setBrowseCursor] = useState<string | null>(null);
+  const [searchJob, setSearchJob] = useState<SearchJobStatus | null>(null);
+  const [searchStopped, setSearchStopped] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pagingError, setPagingError] = useState('');
   const searchVersion = useRef(0);
+  const activeSearch = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSearchSettings, setShowSearchSettings] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -123,13 +130,12 @@ export default function App() {
   const updateObserverRevision = useRef(0);
   const reportError = (error: unknown) => { if (!restarting.current) setError(error instanceof Error ? error.message : t('Ошибка соединения.')); };
   const refresh = async () => {
-    const [chats, jobs, previews, semantic, media] = await Promise.allSettled([api<Chat[]>('/api/chats'), api<Job[]>('/api/imports'), api<Preview[]>('/api/import-previews'), api<SemanticStatus>('/api/semantic'), api<MediaStatus>('/api/media-index')]);
-    if (chats.status === 'rejected') throw chats.reason;
-    if (jobs.status === 'rejected') throw jobs.reason;
-    if (previews.status === 'rejected') throw previews.reason;
-    if (semantic.status === 'rejected') throw semantic.reason;
-    if (media.status === 'rejected') throw media.reason;
-    setChats(chats.value); setJobs(jobs.value); setPreviews(previews.value); setSemantic(semantic.value); setMedia(media.value);
+    const results = await Promise.allSettled([
+      api<Chat[]>('/api/chats').then(value => { setChats(value); setChatsLoaded(true); }),
+      api<Job[]>('/api/imports').then(setJobs), api<Preview[]>('/api/import-previews').then(setPreviews),
+      api<SemanticStatus>('/api/semantic').then(setSemantic), api<MediaStatus>('/api/media-index').then(setMedia),
+    ]);
+    for (const result of results) if (result.status === 'rejected') reportError(result.reason);
   };
 
   useEffect(() => {
@@ -200,17 +206,15 @@ export default function App() {
   });
 
   const changeModalities = (next: SearchModality[]) => {
-    searchVersion.current++; setLoadingMore(false); setSearchId(null); setNextOffset(null);
-    setModalities(next); setHits(null); setReranked(false); setWarnings([]); setHasMore(false); closeContext();
+    setModalities(next);
   };
 
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!query.trim() || busy) return;
-    if (!modalities.length) { setError(t('Выберите хотя бы один тип поиска.')); return; }
-    if (selected?.length === 0) { setError(t('Выберите хотя бы один диалог.')); return; }
+    if (busy) return;
+    if (query.trim() && !modalities.length) { setError(t('Выберите хотя бы один тип поиска.')); return; }
     const version = ++searchVersion.current;
-    setBusy(true); setError(''); setPagingError(''); setLoadingMore(false); closeContext();
+    setBusy(true); setSearchJob(null); setSearchStopped(false); setError(''); setPagingError(''); setLoadingMore(false); closeContext();
     const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode, exclude_deleted: String(excludeDeleted) });
     modalities.forEach(kind => params.append('modality', kind));
     selected?.forEach(id => params.append('chat_id', id));
@@ -219,27 +223,74 @@ export default function App() {
     if (from) params.set('date_from', from);
     if (to) params.set('date_to', to);
     try {
-      const result = await api<SearchPage>(`/api/search?${params}`);
+      let job = await api<SearchJobStatus>('/api/search-jobs', { method: 'POST', body: JSON.stringify({
+        query, scope: selected === null ? { mode: 'all' } : { mode: 'selected', chat_ids: selected },
+        author_ids: author ? [author] : [], forwarded_from: forwardedFrom,
+        date_from: from || null, date_to: to || null, content_type: contentType,
+        exclude_deleted: excludeDeleted, exact_phrase: exact, mode,
+        modalities: modalities.length ? modalities : allModalities,
+      }) });
+      if (version !== searchVersion.current) {
+        void api(`/api/search-jobs/${encodeURIComponent(job.job_id)}/cancel`, { method: 'POST' }).catch(reportError);
+        return;
+      }
+      activeSearch.current = job.job_id;
+      while (version === searchVersion.current) {
+        const snapshot = job;
+        setSearchJob(current => current?.job_id === snapshot.job_id && current?.state === 'cancelling' && ['queued', 'running'].includes(snapshot.state) ? current : snapshot);
+        if (['completed', 'cancelled', 'failed'].includes(job.state)) break;
+        await new Promise(resolve => window.setTimeout(resolve, 350));
+        job = await api<SearchJobStatus>(`/api/search-jobs/${encodeURIComponent(job.job_id)}`);
+      }
       if (version !== searchVersion.current) return;
-      setSearchId(result.search_id ?? null); setNextOffset(result.next_offset ?? null);
+      if (job.state === 'cancelled') { setSearchStopped(true); return; }
+      if (job.state === 'failed') throw new Error(job.error || t('Не удалось выполнить поиск.'));
+      const result = await api<SearchPage>(`/api/search-jobs/${encodeURIComponent(job.job_id)}/result`);
+      if (version !== searchVersion.current) return;
+      setSearchId(job.job_id); setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null);
       setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
       setSubmittedLimit(result.limit ?? 20);
-      setEffectiveMode(result.effective_mode); setWarnings(result.warnings); setReranked(Boolean(result.rerank_applied));
+      setEffectiveMode(result.effective_mode); setWarnings(result.warnings ?? []); setReranked(Boolean(result.rerank_applied));
       setSearchFilters(params.toString());
       setSubmittedModalities([...modalities]);
-    } catch (error) { if (version === searchVersion.current) reportError(error); }
-    finally { setBusy(false); }
+    } catch (error) {
+      if (version === searchVersion.current) {
+        reportError(error);
+        if (activeSearch.current) void api(`/api/search-jobs/${encodeURIComponent(activeSearch.current)}/cancel`, { method: 'POST' }).catch(reportError);
+      }
+    }
+    finally { if (version === searchVersion.current) { setBusy(false); activeSearch.current = null; } }
+  }
+
+  async function stopSearch() {
+    if (!activeSearch.current) return;
+    const jobId = activeSearch.current;
+    const version = searchVersion.current;
+    setSearchJob(current => current?.job_id === jobId ? { ...current, state: 'cancelling' } : current);
+    try {
+      const job = await api<SearchJobStatus>(`/api/search-jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+      if (version === searchVersion.current && activeSearch.current === jobId) setSearchJob(job);
+    } catch (error) {
+      if (version === searchVersion.current && activeSearch.current === jobId) {
+        setSearchJob(current => current?.job_id === jobId && current.state === 'cancelling'
+          ? { ...current, state: 'running' } : current);
+        reportError(error);
+      }
+    }
   }
 
   async function showMore() {
-    if (!searchId || nextOffset === null || loadingMore || busy) return;
+    if (!searchId || (nextOffset === null && !browseCursor) || loadingMore || busy) return;
     const version = searchVersion.current;
     setLoadingMore(true); setPagingError('');
     try {
-      const result = await api<SearchPage>(`/api/search/${encodeURIComponent(searchId)}/page?offset=${nextOffset}&limit=${submittedLimit}`);
+      const page = new URLSearchParams({ limit: String(submittedLimit) });
+      if (browseCursor) page.set('cursor', browseCursor);
+      else page.set('offset', String(nextOffset));
+      const result = await api<SearchPage>(`/api/search-jobs/${encodeURIComponent(searchId)}/result?${page}`);
       if (version !== searchVersion.current) return;
       setHits(current => [...(current ?? []), ...result.results]);
-      setNextOffset(result.next_offset ?? null); setHasMore(result.has_more);
+      setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null); setHasMore(result.has_more);
     } catch (error) {
       if (version === searchVersion.current) setPagingError(error instanceof Error ? error.message : t('Ошибка соединения.'));
     } finally { if (version === searchVersion.current) setLoadingMore(false); }
@@ -270,6 +321,8 @@ export default function App() {
       const estimate = await api<{ messages: number; message_text_bytes: number; exclusive_media: number; shared_media: number }>(`/api/chats/${chat.id}/deletion-estimate`);
       if (!window.confirm(t("Удалить «{p0}» и его индекс из приложения? {p1} сообщений, {p2} КиБ текста. Кэш {p3} вложений удалится; общих вложений {p4}. Точное освобождение места зависит от уплотнения индекса. Исходный экспорт сохранится.", { p0: chat.name, p1: estimate.messages, p2: (estimate.message_text_bytes / 1024).toFixed(1), p3: estimate.exclusive_media, p4: estimate.shared_media }))) return;
       await api(`/api/chats/${chat.id}`, { method: 'DELETE' });
+      if (activeSearch.current) void api(`/api/search-jobs/${encodeURIComponent(activeSearch.current)}/cancel`, { method: 'POST' }).catch(reportError);
+      activeSearch.current = null; setBusy(false); setBrowseCursor(null);
       searchVersion.current++; setSearchId(null); setNextOffset(null); setLoadingMore(false); setPagingError('');
       setSelected(null); setHits(null); setReranked(false); closeContext(); await refresh();
     } catch (error) { reportError(error); }
@@ -298,7 +351,8 @@ export default function App() {
           <button className="chat-settings-button" aria-label={t('Настройки индексации {p0}', { p0: chat.name })} title={t('Настройки индексации')} onClick={() => setIndexChat(chat)}>⋯</button>
           <button className="delete-button" disabled={deleting} aria-label={t("Удалить {p0}", { p0: chat.name })} onClick={() => void deleteChat(chat)}>×</button>
         </div>)}
-        {!chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
+        {!chatsLoaded && <p className="sidebar-empty" role="status">{t('Загрузка диалогов…')}</p>}
+        {chatsLoaded && !chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
       </div>
       <button className="import-button telegram-sources-button" disabled={!connected} onClick={() => setModal('sources')}>{t('Источники · Telegram')}</button>
       <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span>{t(" Импортировать выгрузку")}</button>
@@ -343,7 +397,7 @@ export default function App() {
         <form onSubmit={search} className="search-form">
           <div className="search-box"><span className="search-icon" aria-hidden="true">⌕</span>
             <input aria-label={t("Поисковый запрос")} placeholder={t("Что вы хотите найти в переписке?")} value={query} onChange={event => setQuery(event.target.value)} />
-            <button disabled={busy || !query.trim() || !connected || !modalities.length}>{busy ? t('Ищем…') : t('Найти')}<span aria-hidden="true"> ↗</span></button></div>
+            <button disabled={busy || !connected || !chatsLoaded || (!!query.trim() && !modalities.length)}>{busy ? t('Ищем…') : query.trim() ? t('Найти') : t('Показать сообщения')}<span aria-hidden="true"> ↗</span></button></div>
           <div className="filters">
             <label>{t("Режим")}<select aria-label={t("Режим поиска")} value={mode} disabled={exact} onChange={event => setMode(event.target.value)}><option value="words">{t("По словам")}</option><option value="meaning">{t("По смыслу")}</option><option value="hybrid">{t("Слова и смысл")}</option></select></label>
             <label>{t("Автор")}<select aria-label={t("Автор")} value={author} onChange={event => setAuthor(event.target.value)}><option value="">{t("Все авторы")}</option>{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
@@ -368,11 +422,13 @@ export default function App() {
               </label>)}
             </div>
             <p id="search-modality-help" className="baseline-note">{t("Можно выбрать несколько типов поиска — результаты объединятся.")}</p>
-            {!modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
+            {!!query.trim() && !modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
         <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача поиска')} hidden={!showSearchSettings}><SearchSettingsPanel /></section>
-        {busy && <div className="search-progress" role="status"><span>{t('Ищем…')}</span><progress aria-label={t('Выполнение поиска')} /></div>}
+        <hr className="search-divider" />
+        {busy && <SearchProgress status={searchJob} onStop={() => void stopSearch()} />}
+        {searchStopped && <p role="status">{t('Поиск остановлен')}</p>}
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}
@@ -385,8 +441,9 @@ export default function App() {
           <div className="stats"><div><strong>{messageCount.toLocaleString(uiLocale())}</strong><span>{t("сообщений")}</span></div><div><strong>{chats.length}</strong><span>{t("диалогов")}</span></div><div><strong>{photoCount}</strong><span>{t("фотографий")}</span></div></div>
           <div className="baseline-note">{t('Слова и смысл — базовый режим. Подготовьте модели в общих настройках.')}</div>
         </section> : <section className="results" aria-live="polite">
-          <div className="results-heading"><h2>{hits.length ? t("Найдено фрагментов: {p0}{p1}", { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · векторы') : t('По словам · BM25')}</span></div>
-          {!hits.length && <div className="no-results">{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</div>}
+          <div className="results-heading"><h2>{hits.length ? t(effectiveMode === 'browse' ? 'Найдено сообщений: {p0}{p1}' : 'Найдено фрагментов: {p0}{p1}', { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{effectiveMode === 'browse' ? t('Просмотр сообщений') : onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · векторы') : t('По словам · BM25')}</span></div>
+          <p className="submitted-search">{submitted ? t('Результаты запроса: {p0}', { p0: submitted }) : t('Сообщения по выполненным фильтрам')}</p>
+          {!hits.length && <div className="no-results">{effectiveMode === 'browse' ? t('По выбранным фильтрам сообщений нет. Измените фильтры и нажмите «Показать сообщения».') : <>{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</>}</div>}
           <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? t('Опорное сообщение фрагмента') : t('Совпадение в')} #{hit.message_id}</small></div>
             <div className="result-ranking"><span>{t('Результат #{p0}', { p0: index + 1 })}</span>
@@ -401,9 +458,9 @@ export default function App() {
             {hit.ocr_text && <details className="ocr-evidence"><summary>{t("Распознанный текст")}{hit.ocr_confidence != null ? t(" · уверенность OCR {p0} / 100", { p0: Math.round(hit.ocr_confidence) }) : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>{t("Распознавание может содержать ошибки. Откройте фотографию для проверки.")}</p></details>}
             <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<span>↗</span></button>
           </article>)}</div>
-          {nextOffset !== null && <div className="more-results"><button type="button" className="primary" disabled={busy || loadingMore} onClick={() => void showMore()}>{loadingMore ? t('Загружаем…') : t('Показать ещё')}</button><span className="baseline-note">{t('Следующие результаты загружаются из кэша поиска.')}</span></div>}
+          {(nextOffset !== null || browseCursor) && <div className="more-results"><button type="button" className="primary" disabled={busy || loadingMore} onClick={() => void showMore()}>{loadingMore ? t('Загружаем…') : t('Показать ещё')}</button></div>}
           {pagingError && <p className="error" role="alert">{t(pagingError)}</p>}
-          {hasMore && nextOffset === null && <p className="more-note">{t('Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.', { p0: hits.length })}</p>}
+          {hasMore && nextOffset === null && !browseCursor && <p className="more-note">{t('Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.', { p0: hits.length })}</p>}
         </section>}
       </div><footer className="main-footer">{t("Сообщения хранятся и обрабатываются на этом компьютере.")}</footer>
     </main>

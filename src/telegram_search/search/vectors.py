@@ -5,6 +5,7 @@ import threading
 from datetime import timedelta
 from pathlib import Path
 
+from telegram_search.search.execution import advance, checkpoint, count, phase, search_lock
 from telegram_search.security.paths import owned_vector_path
 from telegram_search.shared.errors import UserError
 
@@ -24,6 +25,7 @@ class VectorStore:
         self.db = lancedb.connect(location)
         self.location = location
         self.lock = threading.RLock()
+        self.indexed_ids = set()
 
     def table_path(self, space_id):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", space_id):
@@ -52,6 +54,7 @@ class VectorStore:
                     pa.field("vector", pa.list_(pa.float32(), dimension)),
                 ]
             )
+            self.indexed_ids.discard(space_id)
             return self.db.create_table(name, schema=schema)
 
     def upsert(self, space_id: str, dimension: int, chunks: list, embeddings) -> None:
@@ -77,6 +80,12 @@ class VectorStore:
             table.merge_insert(
                 "id"
             ).when_matched_update_all().when_not_matched_insert_all().execute(data)
+            if space_id not in self.indexed_ids:
+                # A scalar index lets bounded canonical-ID predicates fetch only
+                # scoped vectors. Lance also includes the unindexed append tail.
+                if not any("id" in index.columns for index in table.list_indices()):
+                    table.create_scalar_index("id", index_type="BTREE", replace=False)
+                self.indexed_ids.add(space_id)
 
     def exact(self, space_id: str, dimension: int, query, eligible_ids: list[str], limit: int):
         if not eligible_ids:
@@ -96,8 +105,20 @@ class VectorStore:
                 .to_list()
             )
 
-    def exact_filtered(self, space_id, dimension, query, eligible, limit, *, predicate=None):
-        """One bounded scan; canonical eligibility is checked before global top-k.
+    def exact_filtered(
+        self,
+        space_id,
+        dimension,
+        query,
+        eligible,
+        limit,
+        *,
+        predicate=None,
+        eligible_batches=None,
+        total=None,
+        phase_name="vectors",
+    ):
+        """Bounded exact retrieval; canonical eligibility precedes global top-k.
 
         ``eligible(ids)`` returns the IDs published in the caller's SQLite snapshot.
         Only one Arrow batch and ``limit`` candidates are kept, even for large archives.
@@ -106,6 +127,7 @@ class VectorStore:
 
         if limit <= 0:
             return []
+        checkpoint()
         query = np.asarray(query, dtype=np.float32)
         if query.shape != (dimension,) or not np.isfinite(query).all():
             raise UserError("Модель вернула недопустимый embedding.")
@@ -113,20 +135,46 @@ class VectorStore:
         if not np.isfinite(query_norm) or query_norm <= 0:
             raise UserError("Модель вернула недопустимый embedding.")
         best = []
-        with self.lock:
+        phase(phase_name, total=total, unit="vectors")
+        with search_lock(self.lock):
             table = self.table(space_id, dimension)
             if table is None:
                 raise UserError("Векторная таблица отсутствует. Перестройте semantic index.")
-            scan = table.search().select(["id", "vector"]).limit(None)
-            if predicate:
-                scan = scan.where(predicate)
-            with scan.to_batches(batch_size=512) as batches:
+            # Broad scopes use one sequential pass. Repeated small-ID predicates
+            # would otherwise rescan a large unindexed append tail many times.
+            scoped = eligible_batches is not None
+            if scoped and eligible is not None and total is not None:
+                scoped = total * 4 < table.count_rows(predicate)
+
+            def scans():
+                if not scoped:
+                    yield predicate
+                else:
+                    for ids in eligible_batches:
+                        checkpoint()
+                        if not ids:
+                            continue
+                        selected_ids = "id IN (" + ",".join(sql_literal(key) for key in ids) + ")"
+                        yield f"({predicate}) AND {selected_ids}" if predicate else selected_ids
+
+            def read_batches():
+                for selected_scope in scans():
+                    scan = table.search().select(["id", "vector"]).limit(None)
+                    if selected_scope:
+                        scan = scan.where(selected_scope)
+                    with scan.to_batches(batch_size=512) as reader:
+                        yield from reader
+
+            batches = read_batches()
+            try:
                 for batch in batches:
                     # Some readers may return a larger batch than requested.
                     for start in range(0, len(batch), 512):
                         part = batch.slice(start, 512)
+                        checkpoint()
+                        count("vectors_read", len(part))
                         ids = part.column("id").to_pylist()
-                        allowed = set(eligible(ids))
+                        allowed = set(ids if scoped else eligible(ids))
                         selected = [i for i, key in enumerate(ids) if key in allowed]
                         if not selected:
                             continue
@@ -153,12 +201,18 @@ class VectorStore:
                             where=valid,
                         )
                         distances = 1 - distances
+                        scored = int(np.count_nonzero(valid))
+                        count("vectors_scored", scored)
+                        advance(scored)
                         for offset in np.flatnonzero(valid):
                             candidate = (-float(distances[offset]), ids[selected[offset]])
                             if len(best) < limit:
                                 heapq.heappush(best, candidate)
                             elif candidate > best[0]:
                                 heapq.heapreplace(best, candidate)
+            finally:
+                batches.close()
+        checkpoint()
         return [{"id": key, "_distance": -score} for score, key in sorted(best, reverse=True)]
 
     def prune_segment(
@@ -211,6 +265,7 @@ class VectorStore:
                 count, total = table.count_rows(predicate), table.count_rows()
                 if count == total:
                     self.db.drop_table("text_" + space["id"])
+                    self.indexed_ids.discard(space["id"])
                 else:
                     table.delete(predicate)
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)

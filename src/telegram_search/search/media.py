@@ -1,3 +1,4 @@
+from telegram_search.search.execution import checkpoint, count, id_batches, phase, search_lock
 from telegram_search.search.lexical import ContextService
 from telegram_search.search.ocr_words import ocr_word_search
 from telegram_search.search.presentation import search_options
@@ -23,9 +24,11 @@ class MediaSearch:
                 f"AND r.status='ready' AND r.kind='photo' AND {where})"
             )
             parameters = (space, kind, *arguments, *params)
-            if not conn.execute(
-                f"SELECT 1 FROM media_embeddings e WHERE {predicate} LIMIT 1", parameters
-            ).fetchone():
+            total = conn.execute(
+                f"SELECT count(*) FROM media_embeddings e WHERE {predicate}", parameters
+            ).fetchone()[0]
+            count("eligible_vectors", total)
+            if not total:
                 return []
 
             def eligible(ids):
@@ -40,7 +43,19 @@ class MediaSearch:
                 ]
 
             found = self.semantic._vector_store().exact_filtered(
-                space, dimension, vector, eligible, maximum, predicate="utc_day = 'media'"
+                space,
+                dimension,
+                vector,
+                eligible,
+                maximum,
+                predicate="utc_day = 'media'",
+                eligible_batches=id_batches(
+                    conn.execute(
+                        f"SELECT e.id FROM media_embeddings e WHERE {predicate}", parameters
+                    )
+                ),
+                total=total,
+                phase_name="image_vectors" if kind == "image" else "ocr_vectors",
             )
         return found
 
@@ -62,7 +77,9 @@ class MediaSearch:
                     "Поиск по описанию фотографий станет доступен "
                     "после подготовки визуальной модели в настройках."
                 ]
+            phase("query_images")
             vector = clip.encode_text([query])[0]
+            checkpoint()
             space, dimension = clip.space_id, getattr(clip, "dimension", 512)
         else:
             if not engine:
@@ -75,7 +92,9 @@ class MediaSearch:
             )
             if not exact and mode != "words" and encoder:
                 try:
+                    phase("query_ocr")
                     encoder, vector = self.semantic.encode_query(query)
+                    checkpoint()
                     space, dimension = encoder.space_id, encoder.spec.dimension
                 except UserError as exc:
                     warnings.append(str(exc))
@@ -92,7 +111,7 @@ class MediaSearch:
                     warnings.append(
                         "Смысловой OCR-поиск охватывает только готовую часть фотографий."
                     )
-        with self.lock:
+        with search_lock(self.lock):
             # A model/source may have changed while the query embedding was calculated.
             if (
                 self.media.ocr is not engine
@@ -111,6 +130,7 @@ class MediaSearch:
                 version = engine.version
                 lexical_evidence = {}
                 if exact or mode != "meaning" or vector is None:
+                    phase("ocr_words", unit="images")
                     with self.db.connect() as conn:
                         lexical, lexical_evidence, lexical_warnings = ocr_word_search(
                             conn,
@@ -133,6 +153,7 @@ class MediaSearch:
                     ("image" if kind == "images" else "ocr_meaning", dense),
                 ):
                     for rank, key in enumerate(keys, 1):
+                        checkpoint()
                         if channel == "ocr_words":
                             evidence = conn.execute(
                                 "SELECT sha256,text,confidence FROM ocr_cache "
@@ -225,6 +246,7 @@ class UnifiedSearch:
         rerank_branches = []
 
         def rerank(hits, kind):
+            count("candidates_before_rerank", len(hits))
             if self.reranker is None:
                 return hits
             hits, metadata = self.reranker.apply(query, hits, kind, filters, exact=exact)
@@ -253,6 +275,7 @@ class UnifiedSearch:
             }
 
         if "text" in selected:
+            checkpoint()
             try:
                 result = self.text.search(
                     query, filters, exact, limit if tab == "text" else 100, mode, chunk_size
@@ -271,6 +294,7 @@ class UnifiedSearch:
         for kind in ("images", "ocr"):
             if kind not in selected:
                 continue
+            checkpoint()
             try:
                 hits, warnings = self.media.search(
                     query, filters, kind=kind, exact=exact, mode=mode, chunk_size=chunk_size
@@ -280,6 +304,7 @@ class UnifiedSearch:
             branches.append(rerank(hits, kind))
             result["warnings"].extend(warnings)
         combined = {}
+        phase("combine", unit="messages")
         for branch in branches:
             for rank, hit in enumerate(branch, 1):
                 key = (hit["chat_id"], hit["message_id"])

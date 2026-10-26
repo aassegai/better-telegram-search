@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import islice
 
+from telegram_search.search.execution import advance, checkpoint, phase
 from telegram_search.search.presentation import search_options
 from telegram_search.search.stopwords import keyword_terms
 from telegram_search.shared.errors import UserError
@@ -21,9 +22,12 @@ class Filters:
     content_type: str = "all"
     exclude_deleted: bool = False
     forwarded_from: list[str] = field(default_factory=list)
+    scope_mode: str = "all"
 
     def sql(self, alias: str = "m") -> tuple[str, list]:
         clauses, params = [], []
+        if self.scope_mode == "selected" and not self.chat_ids:
+            clauses.append("0")
         if self.exclude_deleted:
             clauses.append(f"{alias}.remote_deleted=0")
         for column, values in (
@@ -52,7 +56,8 @@ class Filters:
 
     def matches(self, message: dict) -> bool:
         return (
-            (not self.exclude_deleted or not message.get("remote_deleted", False))
+            (self.scope_mode != "selected" or bool(self.chat_ids))
+            and (not self.exclude_deleted or not message.get("remote_deleted", False))
             and (not self.chat_ids or message["chat_id"] in self.chat_ids)
             and (not self.author_ids or message["author_id"] in self.author_ids)
             and (not self.forwarded_from or message.get("forwarded_from") in self.forwarded_from)
@@ -194,13 +199,23 @@ class SearchService:
         where, params = filters.sql()
         match = fts_query(query, exact)
         if match is None:
-            return {"results": [], "backend": "bm25_messages", "has_more": False}
+            return {
+                "results": [],
+                "backend": "bm25_messages",
+                "has_more": False,
+                "warnings": [
+                    "В запросе нет значимых слов. Выберите поиск по смыслу или точную фразу."
+                ]
+                if query.strip()
+                else [],
+            }
         if exact:
             where += " AND instr(m.text_normalized,?)>0"
             params.append(normalize_text(query.strip()))
         results = []
         seen = set()
         has_more = False
+        phase("text_words", unit="messages")
         with self.db.connect() as conn:
             # Stream ranked rows until enough distinct windows survive deduplication.
             rows = conn.execute(
@@ -211,6 +226,8 @@ class SearchService:
                 (match, *params),
             )
             for row in rows:
+                checkpoint()
+                advance()
                 if (row["chat_id"], row["message_id"]) in seen:
                     continue
                 if len(results) == limit:

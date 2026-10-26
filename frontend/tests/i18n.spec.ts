@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -44,11 +45,11 @@ test('keyboard language slider persists and preserves search state and original 
     author: 'Найти', text: '<img src=x onerror=window.languageInjected=true> Точная фраза {p0}',
     kind: 'message', action: null, reply_to: null, forwarded_from: null, matches_filters: true,
     media: [], edited_timestamp: null };
-  await page.route('**/api/search?**', route => {
-    const params = new URL(route.request().url()).searchParams;
-    expect(params.get('q')).toBe('Точная фраза {p0}');
-    expect(params.getAll('modality')).toEqual(['text', 'ocr']);
-    expect(params.get('exact')).toBe('true');
+  await mockSearchJobs(page, route => {
+    const spec = route.request().postDataJSON();
+    expect(spec.query).toBe('Точная фраза {p0}');
+    expect(spec.modalities).toEqual(['text', 'ocr']);
+    expect(spec.exact_phrase).toBe(true);
     return route.fulfill({ json: { results: [{ chat_id: message.chat_id, chat_name: 'Настройки и диагностика',
       message_id: 1, timestamp: message.timestamp, messages: [message], matched_by: ['words'] }],
       effective_mode: 'mixed', has_more: false, limit: 20,

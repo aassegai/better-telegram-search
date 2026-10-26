@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
@@ -16,7 +17,7 @@ async function longArchive(page: Page) {
   await page.route('**/api/imports', route => route.fulfill({ json: [] }));
   await page.route('**/api/import-previews', route => route.fulfill({ json: [] }));
   await page.route('**/api/authors?**', route => route.fulfill({ json: [] }));
-  await page.route('**/api/search?**', route => route.fulfill({ json: {
+  await mockSearchJobs(page, route => route.fulfill({ json: {
     results: [{ chat_id: chats[0].id, chat_name: chats[0].name, message_id: 1,
       timestamp: messages[0].timestamp, messages }],
     warnings: [], has_more: false, effective_mode: 'words', limit: 1,

@@ -1,5 +1,6 @@
 """Indexed OCR substrings and bounded typo tolerance, independent of embeddings."""
 
+from telegram_search.search.execution import checkpoint
 from telegram_search.search.stopwords import WORD, keyword_terms
 from telegram_search.shared.text import normalize_text
 
@@ -62,7 +63,9 @@ def substring_distance(pattern: str, text: str, tolerance: int, budget=None) -> 
     mask, high = (1 << len(pattern)) - 1, 1 << (len(pattern) - 1)
     positive, negative, score = mask, 0, len(pattern)
     best = tolerance + 1
-    for char in text:
+    for index, char in enumerate(text):
+        if index % 4096 == 0:
+            checkpoint()
         equal = masks.get(char, 0)
         diagonal = (((equal & positive) + positive) ^ positive) | equal | negative
         plus = negative | ~(diagonal | positive)
@@ -150,6 +153,7 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
     budget = VerificationBudget()
     fuzzy_allowed = len(terms) <= 12 and sum(map(len, terms)) <= 160
     for key, (text, bm25) in candidates.items():
+        checkpoint()
         if key in evidence:
             continue
         distances = []

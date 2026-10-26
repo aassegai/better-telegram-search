@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import io
 import os
+import re
 import secrets
 import threading
 import time
@@ -20,6 +21,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search import __version__
+from telegram_search.backend.search import router as search_router
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.chats import ChatIndexing
@@ -29,6 +31,7 @@ from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.cache import SearchCache
 from telegram_search.search.hybrid import HybridSearch
+from telegram_search.search.jobs import SearchJobs
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
 from telegram_search.search.media import MediaSearch, UnifiedSearch
 from telegram_search.search.presentation import search_options
@@ -126,7 +129,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = semantic = media = updates = telegram = rerank = maintenance = None
+        importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -162,6 +165,8 @@ def create_app(
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
                 SearchReranker(db, rerank),
             )
+            search_jobs = SearchJobs(db, app.state.search, importer.lifecycle_lock)
+            app.state.search_jobs = search_jobs
             app.state.update_database_check = "checking" if verification_nonce else "ok"
             if verification_nonce:
 
@@ -201,6 +206,8 @@ def create_app(
                 updates.close()
             if telegram:
                 await telegram.close()
+            if search_jobs:
+                search_jobs.close()
             if maintenance:
                 maintenance.close()
             if media:
@@ -214,6 +221,7 @@ def create_app(
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.include_router(telegram_router)
+    app.include_router(search_router)
     app.state.db = db
     app.state.update_verifying = bool(verification_nonce)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
@@ -247,7 +255,10 @@ def create_app(
                     {"detail": "Необходим токен локальной сессии."}, status_code=403
                 )
             maintenance = getattr(app.state, "vector_maintenance", None)
-            if maintenance and maintenance.busy:
+            cancelling_search = request.method == "POST" and re.fullmatch(
+                r"/api/search-jobs/[A-Za-z0-9_-]{1,128}/cancel", request.url.path
+            )
+            if maintenance and maintenance.busy and not cancelling_search:
                 return JSONResponse(
                     {"detail": "Дождитесь очистки векторного индекса."}, status_code=409
                 )

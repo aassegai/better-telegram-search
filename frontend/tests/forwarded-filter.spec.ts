@@ -1,9 +1,10 @@
+import { mockSearchJobs } from './search-mocks';
 import { expect, test } from '@playwright/test';
 
 test('forward authors have searchable checkboxes, combined selection and a reset', async ({ page }) => {
   const names = ['Альфа', 'Бета <img src=x onerror=window.forwardInjected=true>'];
   const queries: string[] = [];
-  const searches: URLSearchParams[] = [];
+  const searches: { forwarded_from: string[]; author_ids: string[] }[] = [];
   let finish!: () => void;
   await page.route('**/api/forwarded-sources?**', route => {
     const q = new URL(route.request().url()).searchParams.get('q') ?? '';
@@ -11,8 +12,8 @@ test('forward authors have searchable checkboxes, combined selection and a reset
     return route.fulfill({ json: { sources: names.filter(name => name.toLocaleLowerCase().includes(q.toLocaleLowerCase()))
       .map(name => ({ name, messages: 5 })), next_offset: null } });
   });
-  await page.route('**/api/search?**', async route => {
-    searches.push(new URL(route.request().url()).searchParams);
+  await mockSearchJobs(page, async route => {
+    searches.push(route.request().postDataJSON());
     await new Promise<void>(resolve => { finish = resolve; });
     await route.fulfill({ json: { results: [], effective_mode: 'words', warnings: [], has_more: false } });
   });
@@ -35,8 +36,8 @@ test('forward authors have searchable checkboxes, combined selection and a reset
   expect(searches).toHaveLength(0);
   await page.getByRole('button', { name: 'Найти', exact: true }).click();
   await expect.poll(() => searches.length).toBe(1);
-  expect(searches[0].getAll('forwarded_from')).toEqual(names);
-  expect(searches[0].get('author_id')).toBe('bob');
+  expect(searches[0].forwarded_from).toEqual(names);
+  expect(searches[0].author_ids).toEqual(['bob']);
   await expect(filter.getByRole('checkbox', { name: /^Альфа/ })).toBeDisabled();
   finish();
   await expect(page.getByRole('button', { name: 'Найти', exact: true })).toBeEnabled();
@@ -44,7 +45,7 @@ test('forward authors have searchable checkboxes, combined selection and a reset
   await expect(filter.locator('summary')).toContainText('Все источники');
   await page.getByRole('button', { name: 'Найти', exact: true }).click();
   await expect.poll(() => searches.length).toBe(2);
-  expect(searches[1].getAll('forwarded_from')).toEqual([]);
+  expect(searches[1].forwarded_from).toEqual([]);
   finish();
   await expect(page.getByRole('button', { name: 'Найти', exact: true })).toBeEnabled();
 });

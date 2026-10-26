@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { test, expect } from '@playwright/test';
 
 const media = { ocr_enabled: 1, images_enabled: 1, paused: 0, running: false, preparation_state: 'ready', error: null,
@@ -9,10 +10,10 @@ const hit = { chat_id: 'synthetic', chat_name: 'Синтетическая фо�
     author: 'Автор', text: 'Подпись фото', kind: 'message', action: null, reply_to: null, forwarded_from: null,
     matches_filters: true, media: [{ id: 999, kind: 'photo', status: 'ready' }], edited_timestamp: null }] };
 
-test('OCR evidence stays escaped and modality changes clear the previous result', async ({ page }) => {
+test('OCR evidence stays escaped and draft modality changes preserve the submitted result', async ({ page }) => {
   await page.route('**/api/media-index', route => route.fulfill({ json: media }));
   await page.route('**/api/media/999', route => route.fulfill({ status: 404 }));
-  await page.route('**/api/search?**', route => route.fulfill({ json: { results: [hit], effective_mode: 'words', warnings: [], has_more: false } }));
+  await mockSearchJobs(page, route => route.fulfill({ json: { results: [hit], effective_mode: 'words', warnings: [], has_more: false } }));
   await page.goto('/');
   await expect(page.getByText(/Фотографии: 2 \/ 2 · OCR: 1 \/ 2/)).toBeVisible();
   await page.getByRole('checkbox', { name: 'Текст', exact: true }).uncheck();
@@ -26,7 +27,7 @@ test('OCR evidence stays escaped and modality changes clear the previous result'
   await expect(page.getByText('Изображение недоступно в папке источника')).toBeVisible();
   await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'Изображения', exact: true }).check();
-  await expect(page.locator('.result-card')).toHaveCount(0);
+  await expect(page.locator('.result-card')).toHaveCount(1);
   await page.getByRole('button', { name: 'Найти' }).click();
   await expect(page.locator('.photo-grid .result-card')).toHaveCount(1);
 });
@@ -66,10 +67,10 @@ for (const selected of [['text', 'ocr'], ['images', 'ocr']]) {
     await page.route('**/api/media-index', route => route.fulfill({ json: media }));
     await page.route('**/api/media/999', route => route.fulfill({ status: 404 }));
     let requested: string[] = [];
-    await page.route('**/api/search?**', route => {
-      const params = new URL(route.request().url()).searchParams;
-      requested = params.getAll('modality');
-      expect(params.has('tab')).toBe(false);
+    await mockSearchJobs(page, route => {
+      const spec = route.request().postDataJSON();
+      requested = spec.modalities;
+      expect(spec.tab).toBeUndefined();
       const other = { ...hit, message_id: 2, ocr_text: null, ocr_confidence: null,
         matched_by: selected[0] === 'text' ? ['words'] : ['image'],
         messages: hit.messages.map(message => ({ ...message, message_id: 2, text: 'Другое совпадение' })) };
@@ -91,16 +92,16 @@ for (const selected of [['text', 'ocr'], ['images', 'ocr']]) {
     await expect(page.locator('.match-reasons').last()).toContainText(selected[0] === 'text' ? 'Совпали слова' : 'Фотография по описанию');
     await expect(page.getByText('Синтетический индекс готов частично')).toBeVisible();
     await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
-    await expect(page.locator('.result-card')).toHaveCount(0);
-    await expect(page.getByText('Синтетический индекс готов частично')).toHaveCount(0);
+    await expect(page.locator('.result-card')).toHaveCount(2);
+    await expect(page.getByText('Синтетический индекс готов частично')).toBeVisible();
   });
 }
 
 test('empty selection blocks search and select-all controls stay locked during a request', async ({ page }) => {
   let requested: string[] = [];
   let release!: () => void;
-  await page.route('**/api/search?**', async route => {
-    requested = new URL(route.request().url()).searchParams.getAll('modality');
+  await mockSearchJobs(page, async route => {
+    requested = route.request().postDataJSON().modalities;
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { results: [], effective_mode: 'mixed', warnings: [], has_more: false } });
   });
@@ -131,7 +132,7 @@ test('result ranks preserve API order and show signed CLIP cosine rather than a 
   const matches = [20, 30, 10].map((id, index) => ({ ...hit, message_id: id,
     matched_by: ['image'], result_type: 'image', ocr_text: null, image_similarity: [0.75, 0, -0.125][index],
     messages: hit.messages.map(message => ({ ...message, message_id: id, media: [] })) }));
-  await page.route('**/api/search?**', route => route.fulfill({ json: {
+  await mockSearchJobs(page, route => route.fulfill({ json: {
     results: matches, effective_mode: 'images', warnings: [], has_more: false, limit: 20,
   } }));
   await page.goto('/');
@@ -154,7 +155,7 @@ test('result ranks preserve API order and show signed CLIP cosine rather than a 
 test('images open in the search page and Escape preserves the underlying context', async ({ page, context }) => {
   await page.route('**/api/media/999', route => route.fulfill({ contentType: 'image/png',
     body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6WQAAAABJRU5ErkJggg==', 'base64') }));
-  await page.route('**/api/search?**', route => route.fulfill({ json: {
+  await mockSearchJobs(page, route => route.fulfill({ json: {
     results: [hit], effective_mode: 'mixed', warnings: [], has_more: false,
   } }));
   await page.route('**/api/chats/synthetic/context/**', route => route.fulfill({ json: { messages: hit.messages } }));

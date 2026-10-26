@@ -16,6 +16,7 @@ from telegram_search.inference.compatibility import RUNTIME_VERSIONS, check_vect
 from telegram_search.inference.providers import CPU, Execution, runtime_version
 from telegram_search.inference.resources import compute_gate
 from telegram_search.inference.tokenization import ModelTokenizer
+from telegram_search.search.execution import checkpoint, search_lock
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
@@ -211,12 +212,14 @@ class ClipEncoder:
         if not 1 <= len(texts) <= 32:
             raise UserError("Батч CLIP должен содержать от 1 до 32 текстов.")
         inputs = self.tokenizer.batch(texts, limit=128)
-        with compute_gate(self.query_execution).slot(interactive=True), self.lock:
+        with compute_gate(self.query_execution).slot(interactive=True), search_lock(self.lock):
             self.last_used = time.monotonic()
             session = self._session("text")
+            checkpoint()
             hidden = session.run(
                 ["last_hidden_state"], {key: inputs[key] for key in ("input_ids", "attention_mask")}
             )[0]
+            checkpoint()
             self.last_used = time.monotonic()
         mask = inputs["attention_mask"][..., None].astype(np.float32)
         mean = (hidden * mask).sum(axis=1) / mask.sum(axis=1).clip(min=1)

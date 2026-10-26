@@ -5,6 +5,7 @@ import time
 from collections import OrderedDict
 
 from telegram_search.search.cache import SearchCache
+from telegram_search.search.execution import advance, checkpoint, phase, search_lock
 from telegram_search.shared.errors import UserError
 
 
@@ -20,6 +21,7 @@ class SearchReranker:
         with self.db.connect() as conn:
             conn.execute("BEGIN")
             for hit in hits:
+                checkpoint()
                 row = conn.execute(
                     f"SELECT m.text FROM indexable_messages m WHERE {where} "
                     "AND m.chat_id=? AND m.message_id=?",
@@ -74,14 +76,18 @@ class SearchReranker:
             for text in texts
         ]
         missing = list(dict.fromkeys(key for key in keys if key not in self.cache))
+        phase("rerank_" + purpose, total=len(missing), unit="texts")
         vectors = {key: self.cache[key] for key in keys if key in self.cache}
         for key in vectors:
             self.cache.move_to_end(key)
         lookup = dict(zip(keys, texts, strict=True))
         batch_size = min(self.db.settings.embedding_batch, 4)
         for start in range(0, len(missing), batch_size):
+            checkpoint()
             batch = missing[start : start + batch_size]
             values = encoder.encode_text([lookup[k] for k in batch], purpose, interactive=True)
+            checkpoint()
+            advance(len(batch))
             for key, vector in zip(batch, values, strict=True):
                 vectors[key] = vector
                 self._remember(key, vector)
@@ -101,7 +107,7 @@ class SearchReranker:
         selected = hits[: min(50, self.db.settings.retrieval_candidates)]
         documents = self._documents(selected, kind, filters)
         started = time.perf_counter()
-        with self.service.lock:
+        with search_lock(self.service.lock):
             try:
                 import numpy as np
 

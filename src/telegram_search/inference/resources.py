@@ -4,6 +4,8 @@ from collections import deque
 from contextlib import ExitStack, contextmanager, nullcontext
 from threading import Condition, Lock, get_ident, local
 
+from telegram_search.search.execution import checkpoint, current_execution
+
 
 # CPU jobs share a queue. Each GPU has a separate queue so CPU OCR can overlap
 # GPU inference without launching competing GPU jobs on the same device.
@@ -33,6 +35,7 @@ class CpuGate:
                 self.interactive_waiters += 1
             try:
                 while True:
+                    checkpoint()
                     blocked = (
                         self.owner is not None
                         and self.owner != get_ident()
@@ -46,7 +49,10 @@ class CpuGate:
                     delay = 0.0 if reentrant or interactive else self.background_delay()
                     if not blocked and delay <= 0:
                         break
-                    self.condition.wait(timeout=delay if delay > 0 else None)
+                    timeout = delay if delay > 0 else None
+                    if current_execution():
+                        timeout = min(timeout or 0.05, 0.05)
+                    self.condition.wait(timeout=timeout)
                 self.owner = get_ident()
                 self.depth += 1
                 started = time.monotonic()
@@ -55,6 +61,7 @@ class CpuGate:
                     self.waiters.remove(ticket)
                 if interactive:
                     self.interactive_waiters -= 1
+                self.condition.notify_all()
         try:
             yield
         finally:

@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { test, expect } from '@playwright/test';
 
 const status = {
@@ -21,8 +22,8 @@ test('search modes show partial coverage, fallback and exact phrase semantics', 
   await page.getByLabel('Режим поиска').selectOption('hybrid');
   await page.getByLabel('Поисковый запрос').fill('велосипед');
   let requested = '';
-  await page.route('**/api/search?**', async route => {
-    requested = new URL(route.request().url()).searchParams.get('mode') || '';
+  await page.route('**/api/search-jobs', async route => {
+    requested = route.request().postDataJSON().mode;
     const response = await route.fetch();
     await route.fulfill({ response });
   });
@@ -38,7 +39,7 @@ test('search modes show partial coverage, fallback and exact phrase semantics', 
 });
 
 test('chunk result renders the eighth message and escapes its text', async ({ page }) => {
-  await page.route('**/api/search?**', route => route.fulfill({ json: {
+  await mockSearchJobs(page, route => route.fulfill({ json: {
     backend: 'e5_chunks_hybrid', effective_mode: 'hybrid', warnings: [], has_more: false,
     results: [{ chat_id: 'synthetic', chat_name: 'Синтетический разговор', message_id: 1,
       chunk_id: 'synthetic-chunk', timestamp: 1750000000, matched_by: ['words', 'meaning'],

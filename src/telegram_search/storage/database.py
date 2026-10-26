@@ -73,9 +73,17 @@ class Database:
 
         conn.create_function("ocr_search_grams", 1, ocr_grams, deterministic=True)
         conn.execute("PRAGMA foreign_keys=ON")
+        from telegram_search.search.execution import checkpoint, current_execution
+
+        execution = current_execution()
+        if execution:
+            conn.set_progress_handler(lambda: int(execution.cancelled.is_set()), 1000)
         try:
             with conn:
                 yield conn
+        except sqlite3.OperationalError:
+            checkpoint()
+            raise
         finally:
             conn.close()
 

@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { test, expect } from '@playwright/test';
 
 const disconnected = { configured: true, runtime_installed: true, connected: false,
@@ -174,8 +175,8 @@ test('chat sync shows the run state, errors and pause beside the connection stat
 });
 
 test('OCR evidence identifies fuzzy matches and archived deletion filter reaches search', async ({ page }) => {
-  await page.route('**/api/search?**', route => {
-    expect(new URL(route.request().url()).searchParams.get('exclude_deleted')).toBe('true');
+  await mockSearchJobs(page, route => {
+    expect(route.request().postDataJSON().exclude_deleted).toBe(true);
     return route.fulfill({ json: { results: [{ chat_id: 'synthetic', message_id: 1, chat_name: 'Synthetic',
       messages: [], matched_by: ['ocr_words'], ocr_match: { kind: 'fuzzy', edits: 1 },
       ocr_text: 'synthetic', timestamp: 1750000000 }], warnings: [], has_more: false, effective_mode: 'words' } });

@@ -1,8 +1,9 @@
+import { mockSearchJobs } from './search-mocks';
 import { test, expect } from '@playwright/test';
 
 test('search display settings persist and control result cards and their message windows', async ({ page }) => {
   let searches = 0;
-  await page.route('**/api/search?**', route => { searches++; return route.continue(); });
+  await page.route('**/api/search-jobs', route => { searches++; return route.continue(); });
   await page.goto('/');
   const token = (await (await page.request.get('/api/session')).json()).token;
   const original = await (await page.request.get('/api/settings')).json();
@@ -67,7 +68,7 @@ test('expanded context includes a large displayed card using its result snapshot
     author: 'Синтетический автор', text: `проверка ${index + 1}`, kind: 'message', action: null,
     reply_to: null, forwarded_from: null, matches_filters: true, media: [], edited_timestamp: null,
   }));
-  await page.route('**/api/search?**', route => route.fulfill({ json: {
+  await mockSearchJobs(page, route => route.fulfill({ json: {
     results: [{ chat_id: 'context-smoke', chat_name: 'Синтетический контекст', message_id: 1,
       timestamp: 1750000000, messages }], has_more: false, effective_mode: 'words', warnings: [], limit: 1,
   } }));
@@ -103,7 +104,7 @@ test(`slow index status${otherFails ? ' with another failed endpoint' : ''} does
     if (statuses === 1) await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { enabled: 0, runtime_installed: true } });
   });
-  await page.route('**/api/search?**', route => {
+  await mockSearchJobs(page, route => {
     searches++;
     return route.fulfill({ json: { results: [], warnings: [], effective_mode: 'words', has_more: false, limit: 5 } });
   });

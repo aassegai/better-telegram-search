@@ -3,6 +3,12 @@ export type Chat = {
   date_from: number | null; date_to: number | null;
 };
 export type SearchModality = 'text' | 'images' | 'ocr';
+export type SearchJobStatus = {
+  job_id: string; state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
+  phase: string; completed: number; total: number | null; unit: string;
+  elapsed_seconds: number; rate: number | null; eta_seconds: number | null;
+  queue_position: number | null; error: string | null; warnings: string[];
+};
 export type ChatIndexStatus = {
   semantic: SemanticStatus; media: MediaStatus;
   chunking?: { profile: string; policy_id: string; max_messages: number; max_tokens: number; skipped_messages: number };
@@ -19,7 +25,7 @@ export type Hit = {
   chat_id: string; chat_name: string; message_id: number; timestamp: number;
   messages: Message[];
   matched_by?: ('words' | 'meaning' | 'image' | 'ocr_words' | 'ocr_meaning')[];
-  result_type?: 'text' | 'image' | 'ocr';
+  result_type?: 'text' | 'image' | 'ocr' | 'message';
   media_id?: number;
   image_similarity?: number;
   ocr_text?: string | null;

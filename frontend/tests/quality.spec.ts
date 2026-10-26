@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { expect, test } from '@playwright/test';
 
 test('model settings expose independent devices, GPU OCR and actual local paths; sources belong to chats', async ({ page }) => {
@@ -46,7 +47,7 @@ test('OCR pause keeps image indexing active and uses its own endpoint', async ({
 for (const fails of [false, true]) {
   test(`search progress remains visible until ${fails ? 'failure' : 'completion'}`, async ({ page }) => {
     let release!: () => void;
-    await page.route('**/api/search?**', async route => {
+    await mockSearchJobs(page, async route => {
       await new Promise<void>(resolve => { release = resolve; });
       await route.fulfill(fails ? { status: 400, json: { detail: 'Синтетическая ошибка' } }
         : { json: { results: [], warnings: [], has_more: false, effective_mode: 'words', limit: 20 } });
@@ -54,7 +55,7 @@ for (const fails of [false, true]) {
     await page.goto('/');
     await page.getByLabel('Поисковый запрос').fill('прогресс');
     await page.getByRole('button', { name: 'Найти', exact: true }).click();
-    const progress = page.getByRole('progressbar', { name: 'Выполнение поиска' });
+    const progress = page.getByRole('progressbar', { name: 'Прогресс текущего этапа' });
     await expect(progress).toBeVisible();
     await expect(progress).not.toHaveAttribute('value');
     await expect.poll(() => !!release).toBe(true);
@@ -80,7 +81,7 @@ test('dark theme respects system preference, keeps controls readable and preserv
   expect(contrast).toBeGreaterThan(4.5);
   await page.screenshot({ path: '../workspace/theme-033-dark.png', fullPage: true });
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  const searchButton = page.getByRole('button', { name: 'Найти', exact: true });
+  const searchButton = page.getByRole('button', { name: 'Показать сообщения', exact: true });
   await searchButton.hover();
   const hoverContrast = await searchButton.evaluate(element => {
     const css = getComputedStyle(element);

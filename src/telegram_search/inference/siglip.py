@@ -16,6 +16,7 @@ from telegram_search.inference.compatibility import check_vectors
 from telegram_search.inference.providers import CPU, Execution, runtime_version
 from telegram_search.inference.resources import compute_gate
 from telegram_search.inference.tokenization import ModelTokenizer
+from telegram_search.search.execution import checkpoint, search_lock
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
@@ -160,11 +161,12 @@ class SiglipEncoder(ClipEncoder):
         if not 1 <= len(texts) <= 32:
             raise UserError("Батч визуальной модели должен содержать от 1 до 32 текстов.")
         batch = self.tokenizer.batch(texts, limit=64, fixed_length=64)
-        with compute_gate(self.query_execution).slot(interactive=True), self.lock:
+        with compute_gate(self.query_execution).slot(interactive=True), search_lock(self.lock):
             self.last_used = time.monotonic()
             vector = normalize(
                 self._session("text").run(["pooler_output"], {"input_ids": batch["input_ids"]})[0]
             )
+            checkpoint()
             self.last_used = time.monotonic()
         if vector.shape != (len(texts), self.dimension):
             raise UserError("Размерность SigLIP 2 не соответствует manifest.")

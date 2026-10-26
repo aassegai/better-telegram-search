@@ -1,3 +1,4 @@
+import { mockSearchJobs } from './search-mocks';
 import { expect, test } from '@playwright/test';
 
 const hit = (id: number) => ({ chat_id: 'synthetic', chat_name: 'Тест', message_id: id,
@@ -9,12 +10,12 @@ for (const english of [false, true]) {
   test(`cached paging keeps order and uses submitted search (${english ? 'EN' : 'RU'})`, async ({ page }) => {
     let searches = 0;
     let pages = 0;
-    await page.route('**/api/search?**', route => {
+    await mockSearchJobs(page, route => {
       searches++;
       return route.fulfill({ json: { results: [hit(1), hit(2)], has_more: true, effective_mode: 'words',
         warnings: [], limit: 2, search_id: 'snapshot', next_offset: 2, cached_results: 4 } });
     });
-    await page.route('**/api/search/snapshot/page?**', async route => {
+    await page.route('**/api/search-jobs/snapshot/result?**', async route => {
       pages++;
       expect(new URL(route.request().url()).searchParams.get('offset')).toBe('2');
       await route.fulfill({ json: { results: [hit(3), hit(4)], has_more: false, next_offset: null } });
@@ -36,12 +37,12 @@ for (const english of [false, true]) {
 test('late cached page cannot contaminate a new search', async ({ page }) => {
   let release: () => void = () => {};
   let requested = false;
-  await page.route('**/api/search?**', route => {
-    const first = new URL(route.request().url()).searchParams.get('q') === 'first';
+  await mockSearchJobs(page, route => {
+    const first = route.request().postDataJSON().query === 'first';
     return route.fulfill({ json: { results: [hit(first ? 1 : 99)], has_more: first,
       effective_mode: 'words', warnings: [], limit: 1, search_id: 'snapshot', next_offset: first ? 1 : null } });
   });
-  await page.route('**/api/search/snapshot/page?**', async route => {
+  await page.route('**/api/search-jobs/snapshot/result?**', async route => {
     requested = true;
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { results: [hit(2)], has_more: false, next_offset: null } });
