@@ -177,25 +177,36 @@ class WorkspaceService:
 
     def update_settings(self, values):
         display_keys = {"search_result_limit", "display_chunk_size", "giga_rerank_enabled"}
-        live_keys = display_keys | {"gpu_index_load_percent"}
-        allowed = {
-            "cpu_threads",
-            "embedding_batch",
-            "image_batch",
-            "idle_unload_seconds",
-            "query_cache_entries",
-            "retrieval_candidates",
-            "rrf_k",
-            "lexical_weight",
-            "dense_weight",
-            "ocr_timeout_seconds",
-            "ocr_max_edge",
-            "ocr_batch_size",
-            "ocr_region_batch_size",
-            "ocr_cpu_workers",
-            "memory_limit_mib",
-            "gpu_memory_limit_mib",
-        } | live_keys
+        ann_keys = {
+            "ann_build_threads",
+            "ann_memory_limit_mib",
+            "ann_partitions",
+            "ann_probes",
+            "ann_rebuild_percent",
+        }
+        live_keys = display_keys | {"gpu_index_load_percent", "ann_indexing_enabled"}
+        allowed = (
+            {
+                "cpu_threads",
+                "embedding_batch",
+                "image_batch",
+                "idle_unload_seconds",
+                "query_cache_entries",
+                "retrieval_candidates",
+                "rrf_k",
+                "lexical_weight",
+                "dense_weight",
+                "ocr_timeout_seconds",
+                "ocr_max_edge",
+                "ocr_batch_size",
+                "ocr_region_batch_size",
+                "ocr_cpu_workers",
+                "memory_limit_mib",
+                "gpu_memory_limit_mib",
+            }
+            | live_keys
+            | ann_keys
+        )
         if set(values) - allowed:
             raise UserError("Неизвестные или недоступные настройки.")
         if set(values) <= live_keys:
@@ -204,6 +215,15 @@ class WorkspaceService:
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
                 configure_gpu_load(candidate.gpu_index_load_percent)
+                self._notify_ann(values)
+                return asdict(candidate)
+        if set(values) <= ann_keys | live_keys:
+            with self.lock, self.settings_lock:
+                candidate = replace(self.db.settings, **values)
+                candidate.save(self.db.workspace)
+                self.db.settings = candidate
+                configure_gpu_load(candidate.gpu_index_load_percent)
+                self._notify_ann(values)
                 return asdict(candidate)
         with self.lock, self.settings_lock:
             candidate = replace(self.db.settings, **values)
@@ -246,8 +266,14 @@ class WorkspaceService:
                 if hasattr(self.media.ocr, "unload"):
                     self.media.ocr.unload()
                 self.media.ocr = new_ocr
+            self._notify_ann(values)
         self.media.wake.set()
         return self.settings()
+
+    def _notify_ann(self, values):
+        ann = getattr(self.semantic, "ann_service", None)
+        if ann is not None:
+            ann.settings_changed(set(values))
 
     @staticmethod
     def _execution_limits(encoder, settings):

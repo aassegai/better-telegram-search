@@ -35,6 +35,18 @@ class VectorStore:
         self.lock = threading.RLock()
         self.indexed_ids = set()
         self.ann_process = None
+        self.ann_observer = None
+        self.ann_options = None
+        self.ann_threads = 4
+        self.ann_memory_limit_mib = 512
+
+    def _ann_invalidate(self, space_id):
+        if self.ann_observer is not None:
+            self.ann_observer.invalidate(space_id)
+
+    def _ann_dirty(self, space_id, dimension):
+        if self.ann_observer is not None:
+            self.ann_observer.dirty(space_id, dimension)
 
     def close(self):
         if self.ann_process is not None:
@@ -56,6 +68,7 @@ class VectorStore:
         from telegram_search.search.ann import AnnOptions, build_index
 
         with self.lock:
+            self._ann_invalidate(space_id)
             table = self.table(space_id, dimension)
             if table is None:
                 return {"ready": False, "reason": "ann_index_unavailable"}
@@ -84,7 +97,7 @@ class VectorStore:
         from telegram_search.search.ann import AnnOptions, index_status, retrieve
         from telegram_search.search.ann_process import AnnProcess, AnnUnavailable
 
-        options = ann_options or AnnOptions()
+        options = ann_options or self.ann_options or AnnOptions()
         execution = current_execution()
         arguments = dict(
             predicate=predicate,
@@ -111,8 +124,17 @@ class VectorStore:
                 status = index_status(table, dimension)
                 if not status["ready"]:
                     raise AnnUnavailable(status["reason"])
+                if self.ann_process is not None and (
+                    self.ann_process.threads != self.ann_threads
+                    or self.ann_process.memory_limit_mib != self.ann_memory_limit_mib
+                ):
+                    if not self.ann_process.close():
+                        raise AnnUnavailable("ann_worker_stopping")
+                    self.ann_process = None
                 if self.ann_process is None:
-                    self.ann_process = AnnProcess()
+                    self.ann_process = AnnProcess(
+                        threads=self.ann_threads, memory_limit_mib=self.ann_memory_limit_mib
+                    )
                 attempted = True
                 found = retrieve(
                     table,
@@ -227,6 +249,7 @@ class VectorStore:
                 if not any("id" in index.columns for index in table.list_indices()):
                     table.create_scalar_index("id", index_type="BTREE", replace=False)
                 self.indexed_ids.add(space_id)
+            self._ann_dirty(space_id, dimension)
 
     def exact(self, space_id: str, dimension: int, query, eligible_ids: list[str], limit: int):
         if not eligible_ids:
@@ -371,18 +394,22 @@ class VectorStore:
                     predicate += f" AND generation<{int(generation)}"
                 else:
                     predicate += f" AND generation<={int(generation)}"
-                table.delete(predicate)
+                if table.count_rows(predicate):
+                    self._ann_invalidate(space["id"])
+                    table.delete(predicate)
 
     def delete_chat(self, spaces: list[dict], chat_id: str) -> None:
         with self.lock:
             for space in spaces:
                 table = self.table(space["id"], space["dimension"])
-                if table is not None:
+                if table is not None and table.count_rows(f"chat_id={sql_literal(chat_id)}"):
+                    self._ann_invalidate(space["id"])
                     table.delete(f"chat_id={sql_literal(chat_id)}")
 
     def compact(self, spaces: list[dict]) -> None:
         with self.lock:
             for space in spaces:
+                self._ann_invalidate(space["id"])
                 table = self.table(space["id"], space["dimension"])
                 if table is not None:
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
@@ -401,6 +428,7 @@ class VectorStore:
         removed = 0
         with self.lock:
             for space in spaces:
+                self._ann_invalidate(space["id"])
                 path = self.table_path(space["id"])
                 for base, directories, filenames in os.walk(path, followlinks=False):
                     for name in [*directories, *filenames]:
@@ -443,4 +471,5 @@ class VectorStore:
                 ids = batch.column("id").to_pylist()
                 stale = set(ids) - eligible(ids)
                 if stale:
+                    self._ann_invalidate(space_id)
                     table.delete("id IN (" + ",".join(sql_literal(key) for key in stale) + ")")

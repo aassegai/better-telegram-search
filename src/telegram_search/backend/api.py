@@ -21,11 +21,13 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search import __version__
+from telegram_search.backend.ann import router as ann_router
 from telegram_search.backend.history import router as history_router
 from telegram_search.backend.search import router as search_router
 from telegram_search.backend.tabs import router as tabs_router
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
+from telegram_search.indexing.ann import AnnIndexService
 from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.rerank import RerankService
@@ -133,7 +135,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = None
+        importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = (
+            ann_indexes
+        ) = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -150,6 +154,10 @@ def create_app(
                 db, importer.lifecycle_lock, semantic, start_background=not hold_background
             )
             app.state.media = media
+            ann_indexes = AnnIndexService(
+                db, semantic, media, importer.lifecycle_lock, start_background=not hold_background
+            )
+            app.state.ann_indexes = ann_indexes
             rerank = RerankService(db)
             app.state.rerank = rerank
             app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
@@ -219,6 +227,8 @@ def create_app(
                 await telegram.close()
             if search_jobs:
                 search_jobs.close()
+            if ann_indexes:
+                ann_indexes.close()
             if maintenance:
                 maintenance.close()
             if media:
@@ -231,6 +241,7 @@ def create_app(
                 importer.shutdown()
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
+    app.include_router(ann_router)
     app.include_router(telegram_router)
     app.include_router(search_router)
     app.include_router(history_router)
@@ -271,7 +282,10 @@ def create_app(
             cancelling_search = request.method == "POST" and re.fullmatch(
                 r"/api/search-jobs/[A-Za-z0-9_-]{1,128}/cancel", request.url.path
             )
-            if maintenance and maintenance.busy and not cancelling_search:
+            cancelling_ann = (
+                request.method == "POST" and request.url.path == "/api/ann-indexes/cancel"
+            )
+            if maintenance and maintenance.busy and not (cancelling_search or cancelling_ann):
                 return JSONResponse(
                     {"detail": "Дождитесь очистки векторного индекса."}, status_code=409
                 )
@@ -505,6 +519,7 @@ def create_app(
             app.state.update_verifying = False
             app.state.semantic.start_background()
             app.state.media.start_background()
+            app.state.ann_indexes.start()
         app.state.telegram.start_threadsafe()
         app.state.updates.start_cleanup()
         return {"confirmed": True}

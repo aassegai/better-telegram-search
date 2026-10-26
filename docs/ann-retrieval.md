@@ -1,9 +1,10 @@
 # ANN retrieval implementation
 
 This is an engineering checkpoint, not a completed ANN feature or a claim of
-measured search quality. Exact retrieval remains the application default. The
-background index scheduler, performance controls, UI selector and real-embedding
-quality/latency comparison are still required by the product plan.
+measured search quality. Exact retrieval remains the application default. Native
+retrieval, background building, resource configuration and their APIs are
+implemented. The UI controls/selector and real-embedding quality/latency comparison
+are still required by the product plan.
 
 ## Implemented query path
 
@@ -19,8 +20,8 @@ an initial comparison candidate; it does not settle the choice against HNSW.
 Index ownership names include the algorithm version, dimension and partition
 count. Status also checks native index type, metric, dimension and indexed rows.
 An unknown or ambiguous vector index causes an explicit exact fallback. Native
-index creation is currently a synchronous internal primitive, not an HTTP build
-handler. A successful replacement retires only older owned configurations;
+index creation has a synchronous internal primitive; HTTP preparation schedules
+it in an isolated background worker. A successful replacement retires older owned configurations;
 unrelated indexes are preserved. Dropping old versions physically is separate.
 
 ## Canonical filters before candidates
@@ -63,11 +64,77 @@ discarded response cannot leave the native computation running. An idle child is
 closed at service shutdown. Native stderr and exceptions are not exposed through
 the protocol; fixed error reasons do not contain queries, SQL or local paths.
 
-Current internal defaults are four CPU threads, a 512 MiB RSS budget and a 60 s
-per-call timeout. RSS is checked before reuse, during a wait and before accepting
-even a fast reply. These are not yet wired to the planned performance settings.
+Application queries use `cpu_threads` and the smaller of `ann_memory_limit_mib`
+and the global memory threshold, with a 60 s per-call timeout. A standalone
+VectorStore retains its four-thread/512 MiB defaults. RSS is checked before reuse,
+during a wait and before accepting even a fast reply.
 The spawn mechanism uses the portable launcher's existing `freeze_support` path;
 a packaged-platform smoke check is still part of final validation.
+
+## Background lifecycle and API
+
+`AnnIndexService` handles the active text/OCR and visual embedding spaces, one
+native build at a time. It uses a separate low-priority CPU child, not the query
+child. Native training holds neither the archive lifecycle lock nor the in-process
+vector lock; exact and existing-index queries can proceed, as can vector appends.
+Metadata checks coalesce frequent writes. The last indexed population determines
+the capacity comparison, so 32 fresh rows do not retrain the index repeatedly.
+
+All destructive vector operations first invalidate the matching writer lease and
+kill/join its process. A nonterminal stop rejects destructive maintenance instead
+of dropping its handle and assuming success. OS stop/observation errors retain the
+handle and are reported
+as `ann_stop_failed`; they cannot terminate the scheduler or interrupt publication
+of a model after its SQLite commit. Destructive operations remain blocked until
+termination is confirmed. Process startup checks cancellation
+under that same process-state lock, closing the cancel-before-start race. Empty
+segment/media pruning remains read-only and does not starve a build. Model-space
+changes cancel only the previous space; the visual-model setter also covers device
+changes that explicitly rebuild into a different space. Late replies cannot mark
+a cleared table or old model ready.
+
+Shutdown waits for the builder to finish stopping before ImportService releases
+the workspace writer lock. A child watches its launcher sentinel and exits if the
+launcher dies abruptly. During update verification the scheduler is held along
+with other background work; successful update confirmation starts it.
+
+`GET /api/ann-indexes` is an async, memory-only status route. It does not acquire
+SQLite, the lifecycle lock, a model or a native vector-table handle. Each entry
+reports the space/roles, state, known row/index coverage, elapsed time, and a null
+training total. There is no invented percentage or batch ETA for native training.
+Read routes retain the application's Host/Origin protections; mutations also
+require the local session token.
+
+- `POST /api/ann-indexes/prepare` accepts `{}` for all current spaces or
+  `{"space_id":"..."}` for a known space and returns 202. A manual preparation
+  works without enabling automatic maintenance. Repeated requests coalesce.
+- `POST /api/ann-indexes/cancel` stops preparation and persists
+  `ann_indexing_enabled: false`, preventing automatic resubmission after restart.
+- `PATCH /api/settings` accepts the settings below. ANN changes can be saved while
+  model indexing runs. Resource notifications preserve config-write order, so an
+  earlier resource save cannot undo a later stop. Changed build limits stop and
+  reschedule a manual in-flight build with the new limits. Changing unrelated
+  display/GPU settings does not retry a failed ANN build.
+
+| Setting | Default | Bounds / effect |
+| --- | --- | --- |
+| `ann_indexing_enabled` | false | Automatic build/update; persisted boolean |
+| `ann_build_threads` | 2 | 1–32, capped by `cpu_threads` |
+| `ann_memory_limit_mib` | 1024 | 256–65536, capped by `memory_limit_mib` per child |
+| `ann_partitions` | 64 | 1–4096, target capacity for native training |
+| `ann_probes` | 32 | 1–4096, query probes capped by actual partitions |
+| `ann_rebuild_percent` | 10 | 1–100, automatic tail threshold; at least 1024 new rows |
+
+Missing indexes build automatically only when enabled and at least 1024 vectors
+exist. A usable index is maintained when its unindexed tail reaches the threshold
+or its training configuration needs updating. Fresh rows remain searchable before
+that point. A build error requires explicit retry or a relevant settings change,
+rather than endlessly restarting an over-budget process. On startup an existing
+native index is adopted; enabled automatic work reconciles missing/outdated
+indexes. An interrupted manual-only request has no partial-training checkpoint;
+it can be prepared again. New settings need no SQL schema migration. Probe and
+partition changes invalidate search snapshots; CPU/RAM/build scheduling changes
+preserve them.
 
 Lance does not expose the internal number of distance calculations or vectors
 read through this API. After a native attempt, aggregate `vectors_read` and
@@ -83,6 +150,12 @@ indexes, full retry after a failed second native batch, dimension failures,
 configuration replacement, process reuse, cancellation and fast-reply RSS limits.
 All-partition tests check correctness against exact; they are not recall evidence
 for approximate production settings. The semantic CI job includes these tests.
+Lifecycle tests additionally cover real native open→append→index commit, no-op
+cleanup, real PID termination before drop/prune/compaction, a late process-start
+race, model changes, resource rescheduling, update-confirmation startup, writer
+shutdown ownership, parent death and settings notification order.
+Fault-injection tests cover stop/observation exceptions, retained writer ownership,
+rejected deletion and consistent SQLite/runtime model publication after a commit.
 
 A separate compatibility probe built 4,096 synthetic 32-dimensional vectors and
 queried a three-ID native prefilter, on both supported Lance versions:

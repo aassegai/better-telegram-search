@@ -89,6 +89,20 @@ class MediaService(MediaImages):
             self.semantic_background.start()
 
     @property
+    def clip(self):
+        return getattr(self, "_clip", None)
+
+    @clip.setter
+    def clip(self, engine):
+        previous = getattr(self, "_clip", None)
+        old_space = getattr(previous, "space_id", None)
+        if old_space != getattr(engine, "space_id", None):
+            ann = getattr(self.semantic, "ann_service", None)
+            if ann is not None:
+                ann.models_changed(old_space)
+        self._clip = engine
+
+    @property
     def ocr(self):
         return getattr(self, "_ocr", None)
 

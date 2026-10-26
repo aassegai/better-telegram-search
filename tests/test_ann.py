@@ -100,6 +100,29 @@ def test_real_ivf_index_broad_scope_and_honest_native_counters(corpus):
     assert store.ann_process.process.pid == pid  # imports reused, no per-query cold child
 
 
+def test_resource_change_does_not_replace_query_worker_until_stopped(corpus, monkeypatch):
+    store, rows, matrix = corpus
+    store.build_ann("ann-test", 24, options=OPTIONS)
+    expected, _, _ = search(corpus)
+    native = store.ann_process
+    pid = native.process.pid
+    close = native.close
+    store.ann_threads = 1
+    monkeypatch.setattr(native, "close", lambda: False)
+    try:
+        actual, status, _ = search(corpus)
+        assert_same(actual, expected)
+        assert status["effective_strategy"] == "exact"
+        assert status["fallback_reasons"] == ["ann_worker_stopping"]
+        assert store.ann_process is native and native.process.pid == pid
+    finally:
+        monkeypatch.setattr(native, "close", close)
+    actual, status, _ = search(corpus)
+    assert_same(actual, expected)
+    assert status["effective_strategy"] == "ann"
+    assert store.ann_process.threads == 1 and store.ann_process.process.pid != pid
+
+
 def test_canonical_id_batches_prefilter_native_top_k_and_escape_ids(corpus):
     store, rows, matrix = corpus
     store.build_ann("ann-test", 24, options=OPTIONS)
@@ -112,7 +135,9 @@ def test_canonical_id_batches_prefilter_native_top_k_and_escape_ids(corpus):
         scopes.append(kwargs["predicate"])
         return native.query(**kwargs)
 
-    store.ann_process = SimpleNamespace(query=query, close=native.close)
+    store.ann_process = SimpleNamespace(
+        query=query, close=native.close, threads=4, memory_limit_mib=512
+    )
     actual, status, _ = search(corpus, allowed, query=matrix[-1])
     expected = store.exact("ann-test", 24, matrix[-1], sorted(allowed), 20)
     assert_same(actual, expected)
@@ -198,7 +223,9 @@ def test_failed_second_native_query_rescans_instead_of_reusing_consumed_cursor(c
             raise AnnUnavailable("ann_query_timeout")
         return native.query(**kwargs)
 
-    store.ann_process = SimpleNamespace(query=query, close=native.close)
+    store.ann_process = SimpleNamespace(
+        query=query, close=native.close, threads=4, memory_limit_mib=512
+    )
     actual, status, _ = search(corpus, allowed, query=matrix[-1])
     assert_same(actual, store.exact("ann-test", 24, matrix[-1], sorted(allowed), 20))
     assert status["effective_strategy"] == "exact"
@@ -213,7 +240,10 @@ def test_native_candidate_outside_canonical_scope_triggers_full_retry(corpus):
     store.build_ann("ann-test", 24, options=OPTIONS)
     allowed = {row["id"] for row in rows[:1200]}
     store.ann_process = SimpleNamespace(
-        query=lambda **kwargs: [{"id": rows[-1]["id"], "_distance": 0.0}], close=lambda: None
+        query=lambda **kwargs: [{"id": rows[-1]["id"], "_distance": 0.0}],
+        close=lambda: None,
+        threads=4,
+        memory_limit_mib=512,
     )
     actual, status, _ = search(corpus, allowed)
     assert_same(actual, store.exact("ann-test", 24, matrix[0], sorted(allowed), 20))

@@ -30,6 +30,7 @@ class SemanticService:
         self.lock = lifecycle_lock
         self.encoder = None
         self.vectors = None
+        self.ann_service = None
         self.stop = threading.Event()
         self.preparing_encoder = threading.Event()
         self.wake = threading.Event()
@@ -123,15 +124,27 @@ class SemanticService:
             self.encoder = encoder
 
     def _vector_store(self):
+        from telegram_search.search.ann import AnnOptions
         from telegram_search.search.vectors import VectorStore
 
-        if self.vectors is None:
-            self.vectors = VectorStore(self.db.workspace)
-        return self.vectors
+        with self.lock:
+            if self.vectors is None:
+                self.vectors = VectorStore(self.db.workspace)
+            self.vectors.ann_observer = self.ann_service
+            self.vectors.ann_options = AnnOptions(
+                partitions=self.db.settings.ann_partitions, probes=self.db.settings.ann_probes
+            )
+            self.vectors.ann_threads = self.db.settings.cpu_threads
+            self.vectors.ann_memory_limit_mib = min(
+                self.db.settings.ann_memory_limit_mib, self.db.settings.memory_limit_mib
+            )
+            return self.vectors
 
     def activate(self, encoder, *, reindex=False, before_commit=None):
         with self.lock:
             old = self.encoder
+            if self.ann_service is not None and (old is None or old.space_id != encoder.space_id):
+                self.ann_service.models_changed(old.space_id if old else None)
             if old and old is not encoder:
                 # Cleanup can fail; do it before committing or publishing a new
                 # space. The old encoder lazily reloads if activation aborts.

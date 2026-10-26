@@ -93,7 +93,8 @@ def build_index(table, dimension, options):
     )
     # Keep the old usable index if training fails. After a successful native
     # commit, retire only our old configurations; a retry repairs an interrupted
-    # retirement. The caller holds its vector writer lock during this primitive.
+    # retirement. Foreground callers serialize through the store lock; the
+    # background service instead fences destructive operations with a writer lease.
     stats = table.index_stats(name)
     if stats is None or stats.num_indexed_rows <= 0:
         raise AnnUnavailable("ann_build_failed")

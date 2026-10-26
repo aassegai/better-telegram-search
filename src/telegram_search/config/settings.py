@@ -40,6 +40,12 @@ class Settings:
     search_result_limit: int = 20
     display_chunk_size: int = 10
     giga_rerank_enabled: bool = False
+    ann_indexing_enabled: bool = False
+    ann_build_threads: int = 2
+    ann_memory_limit_mib: int = 1024
+    ann_partitions: int = 64
+    ann_probes: int = 32
+    ann_rebuild_percent: int = 10
 
     def model_device(self, model, *, query=False):
         if model == "ocr":
@@ -67,6 +73,8 @@ class Settings:
         settings = self
         if type(settings.giga_rerank_enabled) is not bool:
             raise UserError("Недопустимая настройка переранжирования.")
+        if type(settings.ann_indexing_enabled) is not bool:
+            raise UserError("Недопустимая настройка фонового индекса ANN.")
         for name in ("e5_device", "e5_search_device", "clip_device", "clip_search_device"):
             value = getattr(settings, name)
             if value is not None and (
@@ -116,6 +124,11 @@ class Settings:
             ("memory_limit_mib", 1024, 65536),
             ("search_result_limit", 1, 100),
             ("display_chunk_size", 1, 100),
+            ("ann_build_threads", 1, 32),
+            ("ann_memory_limit_mib", 256, 65536),
+            ("ann_partitions", 1, 4096),
+            ("ann_probes", 1, 4096),
+            ("ann_rebuild_percent", 1, 100),
         ):
             value = getattr(settings, name)
             if type(value) is not int or not lower <= value <= upper:

@@ -62,6 +62,8 @@ class SearchCache:
                     "giga_rerank_enabled",
                     "ocr_engine",
                     "ocr_max_edge",
+                    "ann_probes",
+                    "ann_partitions",
                 )
             },
             model,
