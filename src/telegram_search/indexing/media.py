@@ -46,6 +46,7 @@ class MediaService(MediaImages):
         self.image_prefetch = BatchPrefetch()
         self.ocr_queue = OcrQueue(db)
         self.active_stages = set()
+        self.ocr_dense_attempts = {}
         self.ocr_dense_waiting = False
         semantic.media = self
         self.stop = threading.Event()
@@ -1172,6 +1173,8 @@ class MediaService(MediaImages):
         self._register_space(encoder.space_id, encoder.spec.dimension, "ocr")
         with self.lock:
             self.ocr_staging_ids.update(ids.values())
+            attempt = object()
+            self.ocr_dense_attempts[attempt] = row["sha256"]
         published = False
         cold = hasattr(encoder, "session") and encoder.session is None
         self._set_active("ocr_dense", True)
@@ -1183,7 +1186,7 @@ class MediaService(MediaImages):
             while start < len(chunks):
                 batch = chunks[start : start + batch_size]
                 with self.lock, self.db.connect() as conn:
-                    if not self._ocr_guard(conn, row["sha256"], encoder, engine):
+                    if not self._ocr_guard(conn, row["sha256"], encoder, engine, attempt=attempt):
                         return True
                 try:
                     embeddings = encoder.encode_text([chunk.text for chunk in batch], "passage")
@@ -1194,7 +1197,7 @@ class MediaService(MediaImages):
                     raise
                 # Publish all parts together: no searchable partial OCR on a failed batch.
                 with self.lock, self.db.connect() as conn:
-                    if not self._ocr_guard(conn, row["sha256"], encoder, engine):
+                    if not self._ocr_guard(conn, row["sha256"], encoder, engine, attempt=attempt):
                         return True
                     self.semantic._vector_store().upsert(
                         encoder.space_id,
@@ -1212,7 +1215,7 @@ class MediaService(MediaImages):
                     )
                 start += len(batch)
             with self.lock, self.db.connect() as conn:
-                if self._ocr_guard(conn, row["sha256"], encoder, engine):
+                if self._ocr_guard(conn, row["sha256"], encoder, engine, attempt=attempt):
                     conn.execute(
                         "INSERT OR IGNORE INTO media_spaces VALUES(?,?,?)",
                         (encoder.space_id, encoder.spec.dimension, "ocr"),
@@ -1237,7 +1240,7 @@ class MediaService(MediaImages):
                     published = True
         except Exception:
             with self.lock, self.db.connect() as conn:
-                current = self._ocr_guard(conn, row["sha256"], encoder, engine)
+                current = self._ocr_guard(conn, row["sha256"], encoder, engine, attempt=attempt)
             if current:
                 self._failure(
                     row["sha256"],
@@ -1247,6 +1250,7 @@ class MediaService(MediaImages):
                 )
         finally:
             with self.lock:
+                self.ocr_dense_attempts.pop(attempt, None)
                 self.ocr_staging_ids.difference_update(ids.values())
                 self._set_active("ocr_dense", False)
             if published:
@@ -1271,13 +1275,21 @@ class MediaService(MediaImages):
                     )
         return True
 
-    def _ocr_guard(self, conn, sha, encoder, engine):
+    def invalidate_ocr_dense(self, predicate):
+        """Fence live attempts whose already staged vectors are being removed."""
+        with self.lock:
+            for attempt, sha in tuple(self.ocr_dense_attempts.items()):
+                if predicate(sha):
+                    self.ocr_dense_attempts.pop(attempt, None)
+
+    def _ocr_guard(self, conn, sha, encoder, engine, *, attempt=None):
         state = conn.execute(
             "SELECT paused,enabled,active_space_id FROM semantic_state WHERE id=1"
         ).fetchone()
         return (
             self.semantic.encoder is encoder
             and self.ocr is engine
+            and (attempt is None or self.ocr_dense_attempts.get(attempt) == sha)
             and self._current(conn, sha, kind="ocr_dense")
             and not self.semantic.preparing_encoder.is_set()
             and state["enabled"]

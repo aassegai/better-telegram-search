@@ -8,6 +8,7 @@ import TextIndexPanel from './TextIndexPanel';
 import WorkspacePanel from './WorkspacePanel';
 import SourcePanel from './SourcePanel';
 import SettingsDialog from './SettingsDialog';
+import ChatVectorStorage from './ChatVectorStorage';
 
 type Status = ChatIndexStatus;
 
@@ -45,6 +46,7 @@ export default function ChatIndexDialog({ chat, onClose, onModels, onSources, on
       onChange={semantic => setStatus(value => value ? { ...value, semantic } : value)} />
     <WorkspacePanel onModels={onModels} onPerformance={onPerformance} onResources={onResources} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} media={status?.media ?? null}
       onMediaChange={media => setStatus(value => value ? { ...value, media } : value)} />
+    <ChatVectorStorage chat={chat} pending={pending} onStart={onStart} onEnd={onEnd} />
     <ChatSyncPanel chatId={chat.id} onSources={onSources} />
     <SourcePanel chatId={chat.id} />
   </SettingsDialog>;

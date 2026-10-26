@@ -245,11 +245,16 @@ class VectorStore:
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
 
     def clear(self, spaces, *, predicate):
+        return self.clear_partitions(spaces, [predicate])
+
+    def clear_partitions(self, spaces, predicates):
         """Remove one modality, including old on-disk versions, under the writer lock.
 
         Text and semantic OCR can share a table. Never drop such a table while
         the other partition still contains vectors.
         """
+        if not predicates:
+            return 0
         removed = 0
         with self.lock:
             for space in spaces:
@@ -262,14 +267,20 @@ class VectorStore:
                 table = self.table(space["id"], space["dimension"])
                 if table is None:
                     continue
-                count, total = table.count_rows(predicate), table.count_rows()
-                if count == total:
+                deleted = 0
+                for predicate in predicates:
+                    count = table.count_rows(predicate)
+                    if count:
+                        table.delete(predicate)
+                        deleted += count
+                if table.count_rows() == 0:
                     self.db.drop_table("text_" + space["id"])
                     self.indexed_ids.discard(space["id"])
                 else:
-                    table.delete(predicate)
+                    # A prior attempt may have committed deletion but failed to
+                    # compact. Retrying must reclaim those old versions too.
                     table.optimize(cleanup_older_than=timedelta(seconds=0), delete_unverified=True)
-                removed += count
+                removed += deleted
         return removed
 
     def prune_media(self, space_id, dimension, eligible):

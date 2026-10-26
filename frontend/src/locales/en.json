@@ -828,5 +828,14 @@
   "Сохранённые поиски обновлены.": "Saved searches updated.",
   "Открыта сохранённая выдача. Новые совпадения появятся после повторного поиска.": "Saved results opened. Repeat the search to find new matches.",
   "Сохранённый поиск не найден.": "Saved search not found.",
-  "Сохранённая выдача изменилась. Откройте поиск из истории заново.": "Saved results changed. Open the search from history again."
+  "Сохранённая выдача изменилась. Откройте поиск из истории заново.": "Saved results changed. Open the search from history again.",
+  "Очистка текстовых, графических и OCR-векторов доступна в настройках каждого диалога.": "Clear text, image, and OCR vectors in each chat’s settings.",
+  "Индексы этого диалога": "Indexes for this chat",
+  "Очистка индексов": "Clear indexes",
+  "Очистка затронет только этот диалог. Сообщения, фотографии, модели и распознанный текст OCR сохранятся. Выбранный индекс останется на паузе до ручного запуска.": "Cleanup applies to this chat only. Messages, photos, models, and recognized OCR text are kept. The selected index stays paused until you resume it.",
+  "Общие с другими диалогами векторы сохраняются. Размер к освобождению приблизительный; после удаления файлы индекса уплотняются.": "Vectors shared with other chats are kept. Reclaimable space is approximate; index files are compacted after deletion.",
+  "Выполняется очистка другого диалога. Дождитесь завершения.": "Another chat’s indexes are being cleared. Wait for cleanup to finish.",
+  "Удалить векторы выбранного типа только для «{p0}»? Общие с другими диалогами векторы сохранятся. Для восстановления смыслового поиска запустите индексацию этого диалога.": "Clear vectors of this type for “{p0}” only? Vectors shared with other chats are kept. Resume indexing this chat to restore semantic search.",
+  "· общих с другими диалогами: {p0}": "· shared with other chats: {p0}",
+  "Повторить очистку": "Retry cleanup"
 }

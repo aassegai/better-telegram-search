@@ -548,6 +548,18 @@ def create_app(
             raise UserError("Подтвердите очистку векторного индекса.")
         return app.state.vector_maintenance.start(kind)
 
+    @app.get("/api/chats/{chat_id}/storage/vectors")
+    def chat_vector_storage(chat_id: str):
+        return app.state.vector_maintenance.inventory(chat_id)
+
+    @app.post("/api/chats/{chat_id}/storage/vectors/{kind}/clear")
+    def clear_chat_vectors(
+        chat_id: str, kind: Literal["text", "images", "ocr"], body: ClearVectorsRequest
+    ):
+        if not body.confirm:
+            raise UserError("Подтвердите очистку векторного индекса.")
+        return app.state.vector_maintenance.start(kind, chat_id)
+
     @app.get("/api/chats/{chat_id}/deletion-estimate")
     def deletion_estimate(chat_id: str):
         return app.state.workspace.deletion_estimate(chat_id)

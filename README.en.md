@@ -67,10 +67,10 @@ and **Update and restart**. Upgrade from 0.2.0 manually the first time: pause te
 and media indexing, fully close the old app, and launch the current release with the same workspace.
 Select GPU indexing and resume; completed CPU chunks do not need rebuilding.
 
-Use **Settings → Disk usage** to clear text, image or OCR vectors separately
-across all chats. The app waits for the current batch, reclaims disk space and
-leaves the selected index paused. Messages, models and recognized OCR text are
-preserved; resume indexing from the desired chat menu. **Shared indexing resources**
+Use **Chat settings → Clear indexes** to clear that chat's text, image or OCR
+vectors separately. The selected index stays paused. Other chats' indexes,
+vectors shared with them, messages, models and recognized OCR text are kept.
+Resume indexing this chat to rebuild its vectors. **Shared indexing resources**
 combines CPU, RAM, memory per CUDA model and GPU indexing load. Load changes take effect
 while indexing; pause indexing before changing memory.
 

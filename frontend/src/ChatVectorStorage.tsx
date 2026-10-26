@@ -1,0 +1,104 @@
+import { useEffect, useState } from 'react';
+import { api } from './api';
+import { t } from './i18n';
+import Dialog from './Dialog';
+import { useDialogOperation } from './useDialogOperation';
+import type { Chat } from './types';
+
+type Kind = 'text' | 'images' | 'ocr';
+type Inventory = { indexes: Record<Kind, { vectors: number; bytes: number; shared: boolean; reclaimable_vectors: number; shared_vectors: number }> };
+type Job = { chat_id: string | null; state: string; kind: Kind | null; error?: string | null; deleted_vectors?: number; freed_bytes?: number };
+const kinds = [['text', 'Текстовые векторы'], ['images', 'Векторы изображений'], ['ocr', 'Векторы текста OCR']] as const;
+const mib = (value: number) => t('{p0} МиБ', { p0: (value / 1024 ** 2).toFixed(1) });
+const active = (job: Job) => job.state === 'waiting' || job.state === 'clearing';
+
+export default function ChatVectorStorage({ chat, pending, onStart, onEnd }: {
+  chat: Chat; pending: boolean; onStart: () => void; onEnd: () => void;
+}) {
+  const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [job, setJob] = useState<Job>({ state: 'idle', kind: null, chat_id: null });
+  const [confirmation, setConfirmation] = useState<Kind | null>(null);
+  const [initialized, setInitialized] = useState(false);
+  const op = useDialogOperation();
+  const working = active(job);
+  const refresh = async (current: () => boolean) => {
+    const value = await api<Inventory>(`/api/chats/${encodeURIComponent(chat.id)}/storage/vectors`);
+    if (current()) setInventory(value);
+  };
+  useEffect(() => {
+    if (!working) return;
+    onStart();
+    return onEnd;
+  }, [working]);
+  const reload = async (current: () => boolean) => {
+    const value = await api<Job>('/api/storage/vectors/clear');
+    if (!current()) return;
+    setJob(value);
+    if (!active(value)) await refresh(current);
+  };
+  useEffect(() => {
+    let alive = true;
+    const valid = op.guard();
+    const current = () => alive && valid();
+    void reload(current).catch(error => { if (current()) op.setError(error.message); })
+      .finally(() => { if (current()) setInitialized(true); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!working) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const value = await api<Job>('/api/storage/vectors/clear');
+        if (!alive) return;
+        op.setError('');
+        if (!active(value)) {
+          try { await refresh(() => alive); }
+          catch (error) { if (alive) op.setError(error instanceof Error ? error.message : t('Ошибка операции.')); }
+          if (alive) setJob(value);
+          return;
+        }
+        setJob(value);
+      } catch (error) { if (alive) op.setError(error instanceof Error ? error.message : t('Ошибка операции.')); }
+      if (alive) timer = setTimeout(() => void poll(), 800);
+    };
+    timer = setTimeout(() => void poll(), 300);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [working]);
+  const clear = () => void op.run(async current => {
+    if (!confirmation) return;
+    const value = await api<Job>(`/api/chats/${encodeURIComponent(chat.id)}/storage/vectors/${confirmation}/clear`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+    if (current()) {
+      setJob(value); setConfirmation(null);
+      if (!active(value)) await refresh(current);
+    }
+  });
+  const busy = op.busy || pending || working || !initialized;
+  const ownJob = job.chat_id === chat.id;
+  return <section className="storage-panel chat-vector-storage" aria-label={t('Индексы этого диалога')}>
+    <h3>{t('Очистка индексов')}</h3>
+    <p className="baseline-note">{t('Очистка затронет только этот диалог. Сообщения, фотографии, модели и распознанный текст OCR сохранятся. Выбранный индекс останется на паузе до ручного запуска.')}</p>
+    <div className="vector-storage-list">{kinds.map(([kind, label]) => {
+      const entry = inventory?.indexes[kind];
+      const retryable = ownJob && job.state === 'failed' && job.kind === kind;
+      return <section key={kind} className="vector-storage-card" aria-label={t(label)}>
+        <div><strong>{t(label)}</strong>{entry && <small>{t('Векторов: {p0}', { p0: entry.vectors })}{entry.shared_vectors > 0 && t(' · общих с другими диалогами: {p0}', { p0: entry.shared_vectors })} · {entry.shared ? '≈ ' : ''}{mib(entry.bytes)}</small>}</div>
+        <button className="danger" disabled={busy || !entry || (!retryable && entry.reclaimable_vectors === 0 && entry.bytes === 0)} onClick={() => setConfirmation(kind)}>{t(retryable ? 'Повторить очистку' : 'Очистить')}</button>
+      </section>;
+    })}</div>
+    <p className="baseline-note">{t('Общие с другими диалогами векторы сохраняются. Размер к освобождению приблизительный; после удаления файлы индекса уплотняются.')}</p>
+    {working && <p role="status">{t(!ownJob ? 'Выполняется очистка другого диалога. Дождитесь завершения.' : job.state === 'waiting' ? 'Ожидаем завершения текущего батча…' : 'Удаляем векторы и освобождаем место…')}</p>}
+    {ownJob && job.state === 'done' && <p role="status">{t('Индекс очищен. Удалено векторов: {p0}. Освобождено: {p1}.', { p0: job.deleted_vectors ?? 0, p1: mib(job.freed_bytes ?? 0) })}</p>}
+    {ownJob && job.error && <p className="error" role="alert">{t(job.error)}</p>}
+    <div className="job-actions"><button disabled={busy} onClick={() => void op.run(reload)}>{t('Обновить сведения о месте')}</button></div>
+    {op.error && <p className="error" role="alert">{t(op.error)}</p>}
+    {confirmation && <Dialog titleId="clear-vector-title" onClose={() => { if (!op.busy) setConfirmation(null); }}>
+      <h2 id="clear-vector-title">{t('Очистить векторный индекс?')}</h2>
+      <p>{t(kinds.find(([kind]) => kind === confirmation)![1])}</p>
+      <p>{t('Удалить векторы выбранного типа только для «{p0}»? Общие с другими диалогами векторы сохранятся. Для восстановления смыслового поиска запустите индексацию этого диалога.', { p0: chat.name })}</p>
+      {op.error && <p className="error" role="alert">{t(op.error)}</p>}
+      <div className="limit-presets"><button disabled={op.busy} onClick={() => setConfirmation(null)}>{t('Отмена')}</button><button className="danger" disabled={op.busy} onClick={clear}>{op.busy ? t('Запускаем…') : t('Очистить векторы')}</button></div>
+    </Dialog>}
+  </section>;
+}
