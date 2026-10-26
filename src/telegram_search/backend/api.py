@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search import __version__
+from telegram_search.backend.history import router as history_router
 from telegram_search.backend.search import router as search_router
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
@@ -30,6 +31,7 @@ from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.cache import SearchCache
+from telegram_search.search.history import SearchHistory
 from telegram_search.search.hybrid import HybridSearch
 from telegram_search.search.jobs import SearchJobs
 from telegram_search.search.lexical import ContextService, Filters, SearchService, date_bound
@@ -165,7 +167,10 @@ def create_app(
                 MediaSearch(db, media, semantic, importer.lifecycle_lock),
                 SearchReranker(db, rerank),
             )
-            search_jobs = SearchJobs(db, app.state.search, importer.lifecycle_lock)
+            history = SearchHistory(db, importer.lifecycle_lock)
+            history.recover()
+            app.state.search_history = history
+            search_jobs = SearchJobs(db, app.state.search, importer.lifecycle_lock, history=history)
             app.state.search_jobs = search_jobs
             app.state.update_database_check = "checking" if verification_nonce else "ok"
             if verification_nonce:
@@ -222,6 +227,7 @@ def create_app(
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.include_router(telegram_router)
     app.include_router(search_router)
+    app.include_router(history_router)
     app.state.db = db
     app.state.update_verifying = bool(verification_nonce)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])

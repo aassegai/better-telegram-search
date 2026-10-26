@@ -255,6 +255,8 @@ def test_v14_paused_import_migrates_and_resumes_its_committed_position(
     assert paused["state"] == "paused" and paused["processed"] == 2
     importer.shutdown()
     with db.connect() as conn:
+        for table in ("search_snapshot_owners", "search_history", "search_snapshots"):
+            conn.execute(f'DROP TABLE "{table}"')
         for table, columns in (
             ("imports", ("total_messages", "progress_json")),
             (
@@ -264,7 +266,7 @@ def test_v14_paused_import_migrates_and_resumes_its_committed_position(
         ):
             for column in columns:
                 conn.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
-        conn.execute("DELETE FROM schema_migrations WHERE version=15")
+        conn.execute("DELETE FROM schema_migrations WHERE version>=15")
     db.initialize()
     restored = ImportService(db, batch_size=2)
     try:

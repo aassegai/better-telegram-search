@@ -1,7 +1,7 @@
 import { getLanguage, t, uiLocale, useLanguage } from './i18n';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { api, initializeSession } from './api';
+import { api, ApiError, initializeSession } from './api';
 import ImportDialog from './ImportDialog';
 import ImportProgress from './ImportProgress';
 import ConflictDialog from './ConflictDialog';
@@ -10,6 +10,9 @@ import TelegramPanel from './TelegramPanel';
 import ForwardFilter from './ForwardFilter';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
+import type { SearchSettings } from './SearchSettingsPanel';
+import SearchHistoryDialog from './SearchHistoryDialog';
+import FavoriteButton from './FavoriteButton';
 import SearchProgress from './SearchProgress';
 import SettingsCenter, { initialSettingsSection } from './SettingsCenter';
 import type { SettingsSection } from './SettingsCenter';
@@ -21,7 +24,7 @@ import ImageViewer from './ImageViewer';
 import type { OpenImage } from './ImageViewer';
 import { useTheme } from './theme';
 import './theme.css';
-import type { Chat, Hit, Job, MediaStatus, Message, Preview, SearchJobStatus, SearchModality, SemanticStatus } from './types';
+import type { Chat, Hit, Job, MediaStatus, Message, Preview, RestoredSearch, SavedSearch, SearchIntent, SearchPage, SearchJobStatus, SearchModality, SemanticStatus } from './types';
 
 const dates = {
   ru: new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }),
@@ -34,9 +37,18 @@ const stateNames: Record<string, string> = {
   paused: 'Приостановлено', interrupted: 'Прервано', cancelled: 'Отменено', failed: 'Ошибка',
 };
 const reasons: Record<string, string> = { words: 'Совпали слова', meaning: 'Близкий смысл', image: 'Фотография по описанию', ocr_words: 'Слова на фотографии', ocr_meaning: 'Смысл текста на фотографии' };
-type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
-  rerank_applied?: boolean; limit: number; job_id: string; browse_cursor?: string | null;
-  next_offset?: number | null; cached_results?: number };
+
+function searchParameters(spec: SearchIntent) {
+  const params = new URLSearchParams({ q: spec.query, exact: String(spec.exact_phrase),
+    content_type: spec.content_type, mode: spec.mode, exclude_deleted: String(spec.exclude_deleted) });
+  spec.modalities.forEach(kind => params.append('modality', kind));
+  spec.scope.chat_ids?.forEach(id => params.append('chat_id', id));
+  spec.author_ids.forEach(id => params.append('author_id', id));
+  spec.forwarded_from.forEach(name => params.append('forwarded_from', name));
+  if (spec.date_from) params.set('date_from', spec.date_from);
+  if (spec.date_to) params.set('date_to', spec.date_to);
+  return params.toString();
+}
 
 const allModalities: SearchModality[] = ['text', 'images', 'ocr'];
 const modalityLabels: Record<SearchModality, string> = { text: 'Текст', images: 'Изображения', ocr: 'OCR' };
@@ -80,7 +92,9 @@ export default function App() {
   const [authors, setAuthors] = useState<{ author_id: string; name: string }[]>([]);
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState('');
-  const [author, setAuthor] = useState('');
+  const [authorIds, setAuthorIds] = useState<string[]>([]);
+  const author = authorIds.length > 1 ? '__multiple__' : authorIds[0] ?? '';
+  const setAuthor = (value: string) => setAuthorIds(value ? [value] : []);
   const [forwardedFrom, setForwardedFrom] = useState<string[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -110,6 +124,20 @@ export default function App() {
   const activeSearch = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSearchSettings, setShowSearchSettings] = useState(false);
+  const [searchPreferences, setSearchPreferences] = useState<SearchSettings | null>(null);
+  const [preferencesVersion, setPreferencesVersion] = useState(0);
+  const [strategy, setStrategy] = useState<'exact' | 'ann'>('exact');
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [savedHistoryId, setSavedHistoryId] = useState<string | null>(null);
+  const [savedSnapshotId, setSavedSnapshotId] = useState<string | null>(null);
+  const acceptedSnapshot = useRef<string | null>(null);
+  const displayVersion = useRef(0);
+  const [historyPaging, setHistoryPaging] = useState<string | null>(null);
+  const [favorite, setFavorite] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [submittedIntent, setSubmittedIntent] = useState<SearchIntent | null>(null);
+  const [snapshotNotice, setSnapshotNotice] = useState('');
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState('');
   const [modal, setModal] = useState<'import' | 'settings' | 'sources' | null>(null);
@@ -200,7 +228,6 @@ export default function App() {
     api<{ author_id: string; name: string }[]>(`/api/authors?${params}`).then(authors => {
       if (alive) {
         setAuthors(authors);
-        setAuthor(current => authors.some(item => item.author_id === current) ? current : '');
       }
     }).catch(reportError);
     return () => { alive = false; };
@@ -208,11 +235,40 @@ export default function App() {
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setModal(null); setIndexChat(null); setConflictJob(null); closeContext(); }
+      if (event.key === 'Escape') { setModal(null); setHistoryOpen(false); setIndexChat(null); setConflictJob(null); closeContext(); }
     };
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, []);
+
+  useEffect(() => {
+    if (!savedHistoryId || favoriteBusy) return;
+    let alive = true, pending = false;
+    const controller = new AbortController();
+    const snapshot = acceptedSnapshot.current;
+    const check = async () => {
+      if (pending) return; pending = true;
+      try {
+        const parameters = savedSnapshotId ? `?snapshot_id=${encodeURIComponent(savedSnapshotId)}` : '';
+        const entry = await api<SavedSearch>(`/api/search-history/${encodeURIComponent(savedHistoryId)}/status${parameters}`, { signal: controller.signal });
+        if (!alive || acceptedSnapshot.current !== snapshot) return;
+        setFavorite(entry.favorite);
+        if (!entry.cache_available) {
+          discardDisplayedSnapshot();
+        }
+      } catch (error) {
+        if (!alive || acceptedSnapshot.current !== snapshot) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setSavedHistoryId(null);
+          if (historyPaging) { setHistoryPaging(null); setNextOffset(null); setBrowseCursor(null); }
+        } else reportError(error);
+      }
+      finally { pending = false; }
+    };
+    const timer = window.setInterval(() => void check(), 3000);
+    window.addEventListener('bts-search-history-changed', check);
+    return () => { alive = false; controller.abort(); window.clearInterval(timer); window.removeEventListener('bts-search-history-changed', check); };
+  }, [savedHistoryId, savedSnapshotId, favoriteBusy, historyPaging]);
 
   const toggleChat = (id: string) => setSelected(current => {
     const chosen = current ?? chats.map(chat => chat.id);
@@ -227,23 +283,77 @@ export default function App() {
     event.preventDefault();
     if (busy) return;
     if (query.trim() && !modalities.length) { setError(t('Выберите хотя бы один тип поиска.')); return; }
+    await runSearch({ query, scope: selected === null ? { mode: 'all' } : { mode: 'selected', chat_ids: selected },
+      author_ids: authorIds, forwarded_from: forwardedFrom, date_from: from || null, date_to: to || null,
+      content_type: contentType, exclude_deleted: excludeDeleted, exact_phrase: exact, mode,
+      modalities: modalities.length ? modalities : allModalities, strategy, sort,
+      ...(searchPreferences ? { page_size: searchPreferences.search_result_limit, chunk_size: searchPreferences.display_chunk_size } : {}),
+    });
+  }
+
+  function applyIntent(spec: SearchIntent) {
+    setQuery(spec.query); setSelected(spec.scope.mode === 'all' ? null : [...(spec.scope.chat_ids ?? [])]);
+    setAuthorIds([...spec.author_ids]); setForwardedFrom([...spec.forwarded_from]); setFrom(spec.date_from ?? ''); setTo(spec.date_to ?? '');
+    setContentType(spec.content_type); setExcludeDeleted(spec.exclude_deleted); setExact(spec.exact_phrase); setMode(spec.mode);
+    setModalities([...spec.modalities]); setStrategy(spec.strategy ?? 'exact'); setSort(spec.sort ?? 'newest');
+    setSearchPreferences({ search_result_limit: spec.page_size ?? 20, display_chunk_size: spec.chunk_size ?? 10 });
+    setPreferencesVersion(value => value + 1);
+  }
+
+  function acceptPage(result: SearchPage, spec: SearchIntent) {
+    displayVersion.current++;
+    setSearchId(result.job_id); setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null);
+    setHits(result.results); setHasMore(result.has_more); setSubmitted(spec.query); setSubmittedIntent(result.spec ?? spec);
+    setSubmittedLimit(result.limit ?? 20); setEffectiveMode(result.effective_mode);
+    setWarnings(result.warnings ?? []); setReranked(Boolean(result.rerank_applied));
+    setSearchFilters(searchParameters(spec)); setSubmittedModalities([...spec.modalities]);
+    setSavedHistoryId(result.history_id ?? null); setFavorite(Boolean(result.favorite));
+    acceptedSnapshot.current = result.snapshot_id ?? result.job_id;
+    setSavedSnapshotId(result.snapshot_id ?? null);
+  }
+
+  function discardDisplayedSnapshot() {
+    displayVersion.current++; closeContext(); setOpenImage(null);
+    setHits(null); setNextOffset(null); setBrowseCursor(null); setLoadingMore(false); setPagingError('');
+    setSnapshotNotice('Сохранённая выдача недоступна. Параметры и избранное сохранены; повторите поиск.');
+  }
+
+  function restoreHistory(value: RestoredSearch, repeat: boolean) {
+    if (activeSearch.current) void api(`/api/search-jobs/${encodeURIComponent(activeSearch.current)}/cancel`, { method: 'POST' }).catch(reportError);
+    activeSearch.current = null; searchVersion.current++; setBusy(false); setSearchJob(null); setSearchStopped(false);
+    setLoadingMore(false); setPagingError(''); setError(''); closeContext(); setHistoryOpen(false);
+    const spec = value.entry.spec;
+    applyIntent(spec);
+    if (repeat) { void runSearch(spec); return; }
+    setSavedHistoryId(value.entry.id); setFavorite(value.entry.favorite); setSubmittedIntent(spec);
+    setHistoryPaging(value.entry.id);
+    if (value.result) {
+      acceptPage({ ...value.result, history_id: value.entry.id, favorite: value.entry.favorite }, spec);
+      setSnapshotNotice('Открыта сохранённая выдача. Новые совпадения появятся после повторного поиска.');
+    } else {
+      acceptedSnapshot.current = value.entry.snapshot_id; setSavedSnapshotId(value.entry.snapshot_id);
+      discardDisplayedSnapshot(); setWarnings([]);
+    }
+  }
+
+  async function toggleFavorite() {
+    if (!savedHistoryId || favoriteBusy) return;
+    const version = searchVersion.current;
+    setFavoriteBusy(true);
+    try {
+      await api(`/api/search-history/${encodeURIComponent(savedHistoryId)}/favorite`, {
+        method: 'POST', body: JSON.stringify({ favorite: !favorite }),
+      });
+      if (version === searchVersion.current) setFavorite(value => !value);
+    } catch (error) { if (version === searchVersion.current) reportError(error); }
+    finally { setFavoriteBusy(false); }
+  }
+
+  async function runSearch(spec: SearchIntent) {
     const version = ++searchVersion.current;
     setBusy(true); setSearchJob(null); setSearchStopped(false); setError(''); setPagingError(''); setLoadingMore(false); closeContext();
-    const params = new URLSearchParams({ q: query, exact: String(exact), content_type: contentType, mode, exclude_deleted: String(excludeDeleted) });
-    modalities.forEach(kind => params.append('modality', kind));
-    selected?.forEach(id => params.append('chat_id', id));
-    if (author) params.set('author_id', author);
-    forwardedFrom.forEach(name => params.append('forwarded_from', name));
-    if (from) params.set('date_from', from);
-    if (to) params.set('date_to', to);
     try {
-      let job = await api<SearchJobStatus>('/api/search-jobs', { method: 'POST', body: JSON.stringify({
-        query, scope: selected === null ? { mode: 'all' } : { mode: 'selected', chat_ids: selected },
-        author_ids: author ? [author] : [], forwarded_from: forwardedFrom,
-        date_from: from || null, date_to: to || null, content_type: contentType,
-        exclude_deleted: excludeDeleted, exact_phrase: exact, mode,
-        modalities: modalities.length ? modalities : allModalities,
-      }) });
+      let job = await api<SearchJobStatus>('/api/search-jobs', { method: 'POST', body: JSON.stringify(spec) });
       if (version !== searchVersion.current) {
         void api(`/api/search-jobs/${encodeURIComponent(job.job_id)}/cancel`, { method: 'POST' }).catch(reportError);
         return;
@@ -261,12 +371,7 @@ export default function App() {
       if (job.state === 'failed') throw new Error(job.error || t('Не удалось выполнить поиск.'));
       const result = await api<SearchPage>(`/api/search-jobs/${encodeURIComponent(job.job_id)}/result`);
       if (version !== searchVersion.current) return;
-      setSearchId(job.job_id); setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null);
-      setHits(result.results); setHasMore(result.has_more); setSubmitted(query);
-      setSubmittedLimit(result.limit ?? 20);
-      setEffectiveMode(result.effective_mode); setWarnings(result.warnings ?? []); setReranked(Boolean(result.rerank_applied));
-      setSearchFilters(params.toString());
-      setSubmittedModalities([...modalities]);
+      acceptPage(result, spec); setHistoryPaging(null); setSnapshotNotice('');
     } catch (error) {
       if (version === searchVersion.current) {
         reportError(error);
@@ -294,20 +399,31 @@ export default function App() {
   }
 
   async function showMore() {
-    if (!searchId || (nextOffset === null && !browseCursor) || loadingMore || busy) return;
+    if ((!searchId && !historyPaging) || (nextOffset === null && !browseCursor) || loadingMore || busy) return;
     const version = searchVersion.current;
+    const display = displayVersion.current;
     setLoadingMore(true); setPagingError('');
     try {
       const page = new URLSearchParams({ limit: String(submittedLimit) });
       if (browseCursor) page.set('cursor', browseCursor);
       else page.set('offset', String(nextOffset));
-      const result = await api<SearchPage>(`/api/search-jobs/${encodeURIComponent(searchId)}/result?${page}`);
-      if (version !== searchVersion.current) return;
-      setHits(current => [...(current ?? []), ...result.results]);
+      let result: SearchPage;
+      if (historyPaging) {
+        if (savedSnapshotId) page.set('snapshot_id', savedSnapshotId);
+        const restored = await api<RestoredSearch>(`/api/search-history/${encodeURIComponent(historyPaging)}?${page}`);
+        if (!restored.result) {
+          if (version === searchVersion.current && display === displayVersion.current) discardDisplayedSnapshot();
+          throw new Error(t('Сохранённая выдача недоступна. Параметры и избранное сохранены; повторите поиск.'));
+        }
+        if (savedSnapshotId && restored.entry.snapshot_id !== savedSnapshotId) throw new Error(t('Сохранённая выдача изменилась. Откройте поиск из истории заново.'));
+        result = restored.result;
+      } else result = await api<SearchPage>(`/api/search-jobs/${encodeURIComponent(searchId!)}/result?${page}`);
+      if (version !== searchVersion.current || display !== displayVersion.current) return;
+      setHits(current => { const combined = [...(current ?? []), ...result.results]; return effectiveMode === 'browse' ? combined.slice(-100) : combined; });
       setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null); setHasMore(result.has_more);
     } catch (error) {
-      if (version === searchVersion.current) setPagingError(error instanceof Error ? error.message : t('Ошибка соединения.'));
-    } finally { if (version === searchVersion.current) setLoadingMore(false); }
+      if (version === searchVersion.current && display === displayVersion.current) setPagingError(error instanceof Error ? error.message : t('Ошибка соединения.'));
+    } finally { if (version === searchVersion.current && display === displayVersion.current) setLoadingMore(false); }
   }
 
   async function openContext(hit: Hit, anchor = hit.message_id) {
@@ -338,7 +454,9 @@ export default function App() {
       if (activeSearch.current) void api(`/api/search-jobs/${encodeURIComponent(activeSearch.current)}/cancel`, { method: 'POST' }).catch(reportError);
       activeSearch.current = null; setBusy(false); setBrowseCursor(null);
       searchVersion.current++; setSearchId(null); setNextOffset(null); setLoadingMore(false); setPagingError('');
-      setSelected(null); setHits(null); setReranked(false); closeContext(); await refresh();
+      setSelected(null); setHits(null); setReranked(false); closeContext();
+      setSavedHistoryId(null); setHistoryPaging(null); setSubmittedIntent(null); setSnapshotNotice('');
+      await refresh();
     } catch (error) { reportError(error); }
     finally { setDeleting(false); }
   }
@@ -400,9 +518,10 @@ export default function App() {
 
     <main className="main">
       <header className="topbar"><div className="topbar-actions">
+        <button type="button" className="text-button" onClick={() => setHistoryOpen(true)}>{t('История поиска')}</button>
         <button className="theme-toggle mobile-settings-button" type="button" aria-label={t('Настройки')} title={t('Настройки')} onClick={() => void settings()}><Icon name="settings" /></button>
         <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
-        {!modal && !indexChat && <LanguageSwitch value={language} onChange={changeLanguage} />}
+        {!modal && !indexChat && !historyOpen && <LanguageSwitch value={language} onChange={changeLanguage} />}
       </div></header>
       <div className="content">
         <div className="heading"><h1>{t('Поиск')}</h1></div>
@@ -413,7 +532,7 @@ export default function App() {
             <button disabled={busy || !connected || !chatsLoaded || (!!query.trim() && !modalities.length)}>{busy ? t('Ищем…') : query.trim() ? t('Найти') : t('Показать сообщения')}<Icon name="arrow" size={18} /></button></div>
           <div className="filters">
             <label>{t("Режим")}<select aria-label={t("Режим поиска")} value={mode} disabled={exact} onChange={event => setMode(event.target.value)}><option value="words">{t("По словам")}</option><option value="meaning">{t("По смыслу")}</option><option value="hybrid">{t("Слова и смысл")}</option></select></label>
-            <label>{t("Автор")}<select aria-label={t("Автор")} value={author} onChange={event => setAuthor(event.target.value)}><option value="">{t("Все авторы")}</option>{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
+            <label>{t("Автор")}<select aria-label={t("Автор")} value={author} onChange={event => setAuthor(event.target.value)}><option value="">{t("Все авторы")}</option>{authorIds.length > 1 && <option value="__multiple__" disabled>{t('Выбрано авторов: {p0}', { p0: authorIds.length })}</option>}{authorIds.filter(id => !authors.some(item => item.author_id === id)).map(id => <option key={id} value={id}>{id}</option>)}{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
             <DateField label="С даты (UTC)" value={from} onChange={setFrom} />
             <DateField label="По дату (UTC)" value={to} onChange={setTo} />
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
@@ -437,10 +556,14 @@ export default function App() {
             {!!query.trim() && !modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
-        <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача')} hidden={!showSearchSettings}><SearchSettingsPanel /></section>
+        <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача')} hidden={!showSearchSettings}><SearchSettingsPanel key={preferencesVersion} initialSettings={searchPreferences} onSaved={setSearchPreferences} /></section>
         <hr className="search-divider" />
         {busy && <SearchProgress status={searchJob} onStop={() => void stopSearch()} />}
         {searchStopped && <p role="status">{t('Поиск остановлен')}</p>}
+        {snapshotNotice && <p className="snapshot-notice" role="status">{t(snapshotNotice)}{' '}
+          <button type="button" className="text-button" disabled={busy || !submittedIntent} onClick={() => {
+            if (submittedIntent) { applyIntent(submittedIntent); void runSearch(submittedIntent); }
+          }}>{t('Повторить поиск')}</button></p>}
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
         <details className="archive-status"><summary>{t('Состояние индексов')}</summary>
           <p>{t('Индекс: {p0} · Поиск: {p1}', { p0: indexingDevices, p1: searchDevices })}</p>
@@ -456,7 +579,8 @@ export default function App() {
           <div className="stats"><div><strong>{messageCount.toLocaleString(uiLocale())}</strong><span>{t("сообщений")}</span></div><div><strong>{chats.length}</strong><span>{t("диалогов")}</span></div><div><strong>{photoCount}</strong><span>{t("фотографий")}</span></div></div>
         </section> : <section className="results" aria-live="polite">
           <div className="results-heading"><h2>{hits.length ? t(effectiveMode === 'browse' ? 'Найдено сообщений: {p0}{p1}' : 'Найдено фрагментов: {p0}{p1}', { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{effectiveMode === 'browse' ? t('Просмотр сообщений') : onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл') : effectiveMode === 'meaning' ? t('По смыслу') : t('По словам')}</span></div>
-          <p className="submitted-search">{submitted ? t('Результаты запроса: {p0}', { p0: submitted }) : t('Сообщения по выполненным фильтрам')}</p>
+          <div className="submitted-search-actions"><p className="submitted-search">{submitted ? t('Результаты запроса: {p0}', { p0: submitted }) : t('Сообщения по выполненным фильтрам')}</p>
+            {savedHistoryId && <FavoriteButton selected={favorite} disabled={favoriteBusy || busy} onClick={() => void toggleFavorite()} />}</div>
           {!hits.length && <div className="no-results">{effectiveMode === 'browse' ? t('По выбранным фильтрам сообщений нет. Измените фильтры и нажмите «Показать сообщения».') : <>{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</>}</div>}
           <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><Icon name="archive" size={18} />{hit.chat_name}</span><small>{t('Результат #{p0}', { p0: index + 1 })}</small></div>
@@ -480,6 +604,7 @@ export default function App() {
     </main>
 
     {modal === 'import' && <ImportDialog chats={chats} initialPreview={activePreview} initialImport={activeImport} onClose={() => setModal(null)} onApplied={() => { void refresh().catch(reportError); }} />}
+    {historyOpen && <SearchHistoryDialog onClose={() => setHistoryOpen(false)} onRestore={restoreHistory} />}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
     {indexChat && <ChatIndexDialog onResources={() => { setIndexChat(null); settings('performance', null); }} onSources={() => { setIndexChat(null); setModal('sources'); }} onModels={() => { setIndexChat(null); settings('models', null); }} onPerformance={() => { const id = indexChat.id; setIndexChat(null); settings('performance', id); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
     {modal === 'sources' && <SettingsDialog titleId="sources-title" onClose={() => { setModal(null); void refresh().catch(reportError); }}>

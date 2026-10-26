@@ -12,6 +12,19 @@ class BrowseService:
     def __init__(self, db):
         self.db = db
 
+    @staticmethod
+    def cursor_for(spec, epoch, message):
+        return base64.urlsafe_b64encode(
+            json.dumps(
+                {
+                    "spec": spec.identity,
+                    "epoch": epoch,
+                    "position": [message["timestamp"], message["chat_id"], message["message_id"]],
+                },
+                separators=(",", ":"),
+            ).encode()
+        ).decode()
+
     def search(self, spec, *, cursor=None, limit=None):
         if not spec.browsing:
             raise UserError("Просмотр по фильтрам требует пустого поискового запроса.")
@@ -76,16 +89,7 @@ class BrowseService:
             following = None
             if len(rows) > limit:
                 last = rows[limit - 1]
-                following = base64.urlsafe_b64encode(
-                    json.dumps(
-                        {
-                            "spec": spec.identity,
-                            "epoch": epoch,
-                            "position": [last["timestamp"], last["chat_id"], last["message_id"]],
-                        },
-                        separators=(",", ":"),
-                    ).encode()
-                ).decode()
+                following = self.cursor_for(spec, epoch, last)
         return {
             "results": results,
             "has_more": following is not None,

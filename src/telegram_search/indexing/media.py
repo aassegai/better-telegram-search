@@ -87,6 +87,17 @@ class MediaService(MediaImages):
             self.image_background.start()
             self.semantic_background.start()
 
+    @property
+    def ocr(self):
+        return getattr(self, "_ocr", None)
+
+    @ocr.setter
+    def ocr(self, engine):
+        self._ocr = engine
+        # Search snapshots follow the activated engine even before a memory-
+        # constrained recognition worker reaches its next queue claim.
+        self.db.active_ocr_version = getattr(engine, "version", None)
+
     def _new_ocr(self, settings=None):
         from telegram_search.inference.ocr import OcrEngine
 

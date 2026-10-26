@@ -18,6 +18,7 @@ from telegram_search.search.execution import (
     phase,
     search_lock,
 )
+from telegram_search.search.history import SearchHistory
 from telegram_search.search.spec import SearchSpec
 from telegram_search.shared.errors import UserError
 
@@ -66,8 +67,10 @@ class SearchJobs:
         max_results=8,
         max_bytes=32 * 1024**2,
         ttl=600,
+        history=None,
     ):
         self.db, self.engine, self.lifecycle_lock = db, engine, lifecycle_lock
+        self.history = history or SearchHistory(db, lifecycle_lock)
         self.browser = BrowseService(db)
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
@@ -105,12 +108,14 @@ class SearchJobs:
         for job in terminal:
             if now - job.finished_at >= self.ttl or len(self.jobs) > self.max_pending + 32:
                 self.jobs.pop(job.id)
+                self.history.release("job:" + job.id)
                 size -= len(job.result or b"")
                 results -= job.result is not None
             elif job.result is not None and (size > self.max_bytes or results > self.max_results):
                 size -= len(job.result)
                 results -= 1
                 job.result = None
+                self.history.release("job:" + job.id)
 
     def create(self, spec):
         inherited = {}
@@ -195,14 +200,18 @@ class SearchJobs:
                     "fallback_reasons": list(execution.fallback_reasons),
                     "diagnostics": execution.snapshot()["diagnostics"],
                 }
-                raw = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
-                if len(raw) > self.max_bytes:
-                    raise UserError("Выдача слишком велика. Уменьшите размер фрагментов.")
                 with search_lock(self.lifecycle_lock):
                     if SearchCache.revision(self.db) != job.revision:
                         raise UserError("Архив или настройки изменились. Повторите поиск.")
                     with self.lock:
                         execution.check()
+                        raw = self.history.remember(
+                            job.spec,
+                            result,
+                            job.revision,
+                            "job:" + job.id,
+                            max_bytes=self.max_bytes,
+                        )
                         job.result, job.warnings, job.state = (
                             raw,
                             result.get("warnings", []),
@@ -288,11 +297,17 @@ class SearchJobs:
                     raise UserError("Для просмотра сообщений используйте курсор страницы.")
                 if cursor or limit != job.spec.page_size:
                     result = {**result, **self.browser.search(job.spec, cursor=cursor, limit=limit)}
+                    if cursor and result.get("snapshot_id"):
+                        self.history.append_browse(
+                            result["snapshot_id"], cursor, result, max_bytes=self.max_bytes
+                        )
                 return {**result, "offset": 0, "next_offset": None, "limit": limit}
             if cursor:
                 raise UserError("Курсор доступен только для просмотра сообщений.")
             hits = result["results"]
             end = min(offset + limit, len(hits))
+            if result.get("snapshot_id"):
+                self.history.note_view(result["snapshot_id"], end)
             return {
                 **result,
                 "results": hits[offset:end],
@@ -302,6 +317,13 @@ class SearchJobs:
                 "has_more": end < len(hits) or result.get("has_more", False),
             }
 
+    def clear_results(self):
+        with self.lock:
+            for job in self.jobs.values():
+                if job.result is not None:
+                    job.result = None
+                    self.history.release("job:" + job.id)
+
     def close(self):
         with self.condition:
             self.closed = True
@@ -310,3 +332,7 @@ class SearchJobs:
                     self.cancel(job.id)
             self.condition.notify_all()
         self.worker.join()
+        with self.lock:
+            job_ids = tuple(self.jobs)
+        for job_id in job_ids:
+            self.history.release("job:" + job_id)

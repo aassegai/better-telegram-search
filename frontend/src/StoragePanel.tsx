@@ -3,6 +3,7 @@ import { api } from './api';
 import { t } from './i18n';
 import Dialog from './Dialog';
 import { useDialogOperation } from './useDialogOperation';
+import SearchHistoryStorage from './SearchHistoryStorage';
 
 type Kind = 'text' | 'images' | 'ocr';
 type Sizes = { database_bytes: number; vectors_bytes: number; models_bytes: number; cache_bytes: number; reclaim_estimate_bytes: number; estimate_note: string };
@@ -75,6 +76,7 @@ export default function StoragePanel() {
   });
   const busy = op.busy || working || !initialized;
   return <section className="storage-panel" aria-label={t('Место на диске')}>
+    <SearchHistoryStorage />
     <h3>{t('Место на диске')}</h3>
     {sizes && <dl className="diagnostics"><dt>{t('База')}</dt><dd>{mib(sizes.database_bytes)}</dd><dt>{t('Векторы')}</dt><dd>{mib(sizes.vectors_bytes)}</dd><dt>{t('Модели и словари')}</dt><dd>{mib(sizes.models_bytes)}</dd><dt>{t('Кэш')}</dt><dd>{mib(sizes.cache_bytes)}</dd><dt>{t('Можно освободить в SQLite')}</dt><dd>{mib(sizes.reclaim_estimate_bytes)}</dd></dl>}
     <p className="baseline-note">{t('Очистка удаляет выбранные векторы во всех диалогах. Сообщения, фотографии, модели и распознанный текст OCR сохраняются. Индекс останется на паузе до ручного запуска.')}</p>

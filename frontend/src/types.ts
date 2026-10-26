@@ -3,6 +3,23 @@ export type Chat = {
   date_from: number | null; date_to: number | null;
 };
 export type SearchModality = 'text' | 'images' | 'ocr';
+export type SearchIntent = {
+  schema_version?: 1; query: string; scope: { mode: 'all' | 'selected'; chat_ids?: string[] };
+  author_ids: string[]; forwarded_from: string[]; date_from: string | null; date_to: string | null;
+  content_type: string; exclude_deleted: boolean; exact_phrase: boolean; mode: string;
+  modalities: SearchModality[]; strategy?: 'exact' | 'ann'; sort?: 'newest' | 'oldest';
+  page_size?: number; chunk_size?: number;
+};
+export type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
+  rerank_applied?: boolean; limit: number; job_id: string; browse_cursor?: string | null;
+  next_offset?: number | null; cached_results?: number; spec?: SearchIntent;
+  history_id?: string; snapshot_id?: string; completed_at?: number; favorite?: boolean };
+export type SavedSearch = {
+  id: string; snapshot_id: string; spec: SearchIntent; completed_at: number;
+  favorite: boolean; recent: boolean; cache_available: boolean; stale_reason: string | null;
+  cached_results: number; models: Record<string, unknown>; coverage: Record<string, unknown>;
+};
+export type RestoredSearch = { entry: SavedSearch; result: SearchPage | null };
 export type SearchJobStatus = {
   job_id: string; state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
   phase: string; completed: number; total: number | null; unit: string;

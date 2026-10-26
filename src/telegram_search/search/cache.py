@@ -44,14 +44,30 @@ class SearchCache:
                     "SELECT manifest_id,preparation_state FROM rerank_state WHERE id=1"
                 ).fetchone()
             )
+            recognition = conn.execute(
+                "SELECT version FROM ocr_queue_version WHERE id=1"
+            ).fetchone()
         # Progress, pauses and download counters do not change the meaning of stored hits.
         visual = [spec.identity for spec in visual_specs(media[2]).values()]
         fingerprint = [
             epoch,
-            db.settings.__dict__,
+            {
+                name: getattr(db.settings, name)
+                for name in (
+                    "search_backend",
+                    "retrieval_candidates",
+                    "rrf_k",
+                    "lexical_weight",
+                    "dense_weight",
+                    "giga_rerank_enabled",
+                    "ocr_engine",
+                    "ocr_max_edge",
+                )
+            },
             model,
             media,
             rerank,
+            getattr(db, "active_ocr_version", recognition[0] if recognition else None),
             visual,
             rerank_spec().identity,
             "giga-top50-rrf-v1",
@@ -60,6 +76,11 @@ class SearchCache:
 
     def _drop(self, token):
         self.bytes -= len(self.entries.pop(token)[2])
+
+    def clear(self):
+        with self.lock:
+            self.entries.clear()
+            self.bytes = 0
 
     def _expire(self):
         now = self.clock()

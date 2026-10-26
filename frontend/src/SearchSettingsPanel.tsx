@@ -3,14 +3,17 @@ import { useEffect, useState } from 'react';
 import { api } from './api';
 import { useDialogOperation } from './useDialogOperation';
 
-type SearchSettings = { search_result_limit: number; display_chunk_size: number };
+export type SearchSettings = { search_result_limit: number; display_chunk_size: number };
 
-export default function SearchSettingsPanel() {
+export default function SearchSettingsPanel({ initialSettings, onSaved }: {
+  initialSettings?: SearchSettings | null; onSaved?: (value: SearchSettings) => void;
+}) {
   const [settings, setSettings] = useState<SearchSettings | null>(null);
   const [saved, setSaved] = useState(false);
   const op = useDialogOperation();
   useEffect(() => {
     let alive = true;
+    if (initialSettings) { setSettings(initialSettings); return; }
     api<SearchSettings>('/api/settings').then(value => { if (alive) setSettings(value); })
       .catch(error => { if (alive) op.setError(error instanceof Error ? error.message : t('Не удалось прочитать настройки поиска.')); });
     return () => { alive = false; };
@@ -23,7 +26,7 @@ export default function SearchSettingsPanel() {
       if (!valid || !settings) return;
       void op.run(async current => {
         const value = await api<SearchSettings>('/api/settings', { method: 'PATCH', body: JSON.stringify({ search_result_limit: settings.search_result_limit, display_chunk_size: settings.display_chunk_size }) });
-        if (current()) { setSettings(value); setSaved(true); }
+        if (current()) { setSettings(value); setSaved(true); onSaved?.(value); }
       });
     }}>
       {settings && <div className="resource-fields">

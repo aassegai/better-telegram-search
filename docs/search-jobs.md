@@ -96,5 +96,7 @@ The service runs one search pipeline at a time and admits at most 16 running/
 queued jobs. A physically bounded queue removes cancelled pending work, including
 when a native call is still running. Queue overflow returns HTTP 429. Temporary
 result snapshots retain up to eight entries, 32 MiB total, for ten minutes.
-These are process-local limits; persistent history and tab snapshots are a
-separate subsequent feature and must not depend on this TTL.
+These are process-local limits. [Persistent search history](search-history.md)
+stores the last ten completed searches and favorites independently of this TTL;
+job results include their durable history/snapshot IDs. Search-history restoration
+and pagination do not rerun inference.
