@@ -42,7 +42,7 @@ class MediaSearch:
                     )
                 ]
 
-            found = self.semantic._vector_store().exact_filtered(
+            found = self.semantic._vector_store().search_filtered(
                 space,
                 dimension,
                 vector,

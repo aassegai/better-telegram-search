@@ -590,4 +590,6 @@ class SemanticService:
             self.preparation.join()
         if self.encoder:
             self.encoder.unload()
+        if self.vectors is not None:
+            self.vectors.close()
         self.query_cache.clear()

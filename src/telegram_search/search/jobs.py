@@ -187,12 +187,6 @@ class SearchJobs:
                     execution.effective_strategy = "none"
                     result = self.browser.search(job.spec)
                 else:
-                    dense = not job.spec.exact_phrase and (
-                        "images" in job.spec.modalities or job.spec.mode != "words"
-                    )
-                    execution.effective_strategy = "exact" if dense else "none"
-                    if dense and job.spec.strategy == "ann":
-                        execution.fallback_reasons.append("ann_index_unavailable")
                     phase("query")
                     result = self.engine.search(
                         job.spec.query,

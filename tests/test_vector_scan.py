@@ -65,7 +65,11 @@ def test_scan_handles_arrow_offsets_large_batches_nulls_and_stable_ties(tmp_path
             return pa.RecordBatchReader.from_batches(batch.schema, [batch])
 
     store = VectorStore(tmp_path)
-    monkeypatch.setattr(store, "table", lambda *args: SimpleNamespace(search=lambda: Query()))
+    monkeypatch.setattr(
+        store,
+        "table",
+        lambda *args: SimpleNamespace(search=lambda: Query(), schema=batch.schema),
+    )
     seen = []
 
     def eligible(keys):

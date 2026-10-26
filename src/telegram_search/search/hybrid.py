@@ -5,7 +5,7 @@ from telegram_search.shared.errors import UserError
 
 
 class HybridSearch:
-    """BM25 and exact cosine retrieve the same published, prefiltered chunks."""
+    """Lexical and dense retrieval share canonical, published chunk eligibility."""
 
     def __init__(self, db, semantic, lifecycle_lock):
         self.db = db
@@ -147,7 +147,7 @@ class HybridSearch:
                 count("eligible_vectors", total)
                 if total:
                     rows = conn.execute(f"SELECT c.id {joins} WHERE {predicate}", params)
-                    found = self.semantic._vector_store().exact_filtered(
+                    found = self.semantic._vector_store().search_filtered(
                         encoder.space_id,
                         encoder.spec.dimension,
                         vector,

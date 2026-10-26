@@ -14,6 +14,11 @@ COUNTERS = (
     "vectors_scored",
     "candidates_before_rerank",
     "returned",
+    "eligibility_ids_read",
+    "ann_queries",
+    "ann_candidates",
+    "exact_vectors_read",
+    "exact_vectors_scored",
 )
 
 
@@ -35,7 +40,8 @@ class SearchExecution:
         self.metrics = dict.fromkeys(COUNTERS, 0)
         self.timings = {}
         self.requested_strategy = "exact"
-        self.effective_strategy = "exact"
+        self.effective_strategy = "none"
+        self.strategies = set()
         self.fallback_reasons = []
         self.finished = None
 
@@ -65,7 +71,22 @@ class SearchExecution:
 
     def count(self, name, count):
         with self.lock:
-            self.metrics[name] += count
+            if self.metrics[name] is not None:
+                self.metrics[name] += count
+
+    def unknown_count(self, *names):
+        with self.lock:
+            for name in names:
+                self.metrics[name] = None
+
+    def strategy(self, strategy, reason=None):
+        with self.lock:
+            self.strategies.add(strategy)
+            self.effective_strategy = (
+                next(iter(self.strategies)) if len(self.strategies) == 1 else "mixed"
+            )
+            if reason and reason not in self.fallback_reasons:
+                self.fallback_reasons.append(reason)
 
     def snapshot(self):
         with self.lock:
@@ -133,6 +154,18 @@ def count(name, value):
     execution = current_execution()
     if execution:
         execution.count(name, value)
+
+
+def unknown_count(*names):
+    execution = current_execution()
+    if execution:
+        execution.unknown_count(*names)
+
+
+def strategy(name, reason=None):
+    execution = current_execution()
+    if execution:
+        execution.strategy(name, reason)
 
 
 def id_batches(rows, size=512):

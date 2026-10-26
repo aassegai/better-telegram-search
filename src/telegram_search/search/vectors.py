@@ -5,7 +5,15 @@ import threading
 from datetime import timedelta
 from pathlib import Path
 
-from telegram_search.search.execution import advance, checkpoint, count, phase, search_lock
+from telegram_search.search.execution import (
+    advance,
+    checkpoint,
+    count,
+    current_execution,
+    phase,
+    search_lock,
+    strategy,
+)
 from telegram_search.security.paths import owned_vector_path
 from telegram_search.shared.errors import UserError
 
@@ -26,6 +34,138 @@ class VectorStore:
         self.location = location
         self.lock = threading.RLock()
         self.indexed_ids = set()
+        self.ann_process = None
+
+    def close(self):
+        if self.ann_process is not None:
+            self.ann_process.close()
+
+    def ann_status(self, space_id, dimension):
+        from telegram_search.search.ann import index_status
+
+        with search_lock(self.lock):
+            table = self.table(space_id, dimension)
+            return (
+                index_status(table, dimension)
+                if table is not None
+                else {"ready": False, "reason": "ann_index_unavailable"}
+            )
+
+    def build_ann(self, space_id, dimension, *, options=None):
+        """Synchronous primitive for the background builder, not an HTTP handler."""
+        from telegram_search.search.ann import AnnOptions, build_index
+
+        with self.lock:
+            table = self.table(space_id, dimension)
+            if table is None:
+                return {"ready": False, "reason": "ann_index_unavailable"}
+            return build_index(table, dimension, options or AnnOptions())
+
+    def search_filtered(
+        self,
+        space_id,
+        dimension,
+        query,
+        eligible,
+        limit,
+        *,
+        predicate=None,
+        eligible_batches=None,
+        total=None,
+        phase_name="vectors",
+        ann_options=None,
+    ):
+        """Use requested ANN only with a compatible index and canonical prefilter.
+
+        Direct calls without a search execution retain the exact default. On a
+        failed native attempt, rescan the SQLite snapshot through ``eligible``;
+        the one-shot canonical cursor may already have been partially consumed.
+        """
+        from telegram_search.search.ann import AnnOptions, index_status, retrieve
+        from telegram_search.search.ann_process import AnnProcess, AnnUnavailable
+
+        options = ann_options or AnnOptions()
+        execution = current_execution()
+        arguments = dict(
+            predicate=predicate,
+            eligible_batches=eligible_batches,
+            total=total,
+            phase_name=phase_name,
+        )
+        if limit <= 0:
+            return []
+        if execution is None or execution.requested_strategy != "ann":
+            return self.exact_filtered(space_id, dimension, query, eligible, limit, **arguments)
+        query = self._query_vector(query, dimension)
+        attempted = False
+        with search_lock(self.lock):
+            try:
+                if total is not None and total < max(options.minimum_rows, limit * 2):
+                    raise AnnUnavailable("ann_scope_too_small")
+                if eligible is None:
+                    raise AnnUnavailable("ann_scope_unavailable")
+                table = self.table(space_id, dimension)
+                if table is None:
+                    raise AnnUnavailable("ann_index_unavailable")
+                self._validate_table(table, dimension)
+                status = index_status(table, dimension)
+                if not status["ready"]:
+                    raise AnnUnavailable(status["reason"])
+                if self.ann_process is None:
+                    self.ann_process = AnnProcess()
+                attempted = True
+                found = retrieve(
+                    table,
+                    dimension,
+                    query,
+                    eligible,
+                    eligible_batches,
+                    limit,
+                    predicate,
+                    options,
+                    self.ann_process,
+                    self.location,
+                    status,
+                    phase_name,
+                )
+                strategy("ann")
+                return found
+            except AnnUnavailable as exc:
+                reason = exc.reason
+            except UserError:
+                raise
+            except Exception:
+                # Native index/IO failures may include private local paths.
+                reason = "ann_query_failed"
+            checkpoint()
+            strategy("exact", reason)
+            if attempted:
+                arguments["eligible_batches"] = None
+            return self.exact_filtered(space_id, dimension, query, eligible, limit, **arguments)
+
+    @staticmethod
+    def _query_vector(query, dimension):
+        import numpy as np
+
+        query = np.asarray(query, dtype=np.float32)
+        if query.shape != (dimension,) or not np.isfinite(query).all():
+            raise UserError("Модель вернула недопустимый embedding.")
+        norm = np.linalg.norm(query)
+        if not np.isfinite(norm) or norm <= 0:
+            raise UserError("Модель вернула недопустимый embedding.")
+        return query
+
+    @staticmethod
+    def _validate_table(table, dimension):
+        import pyarrow as pa
+
+        vector_type = table.schema.field("vector").type
+        if (
+            not pa.types.is_fixed_size_list(vector_type)
+            or vector_type.list_size != dimension
+            or vector_type.value_type != pa.float32()
+        ):
+            raise UserError("Размерность векторной таблицы не совпадает с embedding space.")
 
     def table_path(self, space_id):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", space_id):
@@ -64,6 +204,7 @@ class VectorStore:
             raise UserError("Размерность векторов не совпадает с embedding space.")
         with self.lock:
             table = self.table(space_id, dimension, create=True)
+            self._validate_table(table, dimension)
             data = pa.Table.from_pylist(
                 [
                     {
@@ -94,6 +235,8 @@ class VectorStore:
             table = self.table(space_id, dimension)
             if table is None:
                 raise UserError("Векторная таблица отсутствует. Перестройте semantic index.")
+            self._validate_table(table, dimension)
+            query = self._query_vector(query, dimension)
             predicate = "id IN (" + ",".join(sql_literal(item) for item in eligible_ids) + ")"
             return (
                 table.search(query)
@@ -128,18 +271,16 @@ class VectorStore:
         if limit <= 0:
             return []
         checkpoint()
-        query = np.asarray(query, dtype=np.float32)
-        if query.shape != (dimension,) or not np.isfinite(query).all():
-            raise UserError("Модель вернула недопустимый embedding.")
+        query = self._query_vector(query, dimension)
         query_norm = np.linalg.norm(query)
-        if not np.isfinite(query_norm) or query_norm <= 0:
-            raise UserError("Модель вернула недопустимый embedding.")
+        strategy("exact")
         best = []
         phase(phase_name, total=total, unit="vectors")
         with search_lock(self.lock):
             table = self.table(space_id, dimension)
             if table is None:
                 raise UserError("Векторная таблица отсутствует. Перестройте semantic index.")
+            self._validate_table(table, dimension)
             # Broad scopes use one sequential pass. Repeated small-ID predicates
             # would otherwise rescan a large unindexed append tail many times.
             scoped = eligible_batches is not None
@@ -173,6 +314,7 @@ class VectorStore:
                         part = batch.slice(start, 512)
                         checkpoint()
                         count("vectors_read", len(part))
+                        count("exact_vectors_read", len(part))
                         ids = part.column("id").to_pylist()
                         allowed = set(ids if scoped else eligible(ids))
                         selected = [i for i, key in enumerate(ids) if key in allowed]
@@ -203,6 +345,7 @@ class VectorStore:
                         distances = 1 - distances
                         scored = int(np.count_nonzero(valid))
                         count("vectors_scored", scored)
+                        count("exact_vectors_scored", scored)
                         advance(scored)
                         for offset in np.flatnonzero(valid):
                             candidate = (-float(distances[offset]), ids[selected[offset]])
