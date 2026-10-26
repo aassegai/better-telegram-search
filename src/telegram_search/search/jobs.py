@@ -1,6 +1,7 @@
 """Bounded, cooperative search jobs. Native calls finish before cancellation settles."""
 
 import json
+import logging
 import secrets
 import threading
 import time
@@ -22,6 +23,8 @@ from telegram_search.search.history import SearchHistory
 from telegram_search.search.spec import SearchSpec
 from telegram_search.shared.errors import UserError
 
+logger = logging.getLogger(__name__)
+
 
 class SearchQueueFull(UserError):
     pass
@@ -39,6 +42,7 @@ class SearchSnapshotExpired(UserError):
 class SearchJob:
     id: str
     spec: SearchSpec
+    tab_id: str | None = None
     execution: SearchExecution = field(default_factory=SearchExecution)
     state: str = "queued"
     error: str | None = None
@@ -71,6 +75,7 @@ class SearchJobs:
     ):
         self.db, self.engine, self.lifecycle_lock = db, engine, lifecycle_lock
         self.history = history or SearchHistory(db, lifecycle_lock)
+        self.tabs = None
         self.browser = BrowseService(db)
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
@@ -94,11 +99,23 @@ class SearchJobs:
                 if not job.future.set_running_or_notify_cancel():
                     continue
                 self.running = job
-            self._run(job)
-            with self.condition:
-                self.running = None
-                job.future.set_result(None)
-                self.condition.notify_all()
+            try:
+                self._run(job)
+            except Exception:
+                # Persistence/native cleanup must never strand the scheduler or
+                # its Future. Keep private exception details out of logs/status.
+                logger.error("Search worker cleanup failed")
+                job.execution.finish()
+                with self.lock:
+                    if job.state not in {"completed", "cancelled"}:
+                        job.state = "failed"
+                        job.error = "Не удалось выполнить поиск. Повторите запрос."
+                    job.finished_at = time.monotonic()
+            finally:
+                with self.condition:
+                    self.running = None
+                    job.future.set_result(None)
+                    self.condition.notify_all()
 
     def _expire(self):
         now = time.monotonic()
@@ -117,7 +134,7 @@ class SearchJobs:
                 job.result = None
                 self.history.release("job:" + job.id)
 
-    def create(self, spec):
+    def create(self, spec, *, tab_id=None):
         inherited = {}
         if "page_size" not in spec.model_fields_set:
             inherited["page_size"] = self.db.settings.search_result_limit
@@ -132,7 +149,7 @@ class SearchJobs:
             self._expire()
             if len(self.queue) + int(self.running is not None) >= self.max_pending:
                 raise SearchQueueFull("Очередь поиска заполнена. Остановите лишние поиски.")
-            job = SearchJob(secrets.token_urlsafe(24), spec)
+            job = SearchJob(secrets.token_urlsafe(24), spec, tab_id=tab_id)
             job.execution.requested_strategy = spec.strategy
             self.jobs[job.id] = job
             job.future = Future()
@@ -211,6 +228,13 @@ class SearchJobs:
                             job.revision,
                             "job:" + job.id,
                             max_bytes=self.max_bytes,
+                            on_publish=(
+                                lambda conn, snapshot_id: self.tabs.finish(
+                                    job, snapshot_id, connection=conn
+                                )
+                            )
+                            if self.tabs is not None and job.tab_id
+                            else None,
                         )
                         job.result, job.warnings, job.state = (
                             raw,
@@ -233,6 +257,12 @@ class SearchJobs:
                     job.error = None
         finally:
             execution.finish()
+            if self.tabs is not None and job.tab_id:
+                try:
+                    with self.lifecycle_lock:
+                        self.tabs.finish(job)
+                except Exception:
+                    logger.error("Search tab cleanup could not be saved")
             with self.lock:
                 job.finished_at = time.monotonic()
                 self._expire()
@@ -268,6 +298,13 @@ class SearchJobs:
                     self.queue.remove(job)
                     job.state, job.finished_at = "cancelled", time.monotonic()
                     job.execution.finish()
+                    if self.tabs is not None and job.tab_id:
+                        # No lifecycle acquisition here: close() can already own
+                        # the job lock. Finishing a cancelled tab only updates SQLite.
+                        try:
+                            self.tabs.finish(job)
+                        except Exception:
+                            logger.error("Cancelled search tab cleanup could not be saved")
                 else:
                     job.state = "cancelling"
             return self._status(job)

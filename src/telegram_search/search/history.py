@@ -110,7 +110,7 @@ class SearchHistory:
             },
         }
 
-    def remember(self, spec, result, revision, owner, *, max_bytes):
+    def remember(self, spec, result, revision, owner, *, max_bytes, on_publish=None):
         """Caller serializes cancellation and publication; one transaction owns all refs."""
         with self.lock, self.db.connect() as conn:
             if SearchCache.revision(self.db) != revision:
@@ -173,6 +173,8 @@ class SearchHistory:
             )
             conn.execute("DELETE FROM search_history WHERE recent=0 AND favorite=0")
             self._invalidate(conn, revision)
+            if on_publish is not None:
+                on_publish(conn, snapshot_id)
             self._collect(conn)
         return raw
 
@@ -243,58 +245,65 @@ class SearchHistory:
             ).fetchone()
             if not row:
                 raise KeyError(history_id)
-            entry = self._entry(row)
-            value = json.loads(row["result_json"]) if row["result_json"] is not None else None
-            if value is not None:
-                spec = SearchSpec.model_validate(entry["spec"])
-                if spec.browsing and offset:
-                    raise UserError("Для просмотра сообщений используйте курсор страницы.")
-                size = (
-                    limit
-                    if limit is not None
-                    else min(
-                        100,
-                        json.loads(row["view_json"]).get(
-                            "visible_count", entry["spec"]["page_size"]
-                        ),
-                    )
+            return self._restore(conn, row, offset=offset, limit=limit, cursor=cursor)
+
+    def _restore(self, conn, row, *, offset=0, limit=None, cursor=None, visible_count=None):
+        entry = self._entry(row)
+        value = json.loads(row["result_json"]) if row["result_json"] is not None else None
+        if value is not None:
+            spec = SearchSpec.model_validate(entry["spec"])
+            value.update(
+                snapshot_id=entry["snapshot_id"], history_id=entry["id"], favorite=entry["favorite"]
+            )
+            if spec.browsing and offset:
+                raise UserError("Для просмотра сообщений используйте курсор страницы.")
+            if cursor and not spec.browsing:
+                raise UserError("Курсор доступен только для просмотра сообщений.")
+            size = (
+                limit
+                if limit is not None
+                else min(
+                    100,
+                    visible_count
+                    or json.loads(row["view_json"]).get(
+                        "visible_count", entry["spec"]["page_size"]
+                    ),
                 )
-                if cursor:
-                    spec = SearchSpec.model_validate(entry["spec"])
-                    value = {
-                        **value,
-                        **BrowseService(self.db).search(spec, cursor=cursor, limit=size),
-                    }
-                    self.append_browse(row["id"], cursor, value, connection=conn)
-                    return {
-                        "entry": entry,
-                        "result": {**value, "offset": 0, "next_offset": None, "limit": size},
-                    }
-                end = min(offset + size, len(value["results"]))
-                if spec.browsing and end < row["results_count"] and end:
-                    epoch = conn.execute(
-                        "SELECT generation FROM search_archive_epoch WHERE id=1"
-                    ).fetchone()[0]
-                    value["browse_cursor"] = BrowseService.cursor_for(
-                        spec, epoch, value["results"][end - 1]
-                    )
-                if offset:
-                    conn.execute(
-                        "UPDATE search_history SET view_json=? WHERE snapshot_id=?",
-                        (serialize({"visible_count": end}), row["id"]),
-                    )
+            )
+            if cursor:
+                spec = SearchSpec.model_validate(entry["spec"])
                 value = {
                     **value,
-                    "results": value["results"][offset:end],
-                    "offset": offset,
-                    "next_offset": end
-                    if not spec.browsing and end < row["results_count"]
-                    else None,
-                    "cached_results": row["results_count"],
-                    "limit": limit if limit is not None else entry["spec"]["page_size"],
-                    "has_more": end < row["results_count"] or value.get("has_more", False),
+                    **BrowseService(self.db).search(spec, cursor=cursor, limit=size),
                 }
-            return {"entry": entry, "result": value}
+                self.append_browse(row["id"], cursor, value, connection=conn)
+                return {
+                    "entry": entry,
+                    "result": {**value, "offset": 0, "next_offset": None, "limit": size},
+                }
+            end = min(offset + size, len(value["results"]))
+            if spec.browsing and end < row["results_count"] and end:
+                epoch = conn.execute(
+                    "SELECT generation FROM search_archive_epoch WHERE id=1"
+                ).fetchone()[0]
+                value["browse_cursor"] = BrowseService.cursor_for(
+                    spec, epoch, value["results"][end - 1]
+                )
+            if offset:
+                conn.execute(
+                    "UPDATE search_history SET view_json=? WHERE snapshot_id=?",
+                    (serialize({"visible_count": end}), row["id"]),
+                )
+            value = {
+                **value,
+                "results": value["results"][offset:end],
+                "offset": offset,
+                "next_offset": end if not spec.browsing and end < row["results_count"] else None,
+                "cached_results": row["results_count"],
+                "limit": limit if limit is not None else entry["spec"]["page_size"],
+                "has_more": end < row["results_count"] or value.get("has_more", False),
+            }
+        return {"entry": entry, "result": value}
 
     def metadata(self, history_id, *, snapshot_id=None):
         with self.lock, self.db.connect() as conn:
@@ -306,6 +315,50 @@ class SearchHistory:
             if not row:
                 raise KeyError(history_id)
             return self._entry(row)
+
+    @staticmethod
+    def snapshot_row(conn, snapshot_id, *, include_result=False):
+        columns = (
+            "s.id,s.spec_json,s.completed_at,s.models_json,s.coverage_json,"
+            "s.result_bytes,s.results_count,s.stale_reason"
+        )
+        return conn.execute(
+            f"SELECT {columns}"
+            + (",s.result_json" if include_result else "")
+            + ",h.id AS history_id,coalesce(h.favorite,0) AS favorite,"
+            "coalesce(h.recent,0) AS recent,'{}' AS view_json FROM search_snapshots s "
+            "LEFT JOIN search_history h ON h.spec_key=s.spec_key WHERE s.id=?",
+            (snapshot_id,),
+        ).fetchone()
+
+    def favorite_snapshot(self, snapshot_id, selected):
+        """A tab may outlive the last-ten history record for its performed intent."""
+        with self.lock, self.db.connect() as conn:
+            snapshot = conn.execute(
+                "SELECT rowid,* FROM search_snapshots WHERE id=?", (snapshot_id,)
+            ).fetchone()
+            if not snapshot:
+                raise KeyError(snapshot_id)
+            if selected:
+                conn.execute(
+                    "INSERT INTO search_history(id,spec_key,snapshot_id,last_run_at,"
+                    "completion_order,recent,favorite) VALUES(?,?,?,?,?,0,1) "
+                    "ON CONFLICT(spec_key) DO UPDATE SET favorite=1",
+                    (
+                        str(uuid.uuid4()),
+                        snapshot["spec_key"],
+                        snapshot_id,
+                        snapshot["completed_at"],
+                        snapshot["rowid"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    "UPDATE search_history SET favorite=0 WHERE spec_key=?", (snapshot["spec_key"],)
+                )
+                conn.execute("DELETE FROM search_history WHERE recent=0 AND favorite=0")
+            self._collect(conn)
+            return self._entry(self.snapshot_row(conn, snapshot_id))
 
     def note_view(self, snapshot_id, visible_count):
         with self.db.connect() as conn:

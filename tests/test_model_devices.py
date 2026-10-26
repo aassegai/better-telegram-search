@@ -322,6 +322,8 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
             "chunk_embedding_parts",
             "chat_chunking",
             "chunking_policies",
+            "search_tab_state",
+            "search_tabs",
             "search_snapshot_owners",
             "search_history",
             "search_snapshots",

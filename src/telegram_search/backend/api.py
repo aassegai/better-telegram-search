@@ -23,6 +23,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from telegram_search import __version__
 from telegram_search.backend.history import router as history_router
 from telegram_search.backend.search import router as search_router
+from telegram_search.backend.tabs import router as tabs_router
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.chats import ChatIndexing
@@ -38,6 +39,7 @@ from telegram_search.search.lexical import ContextService, Filters, SearchServic
 from telegram_search.search.media import MediaSearch, UnifiedSearch
 from telegram_search.search.presentation import search_options
 from telegram_search.search.rerank import SearchReranker
+from telegram_search.search.tabs import SearchTabs
 from telegram_search.security.paths import safe_media_path
 from telegram_search.shared.errors import UserError
 from telegram_search.sources.service import WorkspaceService
@@ -172,6 +174,10 @@ def create_app(
             app.state.search_history = history
             search_jobs = SearchJobs(db, app.state.search, importer.lifecycle_lock, history=history)
             app.state.search_jobs = search_jobs
+            tabs = SearchTabs(db, history, search_jobs)
+            tabs.recover()
+            search_jobs.tabs = tabs
+            app.state.search_tabs = tabs
             app.state.update_database_check = "checking" if verification_nonce else "ok"
             if verification_nonce:
 
@@ -228,6 +234,7 @@ def create_app(
     app.include_router(telegram_router)
     app.include_router(search_router)
     app.include_router(history_router)
+    app.include_router(tabs_router)
     app.state.db = db
     app.state.update_verifying = bool(verification_nonce)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
