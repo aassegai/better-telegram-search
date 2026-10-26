@@ -281,6 +281,7 @@ class NoiseAnalysisService:
             "candidate_comparisons": comparisons,
             "index_postings_read": postings,
             "new_auto_omit_enabled": False,
+            "report_sha256": report.digest(lambda: self._checkpoint(job)),
             "dry_run": {
                 "state": "not_available",
                 "reason": "policy_not_compiled",

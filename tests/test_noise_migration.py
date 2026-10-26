@@ -4,10 +4,10 @@ from conftest import export, load, message
 
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.search.chunking.policy import DEFAULT_POLICY
-from telegram_search.storage.database import Database, execute_sql
+from telegram_search.storage.database import SCHEMA_VERSION, Database, execute_sql
 
 
-def test_migration_18_only_adds_analysis_metadata_and_preserves_existing_work(tmp_path):
+def test_noise_migrations_only_add_analysis_metadata_and_preserve_existing_work(tmp_path):
     database = Database(tmp_path / "workspace")
     database.path.parent.mkdir(parents=True)
     storage = Path(__file__).parents[1] / "src/telegram_search/storage"
@@ -37,7 +37,10 @@ def test_migration_18_only_adds_analysis_metadata_and_preserves_existing_work(tm
         }
     database.initialize()
     with database.connect() as conn:
-        assert conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 18
+        assert (
+            conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+            == SCHEMA_VERSION
+        )
         for name, rows in before.items():
             assert rows == [tuple(row) for row in conn.execute(f"SELECT * FROM {name}")]
         assert not conn.execute("SELECT 1 FROM noise_analyses").fetchone()

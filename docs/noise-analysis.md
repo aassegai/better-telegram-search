@@ -4,8 +4,9 @@
 
 The CPU analysis service now collects a bounded, private report for one chat.
 It **does not change** chunking, source messages, lexical search, existing
-policies or indexing checkpoints. A complete analysis/apply UI and CLI, real-token
-dry-run, calibration and frozen exact policies are still being implemented.
+policies or indexing checkpoints until an explicit apply action. The local API
+now supports exact-policy drafts, overrides and text-only apply/rebuild. A complete
+UI and CLI, real-token dry-run and calibration are still being implemented.
 **Automatic omission of new forms is disabled.** Doubtful forms stay.
 
 ## Evidence and decisions
@@ -48,6 +49,10 @@ application's Host/Origin/local-session guards. Mutations require
 | `GET /{id}/forms?decision=review&offset=0&limit=50` | Paginated forms, evidence and protections |
 | `GET /{id}/families?offset=0&limit=50` | Descriptive family aggregates |
 | `DELETE /{id}` | Remove a stopped job and its owned private report |
+| `GET /{id}/draft` | Lightweight override/revision/application metadata |
+| `PATCH /{id}/draft` | Replace overrides with `{ "revision": 0, "overrides": { "бял": "keep" } }` |
+| `POST /{id}/preview` | Explicit policy preview with `{ "revision": 1 }` |
+| `POST /{id}/apply` | Explicit text rebuild with `{ "revision": 1 }` |
 
 Defaults: `max_messages=100000`, `max_forms=50000`, `time_limit_seconds=300`.
 Allowed maxima: one million messages, 50,000 forms in each whole/phrase vocabulary,
@@ -105,13 +110,12 @@ in each CPU phase, SQLite contention, report validation and migration from schem
 17. A frozen v2 policy JSON/hash protects existing checkpoints. No real archive is
 used in these tests, and synthetic tests do not validate a real omission gate.
 
-Remaining: labelled development/test calibration and conservative gate, immutable
-exact effective policies, overrides, borrowed-context protection, atomic explicit
-text-only apply/rebuild, real-encoder token/padding dry-run and shared UI/CLI.
+Remaining: labelled development/test calibration and a conservative gate,
+real-encoder token/padding dry-run and shared UI/CLI.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
 
-## Exact-policy foundation (not an apply workflow)
+## Frozen exact policy and explicit apply
 
 A separate `NoisePolicy` format now composes the unchanged v2 episode policy with
 canonical exact omit/keep sets and a versioned protection contract. Its cached
@@ -125,7 +129,20 @@ the owning segment and can make it useful again. A bounded extra lookup protects
 a borrowed answer to a question without recursive classification. Import and
 model rebuild retain an explicitly selected new policy, pauses and other indexes.
 
-This is an internal compiler/runtime foundation with synthetic tests. No analysis
-report can yet activate it, and no user's existing policy is switched on startup.
-The future apply action must check report integrity, scope/revision, overrides and
-idempotence atomically before an explicit text-only rebuild.
+A full, current report with a stored SHA-256 is required for preview, override
+changes and apply. Older reports remain reviewable; re-run analysis to apply them.
+Limited reports cannot be applied. No policy changes on application startup.
+
+At most 1,000 canonical observed forms may have `keep`/`omit` overrides. Save uses
+a draft revision; stale edits return `409`. Preview compiles effective rules
+without applying them. Report hashing and compilation hold no main write or
+lifecycle lock. Apply rechecks source/draft revisions inside a short transaction,
+saves an immutable policy and schedules all chat days with set-based SQL. Existing
+pauses, batches, devices, OCR and visual indexes are preserved.
+
+Manual decisions from the currently selected policy survive re-analysis unless
+explicitly overridden. Unchanged effective rules do not rebuild chunks or change
+query snapshots, regardless of changed statistics. Re-applying the same applied
+draft is a no-op even after a later import. No per-form confirmation is mandatory;
+review forms stay automatically, while manual overrides are optional. This API
+workflow does not validate a new automatic omission gate or claim GPU savings.

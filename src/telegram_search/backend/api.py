@@ -32,6 +32,7 @@ from telegram_search.indexing.ann import AnnIndexService
 from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.noise_analysis import NoiseAnalysisService
+from telegram_search.indexing.noise_policy import NoisePolicyService
 from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
@@ -155,6 +156,9 @@ def create_app(
                 db, importer.lifecycle_lock, start_background=not hold_background
             )
             app.state.semantic = semantic
+            app.state.noise_policies = NoisePolicyService(
+                db, noise_analyses, importer.lifecycle_lock, semantic
+            )
             media = MediaService(
                 db, importer.lifecycle_lock, semantic, start_background=not hold_background
             )

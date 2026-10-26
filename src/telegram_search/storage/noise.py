@@ -143,6 +143,7 @@ class NoiseStore:
             current = source_fence(conn, chat_id)
         result = dict(row)
         result["stale"] = json.loads(row["fence_json"]) != current
+        result["current_policy_id"] = current["policy_id"]
         return result
 
     def list(self, chat_id):
@@ -244,6 +245,21 @@ class NoiseReport:
         row = conn.execute("SELECT * FROM identity").fetchone()
         if row is None or tuple(row) != (self.job_id, fence_id(self.fence), ANALYSIS_VERSION):
             raise UserError("Отчёт анализа несовместим или повреждён.")
+
+    def digest(self, check=lambda: None):
+        report_path(self.path.parents[2], self.job_id)
+        if self.path.stat().st_size > 128 * 1024**2:
+            raise UserError("Отчёт анализа несовместим или повреждён.")
+        result, total = hashlib.sha256(), 0
+        with self.path.open("rb") as stream:
+            while batch := stream.read(1024**2):
+                check()
+                total += len(batch)
+                if total > 128 * 1024**2:
+                    raise UserError("Отчёт анализа несовместим или повреждён.")
+                result.update(batch)
+        check()
+        return result.hexdigest()
 
     def add_batch(self, batch, max_forms):
         with self.connect(write=True) as conn:

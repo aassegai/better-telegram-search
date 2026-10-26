@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from telegram_search.indexing.noise_policy import NoiseDraftConflict
 from telegram_search.search.chunking.noise.contracts import AnalysisOptions
 from telegram_search.storage.contention import database_busy
 
@@ -21,11 +22,24 @@ class StartNoiseAnalysis(BaseModel):
     time_limit_seconds: int = Field(default=300, strict=True, ge=1, le=3600)
 
 
+class DraftRevision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    revision: int = Field(strict=True, ge=0, le=2**31 - 1)
+
+
+class DraftOverrides(DraftRevision):
+    overrides: dict[Annotated[str, Field(min_length=1, max_length=64)], Literal["keep", "omit"]] = (
+        Field(max_length=1000)
+    )
+
+
 def invoke(action):
     try:
         return action()
     except KeyError:
         raise HTTPException(404, "Диалог или анализ не найден.") from None
+    except NoiseDraftConflict as exc:
+        raise HTTPException(409, str(exc)) from None
     except sqlite3.Error as exc:
         if database_busy(exc):
             raise HTTPException(
@@ -92,3 +106,27 @@ def analysis_families(
             chat_id, job_id, kind="families", offset=offset, limit=limit
         )
     )
+
+
+@router.get("/{job_id}/draft")
+def draft_metadata(chat_id: ChatId, job_id: JobId, request: Request):
+    return invoke(lambda: request.app.state.noise_policies.metadata(chat_id, job_id))
+
+
+@router.patch("/{job_id}/draft")
+def save_draft(chat_id: ChatId, job_id: JobId, body: DraftOverrides, request: Request):
+    return invoke(
+        lambda: request.app.state.noise_policies.save_overrides(
+            chat_id, job_id, body.revision, body.overrides
+        )
+    )
+
+
+@router.post("/{job_id}/preview")
+def preview_draft(chat_id: ChatId, job_id: JobId, body: DraftRevision, request: Request):
+    return invoke(lambda: request.app.state.noise_policies.preview(chat_id, job_id, body.revision))
+
+
+@router.post("/{job_id}/apply")
+def apply_draft(chat_id: ChatId, job_id: JobId, body: DraftRevision, request: Request):
+    return invoke(lambda: request.app.state.noise_policies.apply(chat_id, job_id, body.revision))

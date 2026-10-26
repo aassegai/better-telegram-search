@@ -90,3 +90,59 @@ def test_cancel_remains_available_during_vector_maintenance(client, tmp_path):
     finally:
         client.app.state.vector_maintenance = maintenance
         release.set()
+
+
+def test_draft_api_override_preview_and_explicit_apply_require_session_and_revision(
+    client, tmp_path
+):
+    from test_noise_analysis import start_ready
+
+    state = client.app.state
+    chat = load(
+        state.importer, export(tmp_path / "policy", [message(text="бял"), message(2, "сука")])
+    )["chat_id"]
+    job_id = start_ready(state.noise_analyses, chat)["id"]
+    route = f"/api/chats/{chat}/noise-analyses/{job_id}"
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    assert client.get(route + "/draft").json()["revision"] == 0
+    assert client.post(route + "/apply", json={"revision": 0}).status_code == 403
+    assert (
+        client.patch(
+            route + "/draft", json={"revision": 0, "overrides": {"бял": "omit"}}
+        ).status_code
+        == 403
+    )
+    for body in (
+        {"revision": True},
+        {"revision": -1},
+        {"revision": 0, "report_path": "/tmp/noise"},
+    ):
+        assert client.post(route + "/preview", json=body, headers=headers).status_code == 422
+    assert (
+        client.patch(
+            route + "/draft", json={"revision": 0, "overrides": {"бял": "review"}}, headers=headers
+        ).status_code
+        == 422
+    )
+    result = client.patch(
+        route + "/draft",
+        json={"revision": 0, "overrides": {"бял": "omit", "сука": "keep"}},
+        headers=headers,
+    )
+    assert result.status_code == 200 and result.json()["revision"] == 1
+    assert client.post(route + "/preview", json={"revision": 0}, headers=headers).status_code == 409
+    preview = client.post(route + "/preview", json={"revision": 1}, headers=headers).json()
+    result = client.post(route + "/apply", json={"revision": 1}, headers=headers)
+    assert result.status_code == 200 and result.json()["policy_id"] == preview["policy_id"]
+    assert client.post(route + "/apply", json={"revision": 1}, headers=headers).json()[
+        "already_applied"
+    ]
+    assert (
+        client.post(
+            route + "/apply",
+            json={"revision": 1},
+            headers={**headers, "Origin": "https://untrusted.test"},
+        ).status_code
+        == 403
+    )
+    assert client.get(f"/api/chats/other/noise-analyses/{job_id}/draft").status_code == 404
