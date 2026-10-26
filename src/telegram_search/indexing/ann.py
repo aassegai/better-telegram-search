@@ -53,6 +53,10 @@ class AnnIndexService:
             entries = []
             for entry in self.entries.values():
                 value = dict(entry)
+                if entry["space_id"] in self.forced and (
+                    self.current is None or self.current.space != entry["space_id"]
+                ):
+                    value.update(state="queued", error=None)
                 value["elapsed_seconds"] = round(
                     now - self.current.started
                     if self.current and self.current.space == entry["space_id"]

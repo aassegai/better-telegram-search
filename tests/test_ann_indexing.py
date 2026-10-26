@@ -69,6 +69,7 @@ def test_native_background_prepare_and_restart_adopt_existing_index(archive, db)
     assert not service.status()["enabled"]
     assert service.status()["entries"][0]["state"] == "not_prepared"
     service.prepare()
+    assert service.status()["entries"][0]["state"] == "queued"
     service.start()
     wait_until(lambda: ready(service))
     first = service.status()["entries"][0]

@@ -136,6 +136,33 @@ it can be prepared again. New settings need no SQL schema migration. Probe and
 partition changes invalidate search snapshots; CPU/RAM/build scheduling changes
 preserve them.
 
+## Interface
+
+Each search tab stores its own **More complete · full search** / **Faster · ANN**
+choice. New tabs default to full search. Browsing, exact phrases and keyword-only
+text/OCR disable the control with an explanation. Image-description retrieval is
+semantic even in words mode, so selecting images still allows ANN. Selecting ANN
+does not prepare a model, build an index or start a search automatically.
+
+The completed result retains its effective strategy and human-readable fallback
+reason independently of edits to the next query. Restoring a saved snapshot uses
+the strategy metadata captured in that result. Native progress shows unknown
+totals and completed native calls or metadata checks, never an invented number
+of vector comparisons.
+
+Global **Performance → Search acceleration · ANN** owns automatic preparation,
+CPU/RAM limits, advanced partitions/probes/update threshold, and per-space
+preparation/retry. Settings save only edited ANN fields. Manual preparation uses
+saved settings; unsaved edits must be saved first. Status shows queued, building,
+cancelling, failed, ready or insufficient vectors. Native training progress is
+indeterminate with elapsed time. Stop disables automatic building and requests
+termination; a cancelling writer remains visible until it actually stops.
+
+Polling is independent of the main search screen, single-flight, cancellable on
+unmount and guarded against replies that predate an accepted action. The panel
+works in Russian/English and both color themes. Its current partition/probe
+defaults remain preliminary until the real-embedding comparison below.
+
 Lance does not expose the internal number of distance calculations or vectors
 read through this API. After a native attempt, aggregate `vectors_read` and
 `vectors_scored` are therefore `null`, including when a later branch uses exact.

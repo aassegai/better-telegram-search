@@ -1,5 +1,6 @@
 import { t, uiLocale } from './i18n';
 import type { SearchJobStatus } from './types';
+import { RetrievalSummary } from './RetrievalStrategy';
 
 const phases: Record<string, string> = {
   queued: 'Ожидание в очереди', scope: 'Подготовка области поиска', query: 'Подготовка запроса',
@@ -9,6 +10,8 @@ const phases: Record<string, string> = {
   ocr_words: 'Поиск в распознанном тексте', ocr_vectors: 'Сравнение распознанного текста',
   rerank_query: 'Подготовка уточнения порядка', rerank_passage: 'Уточнение порядка результатов',
   combine: 'Объединение совпадений', render: 'Подготовка выдачи',
+  text_vectors_scope: 'Проверка области текстового ANN', image_vectors_scope: 'Проверка области ANN изображений',
+  ocr_vectors_scope: 'Проверка области ANN распознанного текста',
 };
 
 export default function SearchProgress({ status, onStop }: {
@@ -26,10 +29,13 @@ export default function SearchProgress({ status, onStop }: {
     {status && <div className="search-progress-measurements">
       {status.total != null && <span>{status.completed.toLocaleString(uiLocale())} / {status.total.toLocaleString(uiLocale())}
         {status.unit === 'vectors' ? t(' сравнений') : status.unit === 'texts' ? t(' текстов') : t(' сообщений')}</span>}
+      {status.total == null && status.unit === 'native_queries' && <span>{t('Завершено вызовов ANN: {p0}', { p0: status.completed })}</span>}
+      {status.total == null && status.unit === 'ids' && <span>{t('Проверено записей: {p0}', { p0: status.completed.toLocaleString(uiLocale()) })}</span>}
       <span>{t('Прошло {p0} с', { p0: Math.floor(status.elapsed_seconds) })}</span>
       {status.rate != null && <span>{t('{p0} в секунду', { p0: status.rate.toLocaleString(uiLocale(), { maximumFractionDigits: 1 }) })}</span>}
       {status.eta_seconds != null && <span>{t('До конца этапа: около {p0} с', { p0: Math.ceil(status.eta_seconds) })}</span>}
       {status.queue_position != null && <span>{t('Место в очереди: {p0}', { p0: status.queue_position })}</span>}
     </div>}
+    <RetrievalSummary info={status} />
   </section>;
 }

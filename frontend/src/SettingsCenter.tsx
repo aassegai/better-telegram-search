@@ -3,6 +3,7 @@ import { api } from './api';
 import { t } from './i18n';
 import type { Chat, MediaStatus, SemanticStatus } from './types';
 import ResourcePanel from './ResourcePanel';
+import AnnPanel from './AnnPanel';
 import DevicePanel from './DevicePanel';
 import ChatPerformancePanel from './ChatPerformancePanel';
 import SemanticPanel from './SemanticPanel';
@@ -51,6 +52,7 @@ export default function SettingsCenter({ section, onSection, chats, scope, onSco
           </select></label>
           {scope ? <ChatPerformancePanel key={scope} chatId={scope} /> : <>
             <ResourcePanel />
+            <AnnPanel />
             <p className="baseline-note">{t('Перед сменой устройств приостановите индексацию текста и медиа. Индекс можно продолжить на другом устройстве.')}</p>
             <DevicePanel model="e5" onChange={async current => { const value = await api<SemanticStatus>('/api/semantic'); if (current()) onSemantic(value); }} />
             {(['clip', 'ocr'] as const).map(model => <DevicePanel key={model} model={model} onChange={async current => { const value = await api<MediaStatus>('/api/media-index'); if (current()) onMedia(value); }} />)}

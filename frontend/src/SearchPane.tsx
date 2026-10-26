@@ -9,11 +9,12 @@ import SearchSettingsPanel from './SearchSettingsPanel';
 import type { SearchSettings } from './SearchSettingsPanel';
 import FavoriteButton from './FavoriteButton';
 import SearchProgress from './SearchProgress';
+import { RetrievalChoice, RetrievalSummary } from './RetrievalStrategy';
 import Icon from './Icon';
 import DateField from './DateField';
 import ImageViewer from './ImageViewer';
 import type { OpenImage } from './ImageViewer';
-import type { Chat, Hit, MediaStatus, Message, RestoredSearch, SearchTab, TabResult, SearchIntent, SearchPage, SearchJobStatus, SearchModality, SemanticStatus } from './types';
+import type { Chat, Hit, MediaStatus, Message, RestoredSearch, RetrievalInfo, SearchTab, TabResult, SearchIntent, SearchPage, SearchJobStatus, SearchModality, SemanticStatus } from './types';
 
 export type SearchPaneHandle = {
   setScope: (scope: string[] | null) => void;
@@ -99,6 +100,7 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
   const [excludeDeleted, setExcludeDeleted] = useState(initial.exclude_deleted);
   const [mode, setMode] = useState(initial.mode);
   const [effectiveMode, setEffectiveMode] = useState('words');
+  const [retrieval, setRetrieval] = useState<RetrievalInfo | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [reranked, setReranked] = useState(false);
   const [modalities, setModalities] = useState<SearchModality[]>(initial.modalities);
@@ -324,6 +326,8 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
     setSearchId(result.job_id); setNextOffset(result.next_offset ?? null); setBrowseCursor(result.browse_cursor ?? null);
     setHits(result.results); setHasMore(result.has_more); setSubmitted(spec.query); setSubmittedIntent(result.spec ?? spec);
     setSubmittedLimit(result.limit ?? 20); setEffectiveMode(result.effective_mode);
+    setRetrieval({ requested_strategy: result.requested_strategy, effective_strategy: result.effective_strategy,
+      fallback_reasons: [...(result.fallback_reasons ?? [])] });
     setWarnings(result.warnings ?? []); setReranked(Boolean(result.rerank_applied));
     setSearchFilters(searchParameters(spec)); setSubmittedModalities([...spec.modalities]);
     setSavedHistoryId(result.history_id ?? null); setFavorite(Boolean(result.favorite));
@@ -520,6 +524,9 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
   const messageCount = chats.reduce((sum, chat) => sum + chat.messages, 0);
   const photoCount = chats.reduce((sum, chat) => sum + chat.photos, 0);
   const onlyImages = effectiveMode !== 'browse' && submittedModalities.length === 1 && submittedModalities[0] === 'images';
+  const retrievalDisabled = !query.trim() ? 'Просмотр сообщений не использует ANN.' : exact
+    ? 'Точная фраза не использует ANN.' : !modalities.length || (mode === 'words' && !modalities.includes('images'))
+      ? 'Поиск только по словам не использует ANN.' : null;
   if (!active) return <div id={`search-pane-${tab.id}`} role="tabpanel" aria-labelledby={`search-tab-${tab.id}`} hidden />;
   if (transitioning || checkedActivation !== activation) return <div className="content" role="status">{t('Загрузка вкладки…')}</div>;
   return <>
@@ -537,6 +544,7 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
             <DateField label="По дату (UTC)" value={to} onChange={setTo} />
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
           </div>
+          <RetrievalChoice value={strategy} onChange={setStrategy} disabledReason={retrievalDisabled} busy={busy} id={`retrieval-hint-${tab.id}`} />
           <ForwardFilter chatIds={selected} selected={forwardedFrom} onChange={setForwardedFrom} excludeDeleted={excludeDeleted} version={authorsVersion} disabled={busy} />
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />{t("Точная фраза")}</label>
             <label><input type="checkbox" checked={excludeDeleted} onChange={event => setExcludeDeleted(event.target.checked)} />{t('Скрыть удалённые в Telegram')}</label>
@@ -581,6 +589,7 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
           <div className="results-heading"><h2>{hits.length ? t(effectiveMode === 'browse' ? 'Найдено сообщений: {p0}{p1}' : 'Найдено фрагментов: {p0}{p1}', { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{effectiveMode === 'browse' ? t('Просмотр сообщений') : onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл') : effectiveMode === 'meaning' ? t('По смыслу') : t('По словам')}</span></div>
           <div className="submitted-search-actions"><p className="submitted-search">{submitted ? t('Результаты запроса: {p0}', { p0: submitted }) : t('Сообщения по выполненным фильтрам')}</p>
             {savedSnapshotId && <FavoriteButton selected={favorite} disabled={favoriteBusy || busy} onClick={() => void toggleFavorite()} />}</div>
+          <RetrievalSummary info={retrieval} />
           {!hits.length && <div className="no-results">{effectiveMode === 'browse' ? t('По выбранным фильтрам сообщений нет. Измените фильтры и нажмите «Показать сообщения».') : <>{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</>}</div>}
           <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
             <div className="result-header"><span><Icon name="archive" size={18} />{hit.chat_name}</span><small>{t('Результат #{p0}', { p0: index + 1 })}</small></div>

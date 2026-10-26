@@ -44,7 +44,8 @@ export default function SearchHistoryDialog({ onClose, onRestore }: {
         <FavoriteButton selected={entry.favorite} disabled={op.busy} onClick={() => favorite(entry)} /></div>
       <time dateTime={new Date(entry.completed_at * 1000).toISOString()}>{new Date(entry.completed_at * 1000).toLocaleString(uiLocale())}</time>
       <small>{entry.spec.scope.mode === 'all' ? t('Все диалоги') : t('Выбрано диалогов: {p0}', { p0: entry.spec.scope.chat_ids?.length ?? 0 })}
-        {' · '}{entry.spec.query ? t(entry.spec.mode === 'words' ? 'По словам' : entry.spec.mode === 'meaning' ? 'По смыслу' : 'Слова и смысл') : t('Просмотр сообщений')}</small>
+        {' · '}{entry.spec.query ? t(entry.spec.mode === 'words' ? 'По словам' : entry.spec.mode === 'meaning' ? 'По смыслу' : 'Слова и смысл') : t('Просмотр сообщений')}
+        {entry.spec.query && !entry.spec.exact_phrase && (entry.spec.mode !== 'words' || entry.spec.modalities.includes('images')) && <> · {entry.spec.strategy === 'ann' ? 'ANN' : t('Полный поиск')}</>}</small>
       {!entry.cache_available && <p className="warning-note">{t('Сохранённая выдача недоступна. Параметры и избранное сохранены; повторите поиск.')}</p>}
       <div className="dialog-actions">
         <button type="button" className="secondary" disabled={op.busy} onClick={() => restore(entry.id, false)}>{t('Открыть поиск')}</button>

@@ -10,7 +10,11 @@ export type SearchIntent = {
   modalities: SearchModality[]; strategy?: 'exact' | 'ann'; sort?: 'newest' | 'oldest';
   page_size?: number; chunk_size?: number;
 };
-export type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
+export type RetrievalInfo = {
+  requested_strategy?: 'exact' | 'ann'; effective_strategy?: 'none' | 'exact' | 'ann' | 'mixed';
+  fallback_reasons?: string[];
+};
+export type SearchPage = RetrievalInfo & { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
   rerank_applied?: boolean; limit: number; job_id: string; browse_cursor?: string | null;
   next_offset?: number | null; cached_results?: number; spec?: SearchIntent;
   history_id?: string | null; snapshot_id?: string; completed_at?: number; favorite?: boolean };
@@ -29,7 +33,7 @@ export type SearchTab = {
 };
 export type TabList = { tabs: SearchTab[]; active_tab_id: string | null; capacity: number };
 export type TabResult = { entry: SearchSnapshot | null; result: SearchPage | null };
-export type SearchJobStatus = {
+export type SearchJobStatus = RetrievalInfo & {
   job_id: string; state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
   phase: string; completed: number; total: number | null; unit: string;
   elapsed_seconds: number; rate: number | null; eta_seconds: number | null;
