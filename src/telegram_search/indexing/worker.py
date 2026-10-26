@@ -13,6 +13,7 @@ from telegram_search.search.chunking.policy import LEGACY_POLICY_ID, ChunkPolicy
 from telegram_search.search.chunks import ChunkBuilder, SourceMessage
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import normalize_text
+from telegram_search.storage.contention import database_busy
 
 
 class WorkInterrupted(Exception):
@@ -27,7 +28,15 @@ class SegmentWorker:
     """Durable per-day staging, idempotent vector batches and generation publication."""
 
     def __init__(
-        self, db, encoder, vectors, lifecycle_lock, *, batch_size=4, should_stop=lambda: False
+        self,
+        db,
+        encoder,
+        vectors,
+        lifecycle_lock,
+        *,
+        batch_size=4,
+        should_stop=lambda: False,
+        on_claim=lambda: None,
     ):
         self.db = db
         self.encoder = encoder
@@ -36,6 +45,7 @@ class SegmentWorker:
         self.batch_size = batch_size
         self.default_batch = batch_size
         self.should_stop = should_stop
+        self.on_claim = on_claim
         self.builder = ChunkBuilder(
             encoder.tokenizer,
             passage_prefix=encoder.spec.manifest.get("passage_prefix", "passage: "),
@@ -354,6 +364,7 @@ class SegmentWorker:
                     "embedding_seconds=0 WHERE id=?",
                     (work_id,),
                 )
+        self.on_claim()
         prefetch = BatchPrefetch()
         try:
             if work["stage"] == "building":
@@ -500,6 +511,10 @@ class SegmentWorker:
                     (work_id,),
                 )
         except Exception as exc:
+            if database_busy(exc):
+                # The service requeues this attempt with its existing checkpoint;
+                # transient SQLite contention is not a failed GPU/model batch.
+                raise
             error = (
                 str(exc)
                 if isinstance(exc, UserError)

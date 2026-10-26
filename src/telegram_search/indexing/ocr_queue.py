@@ -41,19 +41,66 @@ class OcrQueue:
         exclude=(),
         with_configuration=False,
     ):
+        # Version seeding is a separate one-time transaction. Ordinary candidate
+        # selection (joins, exclusions and ordering) must not reserve the writer.
         with self.db.connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
             self.activate(conn, version)
-            if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
-                return (
-                    (
-                        ([], self.db.settings.ocr_region_batch_size, limit)
-                        if with_configuration
-                        else ([], self.db.settings.ocr_region_batch_size)
+        values = []
+        region_batch, requested = self.db.settings.ocr_region_batch_size, limit
+        for _ in range(4):
+            rows, region_batch, requested, chat_id = self._candidates(
+                version, limit, configured=configured, exclude=exclude
+            )
+            if not rows:
+                break
+            token = uuid.uuid4().hex
+            with self.db.connect() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                state = conn.execute(
+                    "SELECT m.ocr_paused,v.version FROM media_state m "
+                    "JOIN ocr_queue_version v ON v.id=m.id WHERE m.id=1"
+                ).fetchone()
+                if not state or state[0] or state[1] != version:
+                    break
+                if configured:
+                    current = conn.execute(
+                        "SELECT ocr_batch,ocr_region_batch FROM chats WHERE id=?", (chat_id,)
+                    ).fetchone()
+                    if not current:
+                        continue
+                    if (
+                        current[0]
+                        or max(self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers)
+                    ) != requested or (
+                        current[1] or self.db.settings.ocr_region_batch_size
+                    ) != region_batch:
+                        continue
+                scope = " AND c.id=?" if configured else ""
+                parameters = (chat_id,) if configured else ()
+                for row in rows:
+                    # Recheck only the bounded candidate set under the writer.
+                    # Another lane, a pause or author filter may have won meanwhile.
+                    cursor = conn.execute(
+                        "UPDATE ocr_work SET state='running',attempts=attempts+1,claim_token=? "
+                        "WHERE version=? AND sha256=? AND state='pending' "
+                        "AND EXISTS (SELECT 1 FROM indexable_media_refs r "
+                        "JOIN chats c ON c.id=r.chat_id WHERE r.sha256=ocr_work.sha256 "
+                        "AND r.status='ready' AND r.kind='photo' AND c.ocr_paused=0" + scope + ")",
+                        (token, version, row[0], *parameters),
                     )
-                    if configured
-                    else []
-                )
+                    if cursor.rowcount:
+                        values.append((row[0], token) if with_tokens else row[0])
+            if values:
+                break
+        if configured and with_configuration:
+            return values, region_batch, requested
+        return (values, region_batch) if configured else values
+
+    def _candidates(self, version, limit, *, configured, exclude):
+        region_batch, requested, chat_id = self.db.settings.ocr_region_batch_size, limit, None
+        with self.db.connect() as conn:
+            if conn.execute("SELECT ocr_paused FROM media_state WHERE id=1").fetchone()[0]:
+                return [], region_batch, requested, chat_id
             scope, parameters = "", ()
             exclusion = (
                 (" AND w.sha256 NOT IN (" + ",".join("?" for _ in exclude) + ")") if exclude else ""
@@ -70,11 +117,7 @@ class OcrQueue:
                     (version, *exclude),
                 ).fetchone()
                 if not chat:
-                    return (
-                        ([], self.db.settings.ocr_region_batch_size, limit)
-                        if with_configuration
-                        else ([], self.db.settings.ocr_region_batch_size)
-                    )
+                    return [], region_batch, requested, chat_id
                 requested = chat["ocr_batch"] or max(
                     self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers
                 )
@@ -84,6 +127,7 @@ class OcrQueue:
                     or max(self.db.settings.ocr_batch_size, self.db.settings.ocr_cpu_workers),
                 )
                 region_batch = chat["ocr_region_batch"] or self.db.settings.ocr_region_batch_size
+                chat_id = chat["id"]
                 scope, parameters = " AND c.id=?", (chat["id"],)
             rows = conn.execute(
                 "SELECT w.sha256 FROM ocr_work w WHERE w.version=? AND w.state='pending' "
@@ -92,16 +136,7 @@ class OcrQueue:
                 "AND c.ocr_paused=0" + scope + ")" + exclusion + " ORDER BY w.sha256 LIMIT ?",
                 (version, *parameters, *exclude, min(4, max(1, limit))),
             ).fetchall()
-            token = uuid.uuid4().hex
-            conn.executemany(
-                "UPDATE ocr_work SET state='running',attempts=attempts+1,claim_token=? "
-                "WHERE version=? AND sha256=?",
-                ((token, version, row[0]) for row in rows),
-            )
-        values = [(row[0], token) if with_tokens else row[0] for row in rows]
-        if configured and with_configuration:
-            return values, region_batch, requested
-        return (values, region_batch) if configured else values
+        return rows, region_batch, requested, chat_id
 
     def release(self, version, claims):
         with self.db.connect() as conn:

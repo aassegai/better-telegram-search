@@ -53,10 +53,15 @@ export type Hit = {
   matched_parts?: { message_id: number; char_start: number; char_end: number }[];
 };
 
+export type IndexWorkerHealth = {
+  enabled: boolean; alive: boolean; stopped: boolean; phase: string;
+  waiting_reason: 'database' | null; error: string | null;
+  database_wait_seconds: number; retry_in_seconds: number; heartbeat_age_seconds: number;
+};
 export type IndexEstimate = {
   lower_seconds: number | null; upper_seconds: number | null;
   eta_samples?: number; measuring?: boolean; projected?: boolean; paused?: boolean; stale?: boolean;
-  waiting_reason?: 'memory' | null;
+  waiting_reason?: 'memory' | 'database' | null;
 };
 
 export type MediaStatus = {
@@ -86,6 +91,7 @@ export type MediaStatus = {
 };
 
 export type SemanticStatus = {
+  worker?: IndexWorkerHealth;
   estimate?: IndexEstimate | null;
   batch_size?: number;
   runtime_installed: boolean; dense_available: boolean; enabled: number; paused: number;

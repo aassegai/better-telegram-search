@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,6 +27,17 @@ class Database:
     def __init__(self, workspace: Path):
         self.workspace = workspace.resolve()
         self.path = self.workspace / "data" / "app.sqlite"
+        self._timeouts = threading.local()
+
+    @contextmanager
+    def connection_timeout(self, seconds):
+        """Bound background lock waits without changing API/CLI connection policy."""
+        previous = getattr(self._timeouts, "seconds", 30)
+        self._timeouts.seconds = seconds
+        try:
+            yield
+        finally:
+            self._timeouts.seconds = previous
 
     def initialize(self) -> None:
         if repository_warning(self.workspace):
@@ -67,7 +79,7 @@ class Database:
 
     @contextmanager
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=30)
+        conn = sqlite3.connect(self.path, timeout=getattr(self._timeouts, "seconds", 30))
         conn.row_factory = sqlite3.Row
         from telegram_search.search.ocr_words import ocr_grams
 

@@ -2,10 +2,13 @@
 
 import hashlib
 import io
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 
+import pytest
 from conftest import export, load, message
 from PIL import Image
 from test_media import services
@@ -57,6 +60,64 @@ def test_atomic_claims_recovery_cached_results_and_retry(db, importer, tmp_path)
             conn.execute("SELECT text FROM ocr_cache WHERE state='ready'").fetchone()[0]
             == "checkpoint"
         )
+
+
+def test_configured_selection_allows_another_sqlite_writer(db, importer, tmp_path, monkeypatch):
+    photos(importer, tmp_path / "source", 2)
+    queue = OcrQueue(db)
+    original = db.connect
+    observations = []
+
+    @contextmanager
+    def traced():
+        with original() as conn:
+
+            def trace(sql):
+                if "SELECT c.id,c.ocr_batch" in sql:
+                    error = None
+                    try:
+                        with sqlite3.connect(db.path, timeout=0.05) as writer:
+                            writer.execute("BEGIN IMMEDIATE")
+                            writer.execute("UPDATE semantic_state SET error=error")
+                    except sqlite3.OperationalError as exc:
+                        error = exc.sqlite_errorcode
+                    observations.append((conn.in_transaction, error))
+
+            conn.set_trace_callback(trace)
+            yield conn
+
+    monkeypatch.setattr(db, "connect", traced)
+    assert queue.claim("v1", configured=True)[0]
+    assert observations == [(False, None)]
+
+
+@pytest.mark.parametrize("change", ["global_pause", "chat_pause", "author", "version"])
+def test_claim_revalidates_candidates_after_selection(db, importer, tmp_path, monkeypatch, change):
+    chat = photos(importer, tmp_path / "source", 2)
+    queue = OcrQueue(db)
+    original = queue._candidates
+
+    def candidates(*args, **kwargs):
+        selected = original(*args, **kwargs)
+        with db.connect() as conn:
+            if change == "global_pause":
+                conn.execute("UPDATE media_state SET ocr_paused=1")
+            elif change == "chat_pause":
+                conn.execute("UPDATE chats SET ocr_paused=1 WHERE id=?", (chat,))
+            elif change == "author":
+                conn.execute(
+                    "INSERT OR IGNORE INTO index_excluded_authors "
+                    "SELECT chat_id,author_id FROM messages WHERE chat_id=?",
+                    (chat,),
+                )
+            else:
+                queue.activate(conn, "v2")
+        return selected
+
+    monkeypatch.setattr(queue, "_candidates", candidates)
+    assert not queue.claim("v1", configured=True)[0]
+    with db.connect() as conn:
+        assert conn.execute("SELECT SUM(attempts) FROM ocr_work").fetchone()[0] == 0
 
 
 def test_queue_skips_paused_deleted_and_stale_references(db, importer, tmp_path):

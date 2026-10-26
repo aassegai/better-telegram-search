@@ -777,6 +777,11 @@ def create_app(
             conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
         return {"deleted": True, "source_files_preserved": True}
 
+    @app.get("/api/indexing/health")
+    async def indexing_health():
+        # No lifecycle acquisition, SQLite query, model probing or filesystem IO.
+        return {"semantic": app.state.semantic.worker_status()}
+
     @app.get("/api/doctor")
     def diagnostics():
         if verification_nonce and app.state.update_verifying:

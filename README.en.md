@@ -151,3 +151,5 @@ Remaining time is a range based on recent batches; see [how estimates work](docs
 **Search results** on the main search screen control the number of results and the number of
 messages per result fragment. Keep your export folder: the app uses its original
 photos.
+
+If indexing stops, see [SQLite wait diagnostics and recovery](docs/sqlite-indexing-recovery.md).

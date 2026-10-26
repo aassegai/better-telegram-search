@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -8,12 +9,16 @@ from telegram_search.config.model_registry import model_spec, registry
 from telegram_search.indexing.estimates import Estimates
 from telegram_search.indexing.forecast import paused_forecast
 from telegram_search.indexing.worker import SegmentWorker
+from telegram_search.indexing.worker_health import WorkerHealth
 from telegram_search.inference.resources import configure_gpu_load
 from telegram_search.search.execution import checkpoint, search_lock
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 from telegram_search.storage.chunking import reset_for_rebuild
+from telegram_search.storage.contention import database_busy
 from telegram_search.storage.generations import invalidate_segments
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticService:
@@ -30,6 +35,11 @@ class SemanticService:
         self.wake = threading.Event()
         self.preparation = None
         self.background = None
+        self.background_enabled = start_background
+        self.health = WorkerHealth()
+        self._current_work = None
+        self._busy_recovery = None
+        self._failed_result = None
         self.last_used = time.monotonic()
         self.estimates = Estimates(db)
         self.query_cache = OrderedDict()
@@ -53,11 +63,29 @@ class SemanticService:
                 self.start_background()
 
     def start_background(self):
-        if self.available and self.background is None:
-            self.background = threading.Thread(
-                target=self._loop, name="semantic-index", daemon=True
-            )
-            self.background.start()
+        with self.lock:
+            self.background_enabled = True
+            if (
+                self.available
+                and not self.stop.is_set()
+                and (self.background is None or not self.background.is_alive())
+            ):
+                # An explicitly restarted dead thread may have left its own
+                # claimed attempt running. Recover only that attempt, not work
+                # invalidated/retried by another operation in the meantime.
+                self._busy_recovery = self._current_work or self._busy_recovery
+                self.health.update("starting")
+                self.background = threading.Thread(
+                    target=self._loop, name="semantic-index", daemon=True
+                )
+                self.background.start()
+
+    def worker_status(self):
+        return self.health.snapshot(
+            enabled=self.background_enabled and self.available,
+            thread=self.background,
+            stopped=self.stop.is_set(),
+        )
 
     def _new_encoder(self, profile, settings=None):
         from telegram_search.inference.bundles import BundleStore
@@ -259,6 +287,8 @@ class SemanticService:
             else:
                 raise UserError("Неизвестное действие semantic index.")
         self.wake.set()
+        if action in {"resume", "retry"} and self.background_enabled:
+            self.start_background()
         return self.status()
 
     def encode_query(self, query):
@@ -335,10 +365,15 @@ class SemanticService:
                 ).fetchone()
                 is not None
             )
+        worker = self.worker_status()
+        worker_blocked = worker["waiting_reason"] == "database" or (
+            worker["enabled"] and not worker["alive"] and not worker["stopped"]
+        )
         estimate = (
             self.estimates.text_forecast(self.encoder, chat_id)
             if ready != total
             and not blocked
+            and not worker_blocked
             and any(work["state"] in {"pending", "running"} for work in works)
             else None
         )
@@ -355,6 +390,7 @@ class SemanticService:
             "ready_segments": ready,
             "pending_segments": total - ready,
             "works": works,
+            "worker": worker,
             "index_error": failed[0] if failed else None,
             "estimate": estimate,
             "estimated_remaining_seconds": 0.0
@@ -377,97 +413,160 @@ class SemanticService:
     def cleanup(self, *, compact=False):
         if not self.available:
             return
-        with self.lock, self.db.connect() as conn:
-            spaces = [
-                dict(row) for row in conn.execute("SELECT id,dimension FROM embedding_spaces")
-            ]
+        with self.lock:
+            with self.db.connect() as conn:
+                spaces = [
+                    dict(row) for row in conn.execute("SELECT id,dimension FROM embedding_spaces")
+                ]
+                deletions = conn.execute(
+                    "SELECT chat_id,created_at FROM vector_deletions LIMIT 64"
+                ).fetchall()
+                segments = conn.execute("SELECT * FROM vector_segment_cleanup LIMIT 64").fetchall()
             if not spaces:
                 return
             vectors = self._vector_store()
-            for row in conn.execute("SELECT chat_id FROM vector_deletions").fetchall():
+            # Native Lance work can be slow. Acknowledge each item in a separate
+            # short transaction so no SQLite writer is held during the next IO.
+            for row in deletions:
                 vectors.delete_chat(spaces, row["chat_id"])
-                conn.execute("DELETE FROM vector_deletions WHERE chat_id=?", (row["chat_id"],))
-            for row in conn.execute("SELECT * FROM vector_segment_cleanup").fetchall():
+                with self.db.connect() as conn:
+                    conn.execute(
+                        "DELETE FROM vector_deletions WHERE chat_id=? AND created_at=?",
+                        (row["chat_id"], row["created_at"]),
+                    )
+            for row in segments:
                 vectors.prune_segment(
                     spaces, row["chat_id"], row["utc_day"], row["keep_space_id"], row["generation"]
                 )
-                conn.execute(
-                    "DELETE FROM vector_segment_cleanup WHERE chat_id=? AND utc_day=?",
-                    (row["chat_id"], row["utc_day"]),
-                )
+                with self.db.connect() as conn:
+                    conn.execute(
+                        "DELETE FROM vector_segment_cleanup WHERE chat_id=? AND utc_day=? "
+                        "AND keep_space_id=? AND generation=?",
+                        (row["chat_id"], row["utc_day"], row["keep_space_id"], row["generation"]),
+                    )
             if compact:
                 vectors.compact(spaces)
 
-    def _loop(self):
-        while not self.stop.is_set():
-            try:
-                self.cleanup()
-                worker = None
-                with self.lock:
-                    encoder = self.encoder
-                    if encoder is not None:
-                        with self.db.connect() as conn:
-                            state = conn.execute(
-                                "SELECT enabled,paused FROM semantic_state WHERE id=1"
-                            ).fetchone()
-                            work = conn.execute(
-                                "SELECT w.id FROM index_work w JOIN chats c ON c.id=w.chat_id "
-                                "WHERE w.state='pending' AND c.text_paused=0 "
-                                "AND w.available_at<=CAST(strftime('%s','now') AS INTEGER) "
-                                "ORDER BY w.created_at,w.id LIMIT 1"
-                            ).fetchone()
-                        if (
-                            state[0]
-                            and not state[1]
-                            and work
-                            and not self.preparing_encoder.is_set()
-                        ):
-                            worker = self._worker(encoder)
-                if encoder:
-                    if worker:
-                        result = worker.run(work[0])
-                        if result["state"] == "failed":
-                            # A broken model/device must not fail every remaining
-                            # day before the user can see and retry the first error.
-                            with self.lock, self.db.connect() as conn:
-                                current = conn.execute(
-                                    "SELECT 1 FROM index_work w JOIN index_segments s "
-                                    "ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
-                                    "JOIN chats c ON c.id=w.chat_id WHERE w.id=? "
-                                    "AND w.state='failed' AND w.attempts=? "
-                                    "AND w.generation=? AND s.target_generation=w.generation "
-                                    "AND w.embedding_space_id=? AND c.text_paused=0",
-                                    (
-                                        result["id"],
-                                        result["attempts"],
-                                        result["generation"],
-                                        encoder.space_id,
-                                    ),
-                                ).fetchone()
-                                if self.encoder is encoder and current:
-                                    conn.execute(
-                                        "UPDATE semantic_state SET paused=1,error=? WHERE id=1",
-                                        (result["error"],),
-                                    )
-                        continue
-                    with self.lock:
-                        if self.encoder is encoder and encoder.unload_idle(
-                            query_last_used=self.last_used,
-                            idle_seconds=self.db.settings.idle_unload_seconds,
-                            index_paused=bool(state[1])
-                            and not getattr(
-                                getattr(self, "media", None), "ocr_dense_waiting", False
-                            ),
-                        ):
-                            self.query_cache.clear()
-            except Exception:
+    def _step(self):
+        self.health.update("cleanup", keep_wait=True)
+        self.cleanup()
+        worker = None
+        with self.lock:
+            encoder = self.encoder
+            if encoder is not None:
                 with self.db.connect() as conn:
-                    conn.execute(
-                        "UPDATE semantic_state SET error=? WHERE id=1",
-                        ("Не удалось обновить индекс. Повторите задачу.",),
-                    )
-            self.wake.wait(1)
-            self.wake.clear()
+                    state = conn.execute(
+                        "SELECT enabled,paused FROM semantic_state WHERE id=1"
+                    ).fetchone()
+                    work = conn.execute(
+                        "SELECT w.id,w.generation,w.attempts FROM index_work w "
+                        "JOIN chats c ON c.id=w.chat_id "
+                        "WHERE w.state='pending' AND c.text_paused=0 "
+                        "AND w.available_at<=CAST(strftime('%s','now') AS INTEGER) "
+                        "ORDER BY w.created_at,w.id LIMIT 1"
+                    ).fetchone()
+                if state[0] and not state[1] and work and not self.preparing_encoder.is_set():
+                    worker = self._worker(encoder)
+        if encoder:
+            if worker:
+                self._current_work = (work["id"], work["generation"], work["attempts"] + 1)
+                self.health.update("indexing", keep_wait=True)
+                result = worker.run(work[0])
+                self.health.update("indexing")
+                if result["state"] == "failed":
+                    self._failed_result = (encoder, result)
+                    self._pause_failed_result()
+                return True
+            with self.lock:
+                if self.encoder is encoder and encoder.unload_idle(
+                    query_last_used=self.last_used,
+                    idle_seconds=self.db.settings.idle_unload_seconds,
+                    index_paused=bool(state[1])
+                    and not getattr(getattr(self, "media", None), "ocr_dense_waiting", False),
+                ):
+                    self.query_cache.clear()
+        self.health.update("idle")
+        return False
+
+    def _pause_failed_result(self):
+        encoder, result = self._failed_result
+        with self.lock, self.db.connect() as conn:
+            current = conn.execute(
+                "SELECT 1 FROM index_work w JOIN index_segments s "
+                "ON s.chat_id=w.chat_id AND s.utc_day=w.utc_day "
+                "JOIN chats c ON c.id=w.chat_id WHERE w.id=? "
+                "AND w.state='failed' AND w.attempts=? "
+                "AND w.generation=? AND s.target_generation=w.generation "
+                "AND w.embedding_space_id=? AND c.text_paused=0",
+                (
+                    result["id"],
+                    result["attempts"],
+                    result["generation"],
+                    encoder.space_id,
+                ),
+            ).fetchone()
+            if self.encoder is encoder and current:
+                conn.execute(
+                    "UPDATE semantic_state SET paused=1,error=? WHERE id=1",
+                    (result["error"],),
+                )
+        self._failed_result = None
+
+    def _loop(self):
+        failures = 0
+        try:
+            while not self.stop.is_set():
+                self._current_work = None
+                delay = 1
+                with self.db.connection_timeout(0.25):
+                    try:
+                        if self._failed_result:
+                            self._pause_failed_result()
+                        if self._busy_recovery:
+                            with self.lock, self.db.connect() as conn:
+                                # Only our interrupted attempt; preserve its stage,
+                                # chunk checkpoint, generation and embedding space.
+                                conn.execute(
+                                    "UPDATE index_work SET state='pending',error=NULL "
+                                    "WHERE id=? AND generation=? AND attempts=? "
+                                    "AND state='running'",
+                                    self._busy_recovery,
+                                )
+                            self._busy_recovery = None
+                        worked = self._step()
+                        failures = 0
+                        if worked:
+                            continue
+                    except Exception as exc:
+                        if database_busy(exc):
+                            self._busy_recovery = self._current_work or self._busy_recovery
+                            delay = min(2, 0.25 * 2 ** min(failures, 3))
+                            failures += 1
+                            self.health.update(
+                                "waiting_database",
+                                delay=delay,
+                                error="База данных занята. Индексация продолжится автоматически.",
+                            )
+                            if failures == 1:
+                                logger.warning("Semantic indexing is waiting for SQLite")
+                        else:
+                            self.health.update(
+                                "error", error="Не удалось обновить индекс. Повторите задачу."
+                            )
+                            # Error reporting cannot require the failed resource to
+                            # be writable. Keep in-memory health if SQLite also fails.
+                            try:
+                                with self.db.connect() as conn:
+                                    conn.execute(
+                                        "UPDATE semantic_state SET error=? WHERE id=1",
+                                        ("Не удалось обновить индекс. Повторите задачу.",),
+                                    )
+                            except Exception:
+                                logger.error("Semantic indexing error could not be saved")
+                self.wake.wait(delay)
+                self.wake.clear()
+        finally:
+            self.health.update("stopped")
 
     def _worker(self, encoder):
         return SegmentWorker(
@@ -476,6 +575,7 @@ class SemanticService:
             self._vector_store(),
             self.lock,
             batch_size=self.db.settings.embedding_batch,
+            on_claim=lambda: self.health.update("indexing"),
             should_stop=lambda: (
                 self.stop.is_set() or self.preparing_encoder.is_set() or self.encoder is not encoder
             ),

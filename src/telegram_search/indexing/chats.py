@@ -240,6 +240,8 @@ class ChatIndexing:
             self.media.cleanup(compact=True)
         self.semantic.wake.set()
         self.media.wake.set()
+        if kind == "text" and action in {"resume", "retry"} and self.semantic.background_enabled:
+            self.semantic.start_background()
         return self.status(chat_id)
 
     def initialize(self, kind, **options):
