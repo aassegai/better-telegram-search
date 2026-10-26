@@ -33,7 +33,7 @@ test('memory waits explain the app threshold and stop promising an ETA', async (
     'Оценка времени недоступна: индексация ожидает памяти.',
   ]);
   await expect(images.getByText('Достигнут предел RAM: медиа ожидает освобождения памяти.')).toHaveCount(0);
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   const english = page.getByRole('region', { name: 'Images · SigLIP 2' });
   await expect(english.getByText('Waiting for RAM', { exact: true })).toBeVisible();
   await expect(english.getByText('App RAM: 6000 MiB · threshold: 4096 MiB.')).toBeVisible();
@@ -45,7 +45,7 @@ test('memory waits explain the app threshold and stop promising an ETA', async (
   await expect(english).toContainText('20 / 100');
   mode = 'waiting';
   await english.getByRole('button', { name: 'Open general settings', exact: true }).click();
-  await page.locator('.resource-settings').getByText('Shared indexing resources', { exact: true }).click();
+  await expect(page.getByLabel('Settings scope', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Media RAM threshold (MiB)', { exact: true })).toBeVisible();
 });
 
@@ -88,7 +88,7 @@ test('index ETA shows ranges, stale measurements and paused pipelines in both la
   mode = 'paused';
   await expect(text.locator('.index-eta')).toHaveText('Продолжите индексацию для оценки времени.');
   await expect(page.getByText('Вся подготовка: Продолжите индексацию для оценки времени.')).toBeVisible();
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(page.getByText('All preparation: Resume indexing to estimate the remaining time.')).toBeVisible();
   mode = 'running';
   const english = page.getByRole('region', { name: 'Text · E5' });
@@ -128,7 +128,7 @@ for (const paused of [false, true]) {
     await expect(card.getByRole('alert')).toContainText('GPU error');
     await expect(card.locator('.index-eta')).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).indexInjected)).toBeUndefined();
-    await page.getByRole('slider').press('End');
+    await page.getByRole('button', { name: 'RU', exact: true }).press('End');
     const english = page.getByRole('region', { name: 'Text · E5' });
     await expect(english).toContainText('Indexing error');
     await english.getByRole('button', { name: `Retry errors (${paused ? 1 : 723})`, exact: true }).click();
@@ -230,49 +230,58 @@ for (const recognitionFailed of [0, 5]) {
   });
 }
 
-test('matching text and image cards offer large chat-scoped batches without a paused ETA', async ({ page }) => {
+test('index cards keep progress and pause while matching batch editors belong to performance', async ({ page }) => {
   await mockIndex(page);
   await page.goto('/');
   await expect(page.getByLabel('Режим поиска')).toHaveValue('hybrid');
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
-  const text = page.getByRole('region', { name: 'Текст · E5' });
-  const images = page.getByRole('region', { name: 'Изображения · CLIP' });
-  await expect(text).toContainText('Продолжите индексацию для оценки времени.');
-  await expect(images).toContainText('Продолжите индексацию для оценки времени.');
-  for (const [card, max] of [[text, '128'], [images, '32']] as const) {
-    await expect(card.getByRole('spinbutton')).toHaveAttribute('max', max);
-    await expect(card.locator('.batch-presets button')).toHaveCount(6);
+  for (const name of ['Текст · E5', 'Изображения · CLIP']) {
+    const card = page.getByRole('region', { name, exact: true });
+    await expect(card).toContainText('Продолжите индексацию для оценки времени.');
+    await expect(card.getByRole('spinbutton')).toHaveCount(0);
     await expect(card.getByRole('button', { name: 'Продолжить индексацию' })).toBeVisible();
   }
-  const dimensions = await page.locator('.index-batch input').evaluateAll(inputs => inputs.map(input => {
+  await page.getByRole('button', { name: 'Производительность этого диалога', exact: true }).click();
+  for (const [name, max] of [['Батч текста', '128'], ['Батч изображений', '32']]) {
+    const field = page.getByRole('region', { name, exact: true });
+    await expect(field.getByRole('spinbutton')).toHaveAttribute('max', max);
+    await expect(field.locator('.batch-presets button')).toHaveCount(6);
+  }
+  const dimensions = await page.locator('.batch-field input').evaluateAll(inputs => inputs.slice(0, 2).map(input => {
     const style = getComputedStyle(input); return [style.width, style.padding, style.marginTop, style.borderColor, style.borderRadius, style.fontSize];
   }));
   expect(dimensions[0]).toEqual(dimensions[1]);
-  await page.getByRole('slider').press('End');
-  await expect(page.getByRole('region', { name: 'Text · E5' })).toContainText('Resume indexing to estimate the remaining time.');
-  await expect(page.getByRole('region', { name: 'Images · CLIP' }).getByRole('spinbutton')).toHaveAccessibleName('Batch size: Images');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
+  await expect(page.getByRole('spinbutton', { name: 'Text batch', exact: true })).toBeVisible();
+  await expect(page.getByRole('spinbutton', { name: 'Image batch', exact: true })).toBeVisible();
 });
 
-test('pending batch save disables preparation and other chat-index mutations', async ({ page }) => {
+test('pending chat batch save disables duplicate saves and batch edits', async ({ page }) => {
   await mockIndex(page);
   let release!: () => void;
-  await page.route('**/api/chats/*/index/settings', async route => {
+  let writes = 0;
+  await page.route('**/api/chats/*/performance', async route => {
+    if (route.request().method() !== 'PATCH') return route.continue();
     expect(route.request().postDataJSON()).toEqual({ embedding_batch: 64 });
-    const response = await route.fetch();
+    writes++;
+    const base = await (await page.request.get(route.request().url())).json();
     await new Promise<void>(resolve => { release = resolve; });
-    await route.fulfill({ response });
+    await route.fulfill({ json: { ...base, batch_overrides: { ...base.batch_overrides, embedding_batch: 64 }, batches: { ...base.batches, embedding_batch: 64 } } });
   });
   await page.goto('/');
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
-  const text = page.getByRole('region', { name: 'Текст · E5' });
+  await page.getByRole('button', { name: 'Производительность этого диалога', exact: true }).click();
+  const text = page.getByRole('region', { name: 'Батч текста', exact: true });
   await text.getByRole('button', { name: '64', exact: true }).click();
-  await text.getByRole('button', { name: 'Применить батч' }).click();
+  await page.getByRole('button', { name: 'Сохранить настройки диалога', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
-  await expect(page.getByLabel('Модель смыслового поиска')).toHaveCount(0);
-  await expect(text.getByRole('button', { name: 'Продолжить индексацию' })).toBeDisabled();
-  await expect(page.getByRole('region', { name: 'Изображения · CLIP' }).getByRole('spinbutton')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Сохраняем…', exact: true })).toBeDisabled();
+  await expect(text.getByRole('spinbutton')).toBeDisabled();
+  await expect(page.getByRole('region', { name: 'Батч изображений', exact: true }).getByRole('spinbutton')).toBeDisabled();
   release();
   await expect(text.getByRole('spinbutton')).toHaveValue('64');
+  await expect(page.getByRole('button', { name: 'Сохранить настройки диалога', exact: true })).toBeDisabled();
+  expect(writes).toBe(1);
 });
 
 test('OCR can pause and resume before CLIP has been prepared', async ({ page }) => {
@@ -290,51 +299,40 @@ test('OCR can pause and resume before CLIP has been prepared', async ({ page }) 
   expect(action).toBe('resume');
 });
 
-test('OCR batches validate integers and persist per chat without resuming recognition', async ({ page }) => {
-  const settings = { ocr_batch_size: 1, ocr_region_batch_size: 8 };
+test('OCR batches validate integers and persist in scoped performance without resuming recognition', async ({ page }) => {
+  const chat = (await (await page.request.get('/api/chats')).json())[0];
+  const base = await (await page.request.get(`/api/chats/${chat.id}/performance`)).json();
+  const overrides = { ...base.batch_overrides, ocr_batch_size: 1, ocr_region_batch_size: 8 };
   let saves = 0;
-  const media = { ocr_enabled: 1, ocr_paused: 1, total_photos: 100, ocr_ready: 10,
-    ocr_failed: 0, ocr_dense_ready: 0, ocr_nonempty_ready: 0, ocr_dense_available: true,
-    ocr_dense_paused: 1, photo_attachments: 120, photo_messages: 110,
-    queues: { ocr: { pending: 90, units_per_minute: 30 } } };
-  await page.route('**/api/chats/*/index', async route => {
-    const base = await (await route.fetch()).json();
-    await route.fulfill({ json: { ...base, media: { ...base.media, ...media, ...settings } } });
-  });
-  await page.route('**/api/chats/*/index/settings', async route => {
-    expect(route.request().postDataJSON()).toEqual({ ocr_batch_size: 2, ocr_region_batch_size: 16 });
-    Object.assign(settings, route.request().postDataJSON());
-    saves += 1;
-    const base = await (await page.request.get(route.request().url().replace('/settings', ''))).json();
-    await route.fulfill({ json: { ...base, media: { ...base.media, ...media, ...settings } } });
+  let controls = 0;
+  await page.route('**/api/chats/*/index/ocr/**', route => { controls++; return route.abort(); });
+  await page.route('**/api/chats/*/performance', route => {
+    if (route.request().method() === 'PATCH') {
+      expect(route.request().postDataJSON()).toEqual({ ocr_batch_size: 2, ocr_region_batch_size: 16 });
+      Object.assign(overrides, route.request().postDataJSON()); saves++;
+    }
+    return route.fulfill({ json: { ...base, batch_overrides: overrides,
+      batches: Object.fromEntries(Object.entries(overrides).map(([key, value]) => [key, value ?? base.batch_defaults[key]])) } });
   });
   await page.goto('/');
-  const open = page.getByRole('button', { name: /^Настройки индексации / }).first();
-  await open.click();
-  const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
-  await card.getByText('Батчи OCR', { exact: true }).click();
-  const images = card.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
-  const regions = card.getByRole('spinbutton', { name: 'Областей текста в батче OCR', exact: true });
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByLabel('Область настройки', { exact: true }).selectOption(chat.id);
+  const save = page.getByRole('button', { name: 'Сохранить настройки диалога', exact: true });
+  const images = page.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
+  const regions = page.getByRole('spinbutton', { name: 'Областей текста в батче OCR', exact: true });
   for (const invalid of ['0', '5', '1.5']) {
-    await images.fill(invalid);
-    await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeDisabled();
+    await images.fill(invalid); await expect(save).toBeDisabled();
   }
-  await images.fill('2');
-  await regions.fill('33');
-  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeDisabled();
-  await regions.fill('16');
-  await card.getByRole('button', { name: 'Применить батчи OCR' }).click();
-  await expect.poll(() => saves).toBe(1);
-  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toHaveCount(0);
-  await expect(card.getByRole('button', { name: 'Продолжить OCR', exact: true })).toBeVisible();
+  await images.fill('2'); await regions.fill('33');
+  await expect(save).toBeDisabled();
+  await regions.fill('16'); await save.click();
+  await expect.poll(() => saves).toBe(1); await expect(save).toBeDisabled();
+  expect(controls).toBe(0);
   await page.keyboard.press('Escape');
-  await open.click();
-  await card.getByText('Батчи OCR', { exact: true }).click();
-  await expect(images).toHaveValue('2');
-  await expect(regions).toHaveValue('16');
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await expect(images).toHaveValue('2'); await expect(regions).toHaveValue('16');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(page.getByRole('spinbutton', { name: 'Images per OCR batch', exact: true })).toHaveValue('2');
-  await expect(page.getByRole('region', { name: 'Text in images · OCR' })).toContainText('Waiting for newly recognized images.');
 });
 
 test('recognition and semantic OCR pause independently', async ({ page }) => {
@@ -365,34 +363,29 @@ test('recognition and semantic OCR pause independently', async ({ page }) => {
   await expect(card.getByRole('button', { name: 'Пауза OCR', exact: true })).toBeVisible();
 });
 
-test('late OCR batch save cannot overwrite edits in a reopened dialog', async ({ page }) => {
-  await mockIndex(page, true);
+test('late batch save cannot overwrite edits in a reopened performance dialog', async ({ page }) => {
   let release!: () => void;
-  await page.route('**/api/chats/*/index/settings', async route => {
-    const base = await (await page.request.get(route.request().url().replace('/settings', ''))).json();
+  await page.route('**/api/chats/*/performance', async route => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    const base = await (await page.request.get(route.request().url())).json();
     await new Promise<void>(resolve => { release = resolve; });
-    await route.fulfill({ json: { ...base, media: { ...base.media, ocr_batch_size: 4 } } });
+    await route.fulfill({ json: { ...base, batch_overrides: { ...base.batch_overrides, ocr_batch_size: 4 } } });
   });
   await page.goto('/');
-  const open = page.getByRole('button', { name: /^Настройки индексации / }).first();
-  await open.click();
-  const card = page.getByRole('region', { name: 'Текст на изображениях · OCR' });
-  await card.getByText('Батчи OCR', { exact: true }).click();
-  const images = card.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  await page.getByRole('button', { name: 'Производительность этого диалога', exact: true }).click();
+  const images = page.getByRole('spinbutton', { name: 'Изображений в батче OCR', exact: true });
   await images.fill('4');
-  await card.getByRole('button', { name: 'Применить батчи OCR' }).click();
+  await page.getByRole('button', { name: 'Сохранить настройки диалога', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   await page.keyboard.press('Escape');
-  await open.click();
-  await card.getByText('Батчи OCR', { exact: true }).click();
-  await images.fill('2');
-  const response = page.waitForResponse(value => value.request().method() === 'PATCH' && value.url().endsWith('/index/settings'));
-  release();
-  await (await response).finished();
-  // Allow the settled fetch callback and React effects to run before checking stale edits.
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await expect(images).toBeEnabled(); await images.fill('2');
+  const response = page.waitForResponse(value => value.request().method() === 'PATCH' && value.url().endsWith('/performance'));
+  release(); await (await response).finished();
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(images).toHaveValue('2');
-  await expect(card.getByRole('button', { name: 'Применить батчи OCR' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Сохранить настройки диалога', exact: true })).toBeEnabled();
 });
 
 test('OCR recognition and semantic progress are visible with chat-scoped ETA and errors', async ({ page }) => {
@@ -409,7 +402,7 @@ test('OCR recognition and semantic progress are visible with chat-scoped ETA and
   await expect(ocr.getByRole('progressbar', { name: 'Прогресс распознавания OCR', exact: true })).toHaveAttribute('max', '100');
   await expect(ocr.getByRole('progressbar', { name: 'Прогресс смысловой индексации OCR', exact: true })).toHaveAttribute('value', '8');
   await expect(ocr.getByRole('progressbar', { name: 'Прогресс смысловой индексации OCR', exact: true })).toHaveAttribute('max', '15');
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   const english = page.getByRole('region', { name: 'Text in images · OCR' });
   await expect(english).toContainText('Processed: 25 / 100');
   await expect(english).toContainText('Resume indexing to estimate the remaining time.');

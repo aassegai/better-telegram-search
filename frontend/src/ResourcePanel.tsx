@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { t } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
+import BatchFields, { batchFields } from './BatchFields';
+import type { BatchKey, Batches } from './BatchFields';
+import { useModelSettings } from './ModelSettings';
 
 const resources = [
   ['cpu_threads', 'Потоков CPU', 1, 32], ['memory_limit_mib', 'Порог RAM для медиа (МиБ)', 1024, 65536],
@@ -10,9 +13,10 @@ const resources = [
   ['ocr_timeout_seconds', 'Лимит OCR на фото (сек)', 5, 300], ['ocr_max_edge', 'Максимальная сторона OCR (px)', 512, 4096],
   ['ocr_cpu_workers', 'Воркеров OCR на CPU', 1, 4],
 ] as const;
-type ResourceKey = typeof resources[number][0] | 'gpu_memory_limit_mib' | 'gpu_index_load_percent';
+type ResourceKey = typeof resources[number][0] | 'gpu_memory_limit_mib' | 'gpu_index_load_percent' | BatchKey;
 type Limits = Record<ResourceKey, number>;
-const fields = [...resources, ['gpu_memory_limit_mib', '', 512, 65536], ['gpu_index_load_percent', '', 10, 100]] as const;
+const fields = [...resources, ['gpu_memory_limit_mib', '', 512, 65536], ['gpu_index_load_percent', '', 10, 100],
+  ...batchFields.map(([key, label, max]) => [key, label, key === 'ocr_region_batch_size' ? 0 : 1, max] as const)] as const;
 const presets = [['Экономный', 25], ['Сбалансированный', 60], ['Максимальный', 100]] as const;
 
 export default function ResourcePanel() {
@@ -20,13 +24,27 @@ export default function ResourcePanel() {
   const [saved, setSaved] = useState<Limits | null>(null);
   const [notice, setNotice] = useState('');
   const op = useDialogOperation();
+  const { models } = useModelSettings();
+  const snapshot = useRef({ limits, saved });
+  snapshot.current = { limits, saved };
   useEffect(() => {
+    if (op.busy) return;
     let alive = true;
+    const current = op.guard();
     api<Limits>('/api/settings').then(value => {
-      if (alive) { setLimits(value); setSaved(value); }
-    }).catch(error => { if (alive) op.setError(error.message); });
+      if (alive && current()) {
+        const previous = snapshot.current;
+        // Choosing a model/device can normalize related global settings (for
+        // example Paddle GPU forces one CPU worker). Refresh saved values while
+        // preserving fields the user has actually edited in this form.
+        const edits = previous.limits && previous.saved ? Object.fromEntries(fields
+          .filter(([key]) => previous.limits![key] !== previous.saved![key])
+          .map(([key]) => [key, previous.limits![key]])) : {};
+        setLimits({ ...value, ...edits }); setSaved(value);
+      }
+    }).catch(error => { if (alive && current()) op.setError(error.message); });
     return () => { alive = false; };
-  }, []);
+  }, [models, op.busy]);
   const save = () => void op.run(async current => {
     if (!limits || !saved) return;
     setNotice('');
@@ -40,8 +58,8 @@ export default function ResourcePanel() {
   const valid = limits && fields.every(([key, , min, max]) => Number.isInteger(limits[key])
     && limits[key] >= min && limits[key] <= max);
   const changed = limits && saved && fields.some(([key]) => limits[key] !== saved[key]);
-  return <details className="resource-settings index-advanced">
-    <summary>{t('Общие ресурсы индексации')}</summary>
+  return <section className="resource-settings" aria-label={t('Ресурсы приложения')}>
+    <h3>{t('Ресурсы приложения')}</h3>
     <p className="baseline-note">{t('Общие ограничения ресурсов применяются ко всем диалогам.')}</p>
     <section aria-label={t('CPU, память и очереди')}>
       <h3>{t('CPU, память и очереди')}</h3>
@@ -68,7 +86,12 @@ export default function ResourcePanel() {
         <p className="baseline-note">{t('Нагрузка регулируется паузами между GPU-батчами и применяется сразу. Это приблизительный лимит; поиск выполняется без искусственных пауз.')}</p>
       </>}
     </section>
+    <section aria-label={t('Батчи индексации')}><h3>{t('Батчи индексации')}</h3>
+      <p className="baseline-note">{t('Общие значения используются в диалогах без собственного переопределения. Для областей OCR значение 0 означает автоматический выбор.')}</p>
+      {limits && <BatchFields values={limits} defaults={limits as Batches} disabled={op.busy}
+        onChange={(key, value) => { setNotice(''); setLimits({ ...limits, [key]: value! }); }} />}
+    </section>
     <button className="primary" disabled={op.busy || !valid || !changed} onClick={save}>{op.busy ? t('Сохраняем…') : t('Сохранить ресурсы')}</button>
     {notice && <p role="status">{t(notice)}</p>}{op.error && <p className="error" role="alert">{t(op.error)}</p>}
-  </details>;
+  </section>;
 }

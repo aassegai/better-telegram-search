@@ -25,15 +25,16 @@ for (const english of [false, true]) {
     });
     await page.goto('/');
     await page.getByRole('button', { name: english ? 'Settings' : 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: english ? 'Models' : 'Модели', exact: true }).click();
     const model = page.getByLabel(english ? 'Semantic search model' : 'Модель смыслового поиска', { exact: true });
     await model.selectOption('berta');
-    const prepareText = page.getByRole('button', { name: english ? 'Prepare text model' : 'Подготовить модель текста', exact: true });
+    const prepareText = page.getByRole('button', { name: english ? 'Switch model and rebuild text' : 'Сменить модель и перестроить текст', exact: true });
     await expect(prepareText).toBeDisabled();
     await page.getByLabel(english ? 'Allow reindexing all chats when changing the model' : 'Разрешить переиндексацию всех диалогов при смене модели').check();
     await expect(prepareText).toBeEnabled();
     const visual = page.getByLabel(english ? 'Visual model' : 'Визуальная модель', { exact: true });
     await visual.selectOption('siglip2');
-    const prepareImages = page.getByRole('button', { name: english ? 'Prepare image model' : 'Подготовить модель изображений', exact: true });
+    const prepareImages = page.getByRole('button', { name: english ? 'Switch model and rebuild images' : 'Сменить модель и перестроить изображения', exact: true });
     await expect(prepareImages).toBeDisabled();
     await page.getByLabel(english ? 'Rebuild the image index when switching models; keep the OCR cache' : 'Перестроить индекс изображений при смене модели; кэш OCR сохранится').check();
     await expect(prepareImages).toBeEnabled();
@@ -42,6 +43,8 @@ for (const english of [false, true]) {
     await page.getByRole('button', { name: english ? 'Prepare Giga' : 'Подготовить Giga', exact: true }).click();
     await expect(rerank).toBeEnabled(); await rerank.check();
     await expect(rerank).toBeChecked();
+    await page.getByRole('button', { name: english ? 'Save model settings' : 'Сохранить настройки модели', exact: true }).click();
+    await expect(page.getByRole('button', { name: english ? 'Save model settings' : 'Сохранить настройки модели', exact: true })).toBeDisabled();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: english ? 'Settings' : 'Настройки', exact: true }).click();
     await expect(rerank).toBeChecked();

@@ -12,7 +12,7 @@ for (const english of [false, true]) {
     expect(before.chunking.profile).toBe('episodes');
     expect(before.chunking.max_messages).toBe(8);
     expect(before.chunking.max_tokens).toBe(480);
-    if (english) await page.getByRole('slider').press('End');
+    if (english) await page.getByRole('button', { name: 'RU', exact: true }).press('End');
     const open = page.getByRole('button', { name: english ? /^Indexing settings / : /^Настройки индексации / }).first();
     await open.click();
     const dialog = page.getByRole('dialog');

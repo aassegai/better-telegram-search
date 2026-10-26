@@ -17,6 +17,7 @@ export default function SearchSettingsPanel() {
   }, []);
   const valid = settings && [settings.search_result_limit, settings.display_chunk_size].every(value => Number.isInteger(value) && value >= 1 && value <= 100);
   return <section className="search-settings-panel">
+    <p className="baseline-note">{t('Доступно до 100 результатов за один поиск. Сообщений в фрагменте — только размер отображения, не область поиска.')}</p>
     <form onSubmit={event => {
       event.preventDefault();
       if (!valid || !settings) return;
@@ -26,7 +27,7 @@ export default function SearchSettingsPanel() {
       });
     }}>
       {settings && <div className="resource-fields">
-        {([['search_result_limit', t('Количество результатов')], ['display_chunk_size', t('Сообщений в одном фрагменте')]] as const).map(([key, label]) => <label key={key}>{label}<input type="number" aria-label={label} min="1" max="100" step="1" value={settings[key]} disabled={op.busy} onChange={event => { setSaved(false); setSettings({ ...settings, [key]: Number(event.target.value) }); }} /></label>)}
+        {([['search_result_limit', t('Результатов на странице')], ['display_chunk_size', t('Сообщений в одном фрагменте')]] as const).map(([key, label]) => <label key={key}>{label}<input type="number" aria-label={label} min="1" max="100" step="1" value={settings[key]} disabled={op.busy} onChange={event => { setSaved(false); setSettings({ ...settings, [key]: Number(event.target.value) }); }} /></label>)}
       </div>}
       <button type="submit" disabled={!valid || op.busy}>{t("Сохранить настройки поиска")}</button>
     </form>

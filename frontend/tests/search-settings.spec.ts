@@ -8,18 +8,18 @@ test('search display settings persist and control result cards and their message
   const token = (await (await page.request.get('/api/session')).json()).token;
   const original = await (await page.request.get('/api/settings')).json();
   try {
-    const displayButton = page.getByRole('button', { name: 'Выдача поиска', exact: true });
-    await expect(page.locator('.search-options')).toContainText('Выдача поиска');
+    const displayButton = page.getByRole('button', { name: 'Выдача', exact: true });
+    await expect(page.locator('.search-options')).toContainText('Выдача');
     await expect(displayButton).toHaveAttribute('aria-expanded', 'false');
     await page.getByLabel('Поисковый запрос').fill('велосипед');
     await displayButton.click();
     await expect(displayButton).toHaveAttribute('aria-expanded', 'true');
-    await page.getByLabel('Количество результатов', { exact: true }).fill('1');
+    await page.getByLabel('Результатов на странице', { exact: true }).fill('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('1');
     await displayButton.click();
-    await expect(page.getByLabel('Количество результатов', { exact: true })).toBeHidden();
+    await expect(page.getByLabel('Результатов на странице', { exact: true })).toBeHidden();
     await displayButton.click();
-    await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('1');
+    await expect(page.getByLabel('Результатов на странице', { exact: true })).toHaveValue('1');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
     expect(searches).toBe(0);
@@ -33,12 +33,12 @@ test('search display settings persist and control result cards and their message
     await expect(page.locator('.result-card')).toHaveCount(2);
     expect(searches).toBe(1);
     await page.reload();
-    await page.getByText('Выдача поиска', { exact: true }).click();
-    await expect(page.getByLabel('Количество результатов', { exact: true })).toHaveValue('1');
+    await page.getByText('Выдача', { exact: true }).click();
+    await expect(page.getByLabel('Результатов на странице', { exact: true })).toHaveValue('1');
     await expect(page.getByLabel('Сообщений в одном фрагменте', { exact: true })).toHaveValue('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('101');
     await expect(page.getByRole('button', { name: 'Сохранить настройки поиска' })).toBeDisabled();
-    await page.getByLabel('Количество результатов', { exact: true }).fill('5');
+    await page.getByLabel('Результатов на странице', { exact: true }).fill('5');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('3');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
@@ -93,6 +93,8 @@ test(`slow index status${otherFails ? ' with another failed endpoint' : ''} does
   let release!: () => void;
   let statuses = 0;
   let searches = 0;
+  let chatRequests = 0;
+  await page.route('**/api/chats', route => { chatRequests++; return route.continue(); });
   if (otherFails) {
     let imports = 0;
     await page.route('**/api/imports', route => ++imports === 1
@@ -113,10 +115,12 @@ test(`slow index status${otherFails ? ' with another failed endpoint' : ''} does
   const original = await (await page.request.get('/api/settings')).json();
   try {
     await expect.poll(() => !!release).toBe(true);
+    if (otherFails) await expect(page.getByRole('alert')).toContainText('Синтетическая ошибка статуса');
     await page.clock.runFor(12_000);
+    await expect.poll(() => chatRequests).toBeGreaterThan(1);
     expect(statuses).toBe(1);
-    await page.getByRole('button', { name: 'Выдача поиска', exact: true }).click();
-    await page.getByLabel('Количество результатов', { exact: true }).fill('5');
+    await page.getByRole('button', { name: 'Выдача', exact: true }).click();
+    await page.getByLabel('Результатов на странице', { exact: true }).fill('5');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('5');
     await page.getByRole('button', { name: 'Сохранить настройки поиска' }).click();
     await expect(page.getByText(/Настройки поиска сохранены/)).toBeVisible();
@@ -128,8 +132,7 @@ test(`slow index status${otherFails ? ' with another failed endpoint' : ''} does
     await expect(page.getByText('Совпадений пока нет', { exact: true })).toBeVisible();
     expect(searches).toBe(1);
     release();
-    if (otherFails) await expect(page.getByRole('alert')).toContainText('Синтетическая ошибка статуса');
-    else await expect(page.locator('.chat-item')).not.toHaveCount(0);
+    await expect(page.locator('.chat-item')).not.toHaveCount(0);
     await page.clock.runFor(2000);
     await expect.poll(() => statuses).toBe(2);
     await expect(page.locator('.chat-item')).not.toHaveCount(0);

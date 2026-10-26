@@ -5,9 +5,9 @@ import { useDialogOperation } from './useDialogOperation';
 import IndexCard from './IndexCard';
 import type { Mutation } from './IndexCard';
 
-export default function TextIndexPanel({ status, onChange, chatId, onStart, onEnd, pending, onModels }: Mutation & {
+export default function TextIndexPanel({ status, onChange, chatId, onStart, onEnd, pending, onModels, onPerformance }: Mutation & {
   status: SemanticStatus | null; onChange: (value: SemanticStatus) => void;
-  chatId: string; onModels: () => void;
+  chatId: string; onModels: () => void; onPerformance: () => void;
 }) {
   const op = useDialogOperation();
   if (!status) return <p>{t('Проверяем…')}</p>;
@@ -26,9 +26,9 @@ export default function TextIndexPanel({ status, onChange, chatId, onStart, onEn
     paused={Boolean(status.paused)} enabled={status.enabled === 1}
     preparing={['downloading', 'preparing'].includes(status.preparation_state)}
     blocked={blocked} failed={failed}
-    seconds={status.estimated_remaining_seconds} estimate={status.estimate} batch={status.batch_size ?? 4} kind="embedding_batch"
+    seconds={status.estimated_remaining_seconds} estimate={status.estimate} batch={status.batch_size ?? 4}
     chatId={chatId} busy={op.busy || Boolean(pending)} onPrepare={onModels} onControl={control}
-    onSaved={value => onChange((value as { semantic: SemanticStatus }).semantic)} onStart={onStart} onEnd={onEnd}>
+    onPerformance={onPerformance}>
     {indexError && <p className="warning" role="alert">{t(indexError)}</p>}
     {op.error && <p className="error" role="alert">{t(op.error)}</p>}
   </IndexCard>;

@@ -21,7 +21,7 @@ for (const english of [false, true]) {
       await route.fulfill({ json: { results: [hit(3), hit(4)], has_more: false, next_offset: null } });
     });
     await page.goto('/');
-    if (english) await page.getByRole('slider').press('End');
+    if (english) await page.getByRole('button', { name: 'RU', exact: true }).press('End');
     await page.getByLabel(english ? 'Search query' : 'Поисковый запрос').fill('проверка');
     await page.getByRole('button', { name: english ? 'Search' : 'Найти', exact: true }).click();
     await expect(page.locator('.result-card')).toHaveCount(2);
@@ -90,7 +90,7 @@ test('author exclusions survive polling, failure, saving and reopening', async (
     await panel.locator('summary').click();
     await expect(choices.first()).toBeChecked();
     expect(await choices.first().locator('..').innerText()).toBe(selectedLabel);
-    await page.getByRole('slider').press('End');
+    await page.getByRole('button', { name: 'RU', exact: true }).press('End');
     await expect(page.getByRole('region', { name: 'Author exclusions' })).toContainText('Exclude authors from indexing');
   } finally {
     await page.request.patch(settings, { headers: { 'X-Session-Token': token }, data: { excluded_author_ids: [] } });

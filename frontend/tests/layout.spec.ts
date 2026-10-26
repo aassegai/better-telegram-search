@@ -77,10 +77,10 @@ for (const viewport of [{ width: 1280, height: 720 }, { width: 900, height: 400 
     await page.goto('/');
     const settings = page.getByRole('button', { name: 'Настройки', exact: true });
     await settings.click();
-    const dialog = page.getByRole('dialog', { name: 'Настройки и диагностика' });
+    const dialog = page.getByRole('dialog', { name: 'Настройки', exact: true });
     const panel = dialog.locator('.modal');
     const close = dialog.getByRole('button', { name: 'Закрыть', exact: true });
-    await expect(panel.getByRole('heading', { name: 'Обновления приложения' })).toBeAttached();
+    await expect(panel.getByRole('heading', { name: 'Ресурсы приложения', exact: true })).toBeVisible();
     const initial = (await close.boundingBox())!;
     const bounds = (await panel.boundingBox())!;
     expect(initial.y + initial.height).toBeLessThanOrEqual(bounds.y);

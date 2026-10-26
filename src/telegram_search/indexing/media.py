@@ -51,6 +51,7 @@ class MediaService(MediaImages):
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.preparation = None
+        self.preparation_kind = None
         self.last_used = time.monotonic()
         with db.connect() as conn:
             conn.execute(
@@ -210,6 +211,7 @@ class MediaService(MediaImages):
                 conn.execute(
                     "UPDATE media_state SET preparation_state='preparing',error=NULL WHERE id=1"
                 )
+            self.preparation_kind = kind
             self.preparation = threading.Thread(
                 target=self._prepare,
                 args=(kind, offline, profile, reindex),
@@ -678,6 +680,7 @@ class MediaService(MediaImages):
         )
         return {
             **state,
+            "preparation_kind": self.preparation_kind,
             "visual_profiles": self.visual_profiles(),
             "total_photos": total,
             "photo_attachments": attachments,

@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { t, uiLocale } from './i18n';
 import { useEffect, useState } from 'react';
 import { api } from './api';
@@ -51,7 +52,7 @@ export default function ConflictDialog({ job, onClose, onChanged }: {
   }
 
   return <section className="modal conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-    <button className="close" aria-label={t("Закрыть конфликты")} onClick={onClose}>×</button>
+    <button className="close" aria-label={t("Закрыть конфликты")} onClick={onClose}><Icon name="close" /></button>
     <div className="eyebrow">{t("ВЫБОР РЕДАКЦИЙ")}</div><h2 id="conflict-title">{t("Конфликты импорта")}</h2>
     <p>{t("Неразрешённых: ")}{pending}{t(". В базе сохраняется текущая версия, пока вы не выберете другую.")}</p>
     {error && <div className="error" role="alert">{t(error)}<button disabled={busy} onClick={() => void run(async () => { await load(); })}>{t("Обновить список")}</button></div>}

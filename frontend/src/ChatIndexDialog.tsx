@@ -11,7 +11,7 @@ import SettingsDialog from './SettingsDialog';
 
 type Status = ChatIndexStatus;
 
-export default function ChatIndexDialog({ chat, onClose, onModels, onSources }: { chat: Chat; onClose: () => void; onModels: () => void; onSources: () => void }) {
+export default function ChatIndexDialog({ chat, onClose, onModels, onSources, onPerformance, onResources }: { chat: Chat; onClose: () => void; onModels: () => void; onSources: () => void; onPerformance: () => void; onResources: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState('');
   const revision = useRef(0);
@@ -37,12 +37,13 @@ export default function ChatIndexDialog({ chat, onClose, onModels, onSources }: 
     return () => { alive = false; window.clearInterval(timer); };
   }, [chat.id]);
   return <SettingsDialog titleId="chat-index-title" onClose={onClose}>
-    <div className="eyebrow">{t('ИНДЕКСАЦИЯ ДИАЛОГА')}</div><h2 id="chat-index-title">{chat.name}</h2>
+    <h2 id="chat-index-title">{chat.name}</h2>
+    <button type="button" className="secondary" onClick={onPerformance}>{t('Производительность этого диалога')}</button>
     {error && <p className="error" role="alert">{t(error)}</p>}
     <IndexExclusions chatId={chat.id} status={status} pending={pending} onStart={onStart} onEnd={onEnd} onSaved={setStatus} />
-    <TextIndexPanel onModels={onModels} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} status={status?.semantic ?? null}
+    <TextIndexPanel onModels={onModels} onPerformance={onPerformance} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} status={status?.semantic ?? null}
       onChange={semantic => setStatus(value => value ? { ...value, semantic } : value)} />
-    <WorkspacePanel onModels={onModels} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} indexing media={status?.media ?? null}
+    <WorkspacePanel onModels={onModels} onPerformance={onPerformance} onResources={onResources} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} media={status?.media ?? null}
       onMediaChange={media => setStatus(value => value ? { ...value, media } : value)} />
     <ChatSyncPanel chatId={chat.id} onSources={onSources} />
     <SourcePanel chatId={chat.id} />

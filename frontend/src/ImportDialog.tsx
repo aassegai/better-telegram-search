@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { t } from './i18n';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -68,8 +69,9 @@ export default function ImportDialog({ chats, initialPreview = null, onClose, on
   }
 
   return <section className="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
-    <button className="close" aria-label={t("Закрыть")} disabled={busy} onClick={onClose}>×</button>
-    <div className="eyebrow">{t("ПОПОЛНИТЬ АРХИВ")}</div><h2 id="import-title">{t("Импорт Telegram Desktop")}</h2>
+    <button className="close" aria-label={t("Закрыть")} disabled={busy} onClick={onClose}><Icon name="close" /></button>
+    <h2 id="import-title">{t('Импорт сообщений')}</h2>
+    <p>{t('Поддерживается JSON одного диалога из Telegram Desktop.')}</p>
     <p>{t("Сначала проверим экспорт и покажем изменения. Сообщения попадут в базу после применения отчёта. Фотографии останутся в папке источника.")}</p>
     {error && <div className="error" role="alert">{t(error)}</div>}
     {!preview ? <form onSubmit={inspect} className="import-form">

@@ -14,7 +14,6 @@ test('GPU presets save live load and per-model memory without changing devices',
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const resources = page.locator('.resource-settings');
-  await resources.getByText('Общие ресурсы индексации', { exact: true }).click();
   const gpu = page.getByRole('region', { name: 'Лимиты GPU', exact: true });
   await expect(resources.getByLabel('Потоков CPU', { exact: true })).toBeVisible();
   await expect(resources.getByRole('region', { name: 'Лимиты GPU', exact: true })).toBeVisible();
@@ -39,7 +38,7 @@ test('GPU presets save live load and per-model memory without changing devices',
   await page.setViewportSize({ width: 320, height: 640 });
   const modal = page.locator('.settings-overlay .modal');
   expect(await modal.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-  await page.locator('.language-switch input').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(resources.getByRole('region', { name: 'GPU limits', exact: true })).toBeVisible();
   await expect(resources.getByRole('status')).toHaveText('Resource settings saved.');
 });
@@ -67,6 +66,7 @@ test('vector cleanup confirms the kind, reports progress and refreshes retained 
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByRole('tab', { name: 'База', exact: true }).click();
   const storage = page.getByRole('region', { name: 'Место на диске', exact: true });
   const images = storage.getByRole('region', { name: 'Векторы изображений', exact: true });
   await images.getByRole('button', { name: 'Очистить', exact: true }).click();
@@ -113,6 +113,7 @@ test('storage controls wait for initial status and terminal refresh settles befo
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByRole('tab', { name: 'База', exact: true }).click();
   const storage = page.getByRole('region', { name: 'Место на диске', exact: true });
   const refresh = storage.getByRole('button', { name: 'Обновить сведения о месте', exact: true });
   await expect(refresh).toBeDisabled();

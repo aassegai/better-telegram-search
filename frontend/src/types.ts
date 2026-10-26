@@ -64,7 +64,7 @@ export type MediaStatus = {
   ocr_estimated_remaining_seconds?: number | null;
   images_ready: number; missing_refs: number; ocr_available: boolean; images_available: boolean;
   images_failed?: number; images_estimated_remaining_seconds?: number | null;
-  ocr_runtime_installed: boolean; device: string; backend?: { device: string; provider: string };
+  ocr_runtime_installed: boolean; preparation_kind?: 'images' | 'ocr' | null; device: string; backend?: { device: string; provider: string };
   query_backend?: { device: string; provider: string };
 };
 

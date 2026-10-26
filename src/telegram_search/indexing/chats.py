@@ -8,6 +8,13 @@ from telegram_search.storage.generations import bump_revision, invalidate_segmen
 
 
 class ChatIndexing:
+    batch_fields = {
+        "embedding_batch": ("text_batch", 128),
+        "image_batch": ("image_batch", 32),
+        "ocr_batch_size": ("ocr_batch", 4),
+        "ocr_region_batch_size": ("ocr_region_batch", 32),
+    }
+
     def __init__(self, db, semantic, media, lock):
         self.db, self.semantic, self.media, self.lock = db, semantic, media, lock
 
@@ -40,6 +47,7 @@ class ChatIndexing:
         if chat is None:
             raise UserError("Диалог не найден.")
         return {
+            **self.performance(chat_id),
             "chunking": {
                 "profile": "legacy" if policy_id == LEGACY_POLICY_ID else "episodes",
                 "policy_id": policy_id,
@@ -63,13 +71,31 @@ class ChatIndexing:
             },
         }
 
-    def settings(self, chat_id, values):
-        fields = {
-            "embedding_batch": ("text_batch", 128),
-            "image_batch": ("image_batch", 32),
-            "ocr_batch_size": ("ocr_batch", 4),
-            "ocr_region_batch_size": ("ocr_region_batch", 32),
+    def performance(self, chat_id):
+        """Read overrides without loading models or scanning media status."""
+        settings = self.db.settings
+        with self.db.connect() as conn:
+            row = conn.execute(
+                "SELECT text_batch,image_batch,ocr_batch,ocr_region_batch FROM chats WHERE id=?",
+                (chat_id,),
+            ).fetchone()
+        if row is None:
+            raise UserError("Диалог не найден.")
+        defaults = {key: getattr(settings, key) for key in self.batch_fields}
+        overrides = dict(zip(self.batch_fields, row, strict=True))
+        effective = {key: overrides[key] or value for key, value in defaults.items()}
+        effective["ocr_region_batch_size"] = effective["ocr_region_batch_size"] or (
+            32 if settings.ocr_device in {"gpu", "hybrid"} else 8
+        )
+        return {
+            "chat_id": chat_id,
+            "batch_defaults": defaults,
+            "batch_overrides": overrides,
+            "batches": effective,
         }
+
+    def settings(self, chat_id, values, *, include_status=True):
+        fields = self.batch_fields
         if not values or set(values) - (
             fields.keys() | {"excluded_author_ids", "chunking_profile"}
         ):
@@ -87,7 +113,7 @@ class ChatIndexing:
         for key, value in values.items():
             if key in {"excluded_author_ids", "chunking_profile"}:
                 continue
-            if type(value) is not int or not 1 <= value <= fields[key][1]:
+            if value is not None and (type(value) is not int or not 1 <= value <= fields[key][1]):
                 raise UserError("Недопустимый размер батча индексации.")
         with self.lock, self.db.connect() as conn:
             if not conn.execute("SELECT 1 FROM chats WHERE id=?", (chat_id,)).fetchone():
@@ -139,7 +165,7 @@ class ChatIndexing:
                 }
         self.semantic.wake.set()
         self.media.wake.set()
-        return self.status(chat_id)
+        return self.status(chat_id) if include_status else self.performance(chat_id)
 
     def control(self, chat_id, kind, action):
         queues = {

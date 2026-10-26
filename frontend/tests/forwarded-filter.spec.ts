@@ -68,7 +68,7 @@ test('failed source pages preserve selection, retry and fit a narrow window', as
   await expect(filter.getByRole('button', { name: 'Показать ещё источники' })).toBeDisabled();
   expect(await filter.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.locator('.language-switch input').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(filter.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
   expect(await filter.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as Record<string, unknown>).sourceError)).toBeUndefined();
@@ -113,7 +113,7 @@ test('source pagination restarts when a query returns and stale responses are ig
   expect(offsets).toEqual([0, 1, 0]);
   await page.setViewportSize({ width: 320, height: 640 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.locator('.language-switch input').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(input).toHaveAccessibleName('Find a forward author');
   await expect(filter.locator('summary')).toContainText('Forwarded from');
 });

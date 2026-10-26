@@ -138,8 +138,14 @@ class WorkspaceService:
         settings = self.db.settings
         store = BundleStore(self.db.workspace)
         text = registry()
-        profile = self.semantic.status().get("profile") or "berta"
         with self.db.connect() as conn:
+            profile = (
+                conn.execute(
+                    "SELECT e.profile FROM semantic_state s LEFT JOIN embedding_spaces e "
+                    "ON e.id=s.active_space_id WHERE s.id=1"
+                ).fetchone()[0]
+                or "berta"
+            )
             visual = conn.execute("SELECT visual_profile FROM media_state WHERE id=1").fetchone()[0]
         ocr_path = (
             store.path(ocr_spec())

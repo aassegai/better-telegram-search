@@ -10,6 +10,7 @@ const status = {
   profiles: [
     { profile: 'small', model_id: 'synthetic/small', download_bytes: 487850043, dimension: 384 },
     { profile: 'base', model_id: 'synthetic/base', download_bytes: 1127322481, dimension: 768 },
+    { profile: 'berta', model_id: 'synthetic/berta', download_bytes: 255878550, dimension: 768 },
   ],
 };
 
@@ -18,6 +19,7 @@ test('search modes show partial coverage, fallback and exact phrase semantics', 
   await page.goto('/');
   await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
+  await page.getByText('Состояние индексов', { exact: true }).click();
   await expect(page.getByText('Смысловой индекс: 1 / 3 сегментов')).toBeVisible();
   await page.getByLabel('Режим поиска').selectOption('hybrid');
   await page.getByLabel('Поисковый запрос').fill('велосипед');
@@ -68,28 +70,32 @@ test('model change requires explicit reindex and late preparation preserves a re
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByLabel('Модель смыслового поиска').selectOption('base');
-  await expect(page.getByRole('button', { name: 'Подготовить модель текста' })).toBeDisabled();
+  await page.getByRole('tab', { name: 'Модели', exact: true }).click();
+  await page.getByLabel('Модель смыслового поиска').selectOption('berta');
+  await expect(page.getByRole('button', { name: 'Сменить модель и перестроить текст' })).toBeDisabled();
   await page.getByLabel('Разрешить переиндексацию всех диалогов при смене модели').check();
+  await page.getByText('Параметры подготовки', { exact: true }).click();
   await page.getByLabel('Использовать только локальный кэш').check();
   let release: () => void = () => {};
   let received: () => void = () => {};
   const waiting = new Promise<void>(resolve => { release = resolve; });
   const started = new Promise<void>(resolve => { received = resolve; });
   await page.route('**/api/semantic/prepare', async route => {
-    expect(route.request().postDataJSON()).toMatchObject({ profile: 'base', reindex: true, offline: true });
+    expect(route.request().postDataJSON()).toMatchObject({ profile: 'berta', reindex: true, offline: true });
     received(); await waiting;
     await route.fulfill({ json: { ...status, preparation_state: 'downloading' } });
   });
-  await page.getByRole('button', { name: 'Подготовить модель текста' }).click();
+  await page.getByRole('button', { name: 'Сменить модель и перестроить текст' }).click();
   await started;
   await expect(page.getByLabel('Модель смыслового поиска')).toBeDisabled();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+  await page.getByRole('tab', { name: 'Модели', exact: true }).click();
   const completed = page.waitForResponse(response => response.url().endsWith('/semantic/prepare'));
   release(); await completed;
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByLabel('Модель смыслового поиска')).toHaveValue('small');
   await expect(page.getByLabel('Модель смыслового поиска')).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Подготовить модель текста' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Подготовить модель текста', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Перестроить текстовый индекс', exact: true })).toBeEnabled();
 });

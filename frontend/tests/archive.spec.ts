@@ -31,7 +31,7 @@ test('exact phrase and escaped export text', async ({ page }) => {
 
 test('local path import and new authors appear without reloading', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Импортировать выгрузку' }).click();
+  await page.getByRole('button', { name: 'Импорт сообщений' }).click();
   await page.getByLabel('Путь к JSON').fill(path.resolve('../tests/fixtures/synthetic/third-chat.json'));
   await page.getByRole('button', { name: 'Проверить экспорт', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Отчёт готов' })).toBeVisible();
@@ -59,7 +59,7 @@ test('late context response cannot reopen a dismissed dialog', async ({ page }) 
 
 test('preview survives closing and conflicts can be compared and resolved safely', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Импортировать выгрузку' }).click();
+  await page.getByRole('button', { name: 'Импорт сообщений' }).click();
   await page.getByLabel('Путь к JSON').fill(path.resolve('../tests/fixtures/synthetic/conflict-chat.json'));
   await page.getByRole('button', { name: 'Проверить экспорт', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Отчёт готов' })).toBeVisible();
@@ -82,7 +82,7 @@ test('preview survives closing and conflicts can be compared and resolved safely
 
 test('late apply response cannot close a newly opened settings dialog', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Импортировать выгрузку' }).click();
+  await page.getByRole('button', { name: 'Импорт сообщений' }).click();
   await page.getByLabel('Путь к JSON').fill(path.resolve('../tests/fixtures/synthetic/third-chat.json'));
   await page.getByRole('button', { name: 'Проверить экспорт', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Отчёт готов' })).toBeVisible();
@@ -100,7 +100,7 @@ test('late apply response cannot close a newly opened settings dialog', async ({
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const finished = page.waitForResponse(response => response.url().endsWith('/apply'));
   release(); await finished;
-  await expect(page.getByRole('heading', { name: 'Настройки и диагностика' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toBeVisible();
 });
 
 test('pause blocks concurrent discard and resumed preview preserves counts', async ({ page }) => {
@@ -110,7 +110,7 @@ test('pause blocks concurrent discard and resumed preview preserves counts', asy
     const response = await route.fetch();
     await route.fulfill({ response, json: { ...await response.json(), state: 'running' } });
   });
-  await page.getByRole('button', { name: 'Импортировать выгрузку' }).click();
+  await page.getByRole('button', { name: 'Импорт сообщений' }).click();
   await page.getByLabel('Путь к JSON').fill(path.resolve('../tests/fixtures/synthetic/third-chat.json'));
   let release: () => void = () => {};
   const waiting = new Promise<void>(resolve => { release = resolve; });

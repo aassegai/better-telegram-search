@@ -1,20 +1,21 @@
 import { mockSearchJobs } from './search-mocks';
 import { expect, test } from '@playwright/test';
 
-test('model settings expose independent devices, GPU OCR and actual local paths; sources belong to chats', async ({ page }) => {
+test('models show actual paths in details while performance owns device controls', async ({ page }) => {
   const models = await (await page.request.get('/api/models')).json();
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  for (const [key, name, profile] of [['e5', 'Устройства текстовой модели', 'berta'], ['clip', 'Устройства визуальной модели', 'siglip2'], ['ocr', 'Устройства OCR', '']] as const) {
+  await expect(page.getByRole('region', { name: 'Устройства текстовой модели', exact: true })).toBeVisible();
+  await expect(page.locator('.device-panel .model-paths')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Модели', exact: true }).click();
+  for (const [key, name, profile] of [['e5', 'Модель текста', 'berta'], ['clip', 'Модель изображений', 'siglip2'], ['ocr', 'Модель распознавания · OCR', '']] as const) {
     const panel = page.getByRole('region', { name, exact: true });
-    await expect(panel).toBeVisible();
+    await panel.getByText('Подробности модели', { exact: true }).click();
     const chosen = profile ? models[key].profile_paths[profile] : models[key].paths;
     await expect(panel.locator('.model-paths')).toContainText(Array.isArray(chosen) ? chosen[0] : chosen);
+    await expect(panel.locator('.device-panel')).toHaveCount(0);
   }
   await expect(page.getByText('Источники', { exact: true })).toHaveCount(0);
-  const ocr = page.getByRole('region', { name: 'Устройства OCR', exact: true });
-  await ocr.getByLabel('Устройство распознавания').selectOption('gpu');
-  await expect(ocr.getByLabel('Модель OCR')).toHaveValue('paddle');
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
   await page.getByText('Источники', { exact: true }).click();
@@ -96,7 +97,7 @@ test('dark theme respects system preference, keeps controls readable and preserv
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(page.getByRole('button', { name: 'Dark theme', exact: true })).toHaveAttribute('aria-pressed', 'false');
 });
 
@@ -121,8 +122,9 @@ test('closing settings invalidates the device follow-up response', async ({ page
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByRole('region', { name: 'Устройства визуальной модели', exact: true })
-    .getByRole('button', { name: 'Применить устройство', exact: true }).click();
+  const visual = page.getByRole('region', { name: 'Устройства визуальной модели', exact: true });
+  await visual.getByLabel('Устройство для индексации', { exact: true }).selectOption('auto');
+  await visual.getByRole('button', { name: 'Сохранить устройства', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();

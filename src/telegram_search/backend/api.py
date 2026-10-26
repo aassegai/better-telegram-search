@@ -399,6 +399,16 @@ def create_app(
     def media_status():
         return app.state.media.status()
 
+    @app.get("/api/chats/{chat_id}/performance")
+    def chat_performance(chat_id: str):
+        return app.state.chat_indexing.performance(chat_id)
+
+    @app.patch("/api/chats/{chat_id}/performance")
+    def update_chat_performance(chat_id: str, body: dict):
+        if not body or set(body) - app.state.chat_indexing.batch_fields.keys():
+            raise UserError("Неизвестные настройки производительности диалога.")
+        return app.state.chat_indexing.settings(chat_id, body, include_status=False)
+
     @app.post("/api/media-index/prepare", status_code=202)
     def prepare_media_model(body: MediaModelRequest):
         return app.state.chat_indexing.initialize(

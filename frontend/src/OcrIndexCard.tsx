@@ -7,11 +7,11 @@ import MemoryWaitNotice from './MemoryWaitNotice';
 
 type Props = {
   media: MediaStatus; busy: boolean; preparing: boolean;
-  onModels: () => void; onControl: (action: string) => void;
+  onModels: () => void; onResources: () => void; onControl: (action: string) => void;
   onDenseControl: (action: string) => void; children?: ReactNode;
 };
 
-export default function OcrIndexCard({ media, busy, preparing, onModels, onControl, onDenseControl, children }: Props) {
+export default function OcrIndexCard({ media, busy, preparing, onModels, onResources, onControl, onDenseControl, children }: Props) {
   const enabled = media.ocr_enabled === 1;
   const completed = media.ocr_ready + media.ocr_failed;
   const done = completed >= media.total_photos;
@@ -46,7 +46,7 @@ export default function OcrIndexCard({ media, busy, preparing, onModels, onContr
     {enabled && <div className="job-actions index-actions">
       <button className="primary" disabled={busy || preparing} onClick={() => onControl(paused ? 'resume' : 'pause')}>{paused ? t('Продолжить OCR') : t('Пауза OCR')}</button>
     </div>}
-    <MemoryWaitNotice wait={media.memory_wait} stages={['ocr', 'ocr_dense']} onSettings={onModels} />
+    <MemoryWaitNotice wait={media.memory_wait} stages={['ocr', 'ocr_dense']} onSettings={onResources} />
     {children}
   </section>;
 }

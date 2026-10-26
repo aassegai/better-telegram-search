@@ -314,5 +314,6 @@
   "Не удалось сохранить настройки Telegram. Проверьте права папки.": "Could not save Telegram settings. Check folder permissions.",
   "Отключите Telegram перед изменением реквизитов приложения.": "Disconnect Telegram before changing application credentials.",
   "Код Telegram истёк. Запросите новый код входа.": "The Telegram code has expired. Request a new sign-in code.",
-  "Telegram отклонил API ID или API Hash. Проверьте реквизиты приложения.": "Telegram rejected the API ID or API Hash. Check your application credentials."
+  "Telegram отклонил API ID или API Hash. Проверьте реквизиты приложения.": "Telegram rejected the API ID or API Hash. Check your application credentials.",
+  "Неизвестные настройки производительности диалога.": "Unknown chat performance settings."
 }

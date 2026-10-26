@@ -15,6 +15,7 @@ test('OCR evidence stays escaped and draft modality changes preserve the submitt
   await page.route('**/api/media/999', route => route.fulfill({ status: 404 }));
   await mockSearchJobs(page, route => route.fulfill({ json: { results: [hit], effective_mode: 'words', warnings: [], has_more: false } }));
   await page.goto('/');
+  await page.getByText('Состояние индексов', { exact: true }).click();
   await expect(page.getByText(/Фотографии: 2 \/ 2 · OCR: 1 \/ 2/)).toBeVisible();
   await page.getByRole('checkbox', { name: 'Текст', exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'Изображения', exact: true }).uncheck();
@@ -33,14 +34,13 @@ test('OCR evidence stays escaped and draft modality changes preserve the submitt
 });
 
 test('resource settings persist and closing the panel ignores late media preparation', async ({ page }) => {
-  await page.route('**/api/media-index', route => route.fulfill({ json: media }));
+  await page.route('**/api/media-index', route => route.fulfill({ json: { ...media, ocr_available: false } }));
   await page.route('**/api/chats/*/index', async route => {
     const response = await route.fetch();
-    await route.fulfill({ json: { ...await response.json(), media } });
+    await route.fulfill({ json: { ...await response.json(), media: { ...media, ocr_available: false } } });
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByText('Общие ресурсы индексации', { exact: true }).first().click();
   await page.getByLabel('Потоков CPU', { exact: true }).fill('2');
   await page.getByRole('button', { name: 'Сохранить ресурсы' }).click();
   await expect(page.getByText('Настройки ресурсов сохранены.', { exact: true })).toBeVisible();
@@ -49,16 +49,18 @@ test('resource settings persist and closing the panel ignores late media prepara
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ json: { ...media, preparation_state: 'preparing' } });
   });
+  await page.getByRole('tab', { name: 'Модели', exact: true }).click();
   await page.getByRole('button', { name: 'Подготовить OCR', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByText('Общие ресурсы индексации', { exact: true }).first().click();
   const response = page.waitForResponse('**/api/media-index/prepare');
   release();
   await response;
   await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('tab', { name: 'Производительность', exact: true }).click();
   await expect(page.getByLabel('Потоков CPU', { exact: true })).toHaveValue('2');
+  await page.getByRole('tab', { name: 'Модели', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Подготовить OCR', exact: true })).toBeEnabled();
 });
 
@@ -106,7 +108,7 @@ test('empty selection blocks search and select-all controls stay locked during a
     await route.fulfill({ json: { results: [], effective_mode: 'mixed', warnings: [], has_more: false } });
   });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Импортировать выгрузку' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Импорт сообщений' })).toBeVisible();
   await page.getByLabel('Поисковый запрос').fill('проверка');
   for (const label of ['Текст', 'Изображения', 'OCR']) {
     await page.getByRole('checkbox', { name: label, exact: true }).uncheck();
@@ -140,16 +142,17 @@ test('result ranks preserve API order and show signed CLIP cosine rather than a 
   await page.getByRole('checkbox', { name: 'OCR', exact: true }).uncheck();
   await page.getByLabel('Поисковый запрос').fill('stick figure comic');
   await page.getByRole('button', { name: 'Найти', exact: true }).click();
+  for (const details of await page.locator('.result-details').all()) await details.locator('summary').click();
   await expect(page.locator('.result-ranking')).toHaveText([
-    'Результат #1Сходство изображения: 0,7500',
-    'Результат #2Сходство изображения: 0,0000',
-    'Результат #3Сходство изображения: -0,1250',
+    'Сообщение #20Сходство изображения: 0,7500',
+    'Сообщение #30Сходство изображения: 0,0000',
+    'Сообщение #10Сходство изображения: -0,1250',
   ]);
-  await expect(page.locator('.result-header small')).toHaveText(['Совпадение в #20', 'Совпадение в #30', 'Совпадение в #10']);
+  await expect(page.locator('.result-header small')).toHaveText(['Результат #1', 'Результат #2', 'Результат #3']);
   await expect(page.locator('.result-ranking span[title]').first()).toHaveAttribute('title', /это не вероятность/);
-  await page.getByRole('slider').press('End');
-  await expect(page.locator('.result-ranking').first()).toHaveText('Result #1Image similarity: 0.7500');
-  await expect(page.locator('.result-ranking').last()).toHaveText('Result #3Image similarity: -0.1250');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
+  await expect(page.locator('.result-ranking').first()).toHaveText('Message #20Image similarity: 0.7500');
+  await expect(page.locator('.result-ranking').last()).toHaveText('Message #10Image similarity: -0.1250');
 });
 
 test('images open in the search page and Escape preserves the underlying context', async ({ page, context }) => {

@@ -6,15 +6,15 @@ import ImportDialog from './ImportDialog';
 import ConflictDialog from './ConflictDialog';
 import ChatIndexDialog from './ChatIndexDialog';
 import TelegramPanel from './TelegramPanel';
-import SemanticPanel from './SemanticPanel';
-import RerankPanel from './RerankPanel';
-import WorkspacePanel from './WorkspacePanel';
-import ResourcePanel from './ResourcePanel';
 import ForwardFilter from './ForwardFilter';
-import UpdatePanel from './UpdatePanel';
 import type { Update } from './UpdatePanel';
 import SearchSettingsPanel from './SearchSettingsPanel';
 import SearchProgress from './SearchProgress';
+import SettingsCenter, { initialSettingsSection } from './SettingsCenter';
+import type { SettingsSection } from './SettingsCenter';
+import Icon from './Icon';
+import LanguageSwitch from './LanguageSwitch';
+import DateField from './DateField';
 import SettingsDialog from './SettingsDialog';
 import ImageViewer from './ImageViewer';
 import type { OpenImage } from './ImageViewer';
@@ -116,7 +116,8 @@ export default function App() {
   const [context, setContext] = useState<{ hit: Hit; messages: Message[] } | null>(null);
   const [openImage, setOpenImage] = useState<OpenImage | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<Record<string, unknown> | null>(null);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(initialSettingsSection);
+  const [performanceScope, setPerformanceScope] = useState<string | null>(null);
   const authorsVersion = jobs.map(job => `${job.id}:${job.processed}:${job.state}:${job.pending_conflicts}`).join('|');
   const contextVersion = useRef(0);
   const [searchFilters, setSearchFilters] = useState('');
@@ -128,14 +129,25 @@ export default function App() {
 
   const restarting = useRef(false);
   const updateObserverRevision = useRef(0);
+  const refreshRequests = useRef(new Map<string, Promise<void>>());
   const reportError = (error: unknown) => { if (!restarting.current) setError(error instanceof Error ? error.message : t('Ошибка соединения.')); };
+  const refreshEndpoint = <T,>(path: string, accept: (value: T) => void): Promise<void> => {
+    const pending = refreshRequests.current.get(path);
+    if (pending) return pending;
+    const request = api<T>(path).then(accept).catch(reportError).finally(() => refreshRequests.current.delete(path));
+    refreshRequests.current.set(path, request);
+    return request;
+  };
   const refresh = async () => {
-    const results = await Promise.allSettled([
-      api<Chat[]>('/api/chats').then(value => { setChats(value); setChatsLoaded(true); }),
-      api<Job[]>('/api/imports').then(setJobs), api<Preview[]>('/api/import-previews').then(setPreviews),
-      api<SemanticStatus>('/api/semantic').then(setSemantic), api<MediaStatus>('/api/media-index').then(setMedia),
+    void refreshEndpoint<SemanticStatus>('/api/semantic', setSemantic);
+    void refreshEndpoint<MediaStatus>('/api/media-index', setMedia);
+    await Promise.allSettled([
+      refreshEndpoint<Chat[]>('/api/chats', value => {
+        setChats(value); setChatsLoaded(true);
+        setPerformanceScope(previous => previous && !value.some(chat => chat.id === previous) ? null : previous);
+      }),
+      refreshEndpoint<Job[]>('/api/imports', setJobs), refreshEndpoint<Preview[]>('/api/import-previews', setPreviews),
     ]);
-    for (const result of results) if (result.status === 'rejected') reportError(result.reason);
   };
 
   useEffect(() => {
@@ -329,18 +341,18 @@ export default function App() {
     finally { setDeleting(false); }
   }
 
-  async function settings() {
+  function settings(section?: SettingsSection, scope?: string | null) {
+    if (section) { setSettingsSection(section); try { localStorage.setItem('bts.settings-section', section); } catch { /* The current selection remains in memory. */ } }
+    if (scope !== undefined) setPerformanceScope(scope);
     setModal('settings');
-    try { setDiagnostics(await api('/api/doctor')); }
-    catch (error) { reportError(error); }
   }
 
   const messageCount = chats.reduce((sum, chat) => sum + chat.messages, 0);
   const photoCount = chats.reduce((sum, chat) => sum + chat.photos, 0);
-  const onlyImages = submittedModalities.length === 1 && submittedModalities[0] === 'images';
+  const onlyImages = effectiveMode !== 'browse' && submittedModalities.length === 1 && submittedModalities[0] === 'images';
   return <div className="app">
     <aside className="sidebar">
-      <a href="/" className="brand"><span className="brand-icon" aria-hidden="true">↗</span>
+      <a href="/" className="brand"><span className="brand-icon"><Icon name="archive" size={26} /></span>
         <span>{t("Архив")}<small>TELEGRAM SEARCH</small></span></a>
       <div className="sidebar-content">
       <div className="sidebar-title"><span>{t("Диалоги")}</span><button className="text-button" onClick={() => setSelected(null)}>{t("Все")}</button></div>
@@ -348,14 +360,14 @@ export default function App() {
         {chats.map(chat => <div className="chat-item" key={chat.id}>
           <label><input type="checkbox" checked={selected === null || selected.includes(chat.id)} onChange={() => toggleChat(chat.id)} />
             <span><strong>{chat.name}</strong><small>{chat.messages.toLocaleString(uiLocale())}{t(" сообщений · ")}{chat.photos}{t(" фото")}</small></span></label>
-          <button className="chat-settings-button" aria-label={t('Настройки индексации {p0}', { p0: chat.name })} title={t('Настройки индексации')} onClick={() => setIndexChat(chat)}>⋯</button>
-          <button className="delete-button" disabled={deleting} aria-label={t("Удалить {p0}", { p0: chat.name })} onClick={() => void deleteChat(chat)}>×</button>
+          <button className="chat-settings-button" aria-label={t('Настройки индексации {p0}', { p0: chat.name })} title={t('Настройки индексации')} onClick={() => setIndexChat(chat)}><Icon name="more" /></button>
+          <button className="delete-button" disabled={deleting} aria-label={t("Удалить {p0}", { p0: chat.name })} onClick={() => void deleteChat(chat)}><Icon name="close" /></button>
         </div>)}
         {!chatsLoaded && <p className="sidebar-empty" role="status">{t('Загрузка диалогов…')}</p>}
         {chatsLoaded && !chats.length && <p className="sidebar-empty">{t("Добавьте экспорт, чтобы ваша переписка стала доступна для поиска.")}</p>}
       </div>
       <button className="import-button telegram-sources-button" disabled={!connected} onClick={() => setModal('sources')}>{t('Источники · Telegram')}</button>
-      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><span>＋</span>{t(" Импортировать выгрузку")}</button>
+      <button className="import-button" disabled={!connected} onClick={() => { setActivePreview(null); setModal('import'); }}><Icon name="plus" />{t("Импорт сообщений")}</button>
       {previews.length > 0 && <div className="jobs"><div className="sidebar-title">{t("Проверки экспорта")}</div>
         {previews.map(preview => <div className="job" key={preview.id}><small><strong>{preview.chat_name}</strong> · {preview.scope}</small><small>{preview.processed}{t(" проверено · ")}{preview.state === 'ready' ? t('отчёт готов') : t(stateNames[preview.state] || preview.state)}</small><div className="job-actions"><button onClick={() => { setActivePreview(preview); setModal('import'); }}>{t("Открыть отчёт")}</button></div></div>)}
       </div>}
@@ -376,43 +388,37 @@ export default function App() {
         </div>)}
       </div>}
       </div>
-      <div className="sidebar-footer"><button className="settings-button" onClick={() => void settings()}><span aria-hidden="true">⚙</span>{t('Настройки')}</button><span><i className="dot" />{t("Локально на этом компьютере")}</span></div>
+      <div className="sidebar-footer"><button className="settings-button" onClick={() => void settings()}><Icon name="settings" />{t('Настройки')}</button><span><i className="dot" />{t("Локально на этом компьютере")}</span></div>
     </aside>
 
     <main className="main">
-      <header className="topbar"><span>{t("Ваша переписка. Под рукой.")}</span><div className="topbar-actions">
-        <button className="theme-toggle mobile-settings-button" type="button" aria-label={t('Настройки')} title={t('Настройки')} onClick={() => void settings()}><span aria-hidden="true">⚙</span></button>
-        <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><span aria-hidden="true">{theme === 'dark' ? '☀' : '☾'}</span></button>
-        <label className="language-switch"><span className={language === 'ru' ? 'active' : ''}>RU</span>
-          <input type="range" min="0" max="1" step="1" value={language === 'en' ? 1 : 0}
-            aria-label={t('Язык приложения')} aria-valuetext={language === 'en' ? 'English' : 'Русский'}
-            onChange={event => changeLanguage(event.target.value === '1' ? 'en' : 'ru')} />
-          <span className={language === 'en' ? 'active' : ''}>EN</span>
-        </label><span className="pill">{t('Индекс: {p0} · Поиск: {p1}', { p0: indexingDevices, p1: searchDevices })} <span className="dot" /></span>
+      <header className="topbar"><div className="topbar-actions">
+        <button className="theme-toggle mobile-settings-button" type="button" aria-label={t('Настройки')} title={t('Настройки')} onClick={() => void settings()}><Icon name="settings" /></button>
+        <button className="theme-toggle" type="button" aria-label={t('Тёмная тема')} aria-pressed={theme === 'dark'} title={t('Тёмная тема')} onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
+        {modal !== 'settings' && modal !== 'sources' && !indexChat && <LanguageSwitch value={language} onChange={changeLanguage} />}
       </div></header>
       <div className="content">
-        <div className="heading"><div className="eyebrow">{t("ЛИЧНЫЙ АРХИВ")}</div><h1>{t("Найдите тот самый разговор.")}</h1>
-          <p>{t("Слова, фразы и фотографии из ваших диалогов — в одном месте.")}</p></div>
-        {error && <div className="error" role="alert"><span>{t(error)}</span><button aria-label={t("Закрыть ошибку")} onClick={() => setError('')}>×</button></div>}
+        <div className="heading"><h1>{t('Поиск')}</h1></div>
+        {error && <div className="error" role="alert"><span>{t(error)}</span><button aria-label={t("Закрыть ошибку")} onClick={() => setError('')}><Icon name="close" /></button></div>}
         <form onSubmit={search} className="search-form">
-          <div className="search-box"><span className="search-icon" aria-hidden="true">⌕</span>
+          <div className="search-box"><span className="search-icon"><Icon name="search" size={24} /></span>
             <input aria-label={t("Поисковый запрос")} placeholder={t("Что вы хотите найти в переписке?")} value={query} onChange={event => setQuery(event.target.value)} />
-            <button disabled={busy || !connected || !chatsLoaded || (!!query.trim() && !modalities.length)}>{busy ? t('Ищем…') : query.trim() ? t('Найти') : t('Показать сообщения')}<span aria-hidden="true"> ↗</span></button></div>
+            <button disabled={busy || !connected || !chatsLoaded || (!!query.trim() && !modalities.length)}>{busy ? t('Ищем…') : query.trim() ? t('Найти') : t('Показать сообщения')}<Icon name="arrow" size={18} /></button></div>
           <div className="filters">
             <label>{t("Режим")}<select aria-label={t("Режим поиска")} value={mode} disabled={exact} onChange={event => setMode(event.target.value)}><option value="words">{t("По словам")}</option><option value="meaning">{t("По смыслу")}</option><option value="hybrid">{t("Слова и смысл")}</option></select></label>
             <label>{t("Автор")}<select aria-label={t("Автор")} value={author} onChange={event => setAuthor(event.target.value)}><option value="">{t("Все авторы")}</option>{authors.map(item => <option value={item.author_id} key={item.author_id}>{item.name || item.author_id}</option>)}</select></label>
-            <label>{t("С даты (UTC)")}<input type="date" value={from} onChange={event => setFrom(event.target.value)} /></label>
-            <label>{t("По дату (UTC)")}<input type="date" value={to} onChange={event => setTo(event.target.value)} /></label>
+            <DateField label="С даты (UTC)" value={from} onChange={setFrom} />
+            <DateField label="По дату (UTC)" value={to} onChange={setTo} />
             <label>{t("Содержимое")}<select value={contentType} onChange={event => setContentType(event.target.value)}><option value="all">{t("Все сообщения")}</option><option value="text">{t("С текстом")}</option><option value="photo">{t("С фотографией")}</option></select></label>
           </div>
           <ForwardFilter chatIds={selected} selected={forwardedFrom} onChange={setForwardedFrom} excludeDeleted={excludeDeleted} version={authorsVersion} disabled={busy} />
           <div className="search-options"><label><input type="checkbox" checked={exact} onChange={event => setExact(event.target.checked)} />{t("Точная фраза")}</label>
             <label><input type="checkbox" checked={excludeDeleted} onChange={event => setExcludeDeleted(event.target.checked)} />{t('Скрыть удалённые в Telegram')}</label>
             <div className="search-option-actions">
-              <button type="button" className="text-button" aria-expanded={showSearchSettings} aria-controls="search-display-settings" onClick={() => setShowSearchSettings(value => !value)}><span aria-hidden="true">{showSearchSettings ? '▾' : '▸'}</span> <span>{t('Выдача поиска')}</span></button>
+              <button type="button" className="text-button" aria-expanded={showSearchSettings} aria-controls="search-display-settings" onClick={() => setShowSearchSettings(value => !value)}><Icon name="chevron" size={14} style={{ transform: showSearchSettings ? 'rotate(90deg)' : undefined }} /> <span>{t('Выдача')}</span></button>
               <button type="button" className="text-button" onClick={() => { setAuthor(''); setForwardedFrom([]); setFrom(''); setTo(''); setContentType('all'); setExact(false); setExcludeDeleted(false); setSelected(null); }}>{t("Сбросить фильтры")}</button>
             </div></div>
-          <fieldset className="search-modalities" disabled={busy} aria-describedby="search-modality-help">
+          <fieldset className="search-modalities" disabled={busy}>
             <legend>{t("Искать в")}</legend>
             <div className="modality-options">
               <button type="button" aria-pressed={modalities.length === allModalities.length} onClick={() => changeModalities([...allModalities])}>{t("Всё")}</button>
@@ -421,42 +427,43 @@ export default function App() {
                 {t(modalityLabels[kind])}
               </label>)}
             </div>
-            <p id="search-modality-help" className="baseline-note">{t("Можно выбрать несколько типов поиска — результаты объединятся.")}</p>
             {!!query.trim() && !modalities.length && <p className="warning" role="status">{t("Выберите хотя бы один тип поиска.")}</p>}
           </fieldset>
         </form>
-        <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача поиска')} hidden={!showSearchSettings}><SearchSettingsPanel /></section>
+        <section id="search-display-settings" className="search-display-options" aria-label={t('Выдача')} hidden={!showSearchSettings}><SearchSettingsPanel /></section>
         <hr className="search-divider" />
         {busy && <SearchProgress status={searchJob} onStop={() => void stopSearch()} />}
         {searchStopped && <p role="status">{t('Поиск остановлен')}</p>}
         {exact && <p className="baseline-note">{t("Точная фраза ищется в сообщениях и распознанном тексте фотографий.")}</p>}
+        <details className="archive-status"><summary>{t('Состояние индексов')}</summary>
+          <p>{t('Индекс: {p0} · Поиск: {p1}', { p0: indexingDevices, p1: searchDevices })}</p>
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}
+        </details>
         {reranked && hits !== null && !busy && <p className="baseline-note" role="status">{t('Порядок текста и OCR уточнён Giga')}</p>}
         {warnings.map(warning => <p className="warning" role="status" key={warning}>{t(warning)}</p>)}
 
         {hits === null ? <section className="welcome">
-          <div className="archive-symbol" aria-hidden="true">▤</div><h2>{t("Разговоры остаются рядом.")}</h2>
-          <p>{chats.length ? t('Введите слово или фразу. Откройте результат, чтобы увидеть сообщения до и после совпадения.') : t('Начните с JSON-экспорта Telegram Desktop. Мы прочитаем сообщения и свяжем фотографии с вашей папкой.')}</p>
+          <h2>{chatsLoaded ? chats.length ? t('Поиск по архиву') : t('Добавьте сообщения') : t('Загрузка диалогов…')}</h2>
+          <p>{chats.length ? t('Введите запрос или покажите сообщения по выбранным фильтрам.') : t('Импортируйте JSON одного диалога из Telegram Desktop или подключите Telegram.')}</p>
           <div className="stats"><div><strong>{messageCount.toLocaleString(uiLocale())}</strong><span>{t("сообщений")}</span></div><div><strong>{chats.length}</strong><span>{t("диалогов")}</span></div><div><strong>{photoCount}</strong><span>{t("фотографий")}</span></div></div>
-          <div className="baseline-note">{t('Слова и смысл — базовый режим. Подготовьте модели в общих настройках.')}</div>
         </section> : <section className="results" aria-live="polite">
-          <div className="results-heading"><h2>{hits.length ? t(effectiveMode === 'browse' ? 'Найдено сообщений: {p0}{p1}' : 'Найдено фрагментов: {p0}{p1}', { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{effectiveMode === 'browse' ? t('Просмотр сообщений') : onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл · RRF') : effectiveMode === 'meaning' ? t('По смыслу · векторы') : t('По словам · BM25')}</span></div>
+          <div className="results-heading"><h2>{hits.length ? t(effectiveMode === 'browse' ? 'Найдено сообщений: {p0}{p1}' : 'Найдено фрагментов: {p0}{p1}', { p0: hits.length, p1: hasMore ? '+' : '' }) : t('Совпадений пока нет')}</h2><span>{effectiveMode === 'browse' ? t('Просмотр сообщений') : onlyImages ? t('По описанию · изображения') : effectiveMode === 'mixed' ? t("{p0} · общая выдача", { p0: submittedModalities.map(kind => t(modalityLabels[kind])).join(' + ') }) : effectiveMode === 'hybrid' ? t('Слова и смысл') : effectiveMode === 'meaning' ? t('По смыслу') : t('По словам')}</span></div>
           <p className="submitted-search">{submitted ? t('Результаты запроса: {p0}', { p0: submitted }) : t('Сообщения по выполненным фильтрам')}</p>
           {!hits.length && <div className="no-results">{effectiveMode === 'browse' ? t('По выбранным фильтрам сообщений нет. Измените фильтры и нажмите «Показать сообщения».') : <>{t("Попробуйте другой запрос или расширьте область поиска.")}{onlyImages ? t(' Проверьте готовность индекса фотографий.') : effectiveMode === 'words' ? t(' Поиск по словам требует все слова запроса.') : t(' Проверьте готовность выбранных индексов.')}</>}</div>}
           <div className={onlyImages ? 'photo-grid' : 'result-list'}>{hits.map((hit, index) => <article className="result-card" key={hit.chunk_id || `${hit.chat_id}/${hit.message_id}`}>
-            <div className="result-header"><span><span className="chat-badge" aria-hidden="true">▤</span>{hit.chat_name}</span><small>{hit.chunk_id ? t('Опорное сообщение фрагмента') : t('Совпадение в')} #{hit.message_id}</small></div>
-            <div className="result-ranking"><span>{t('Результат #{p0}', { p0: index + 1 })}</span>
+            <div className="result-header"><span><Icon name="archive" size={18} />{hit.chat_name}</span><small>{t('Результат #{p0}', { p0: index + 1 })}</small></div>
+            <details className="result-details"><summary>{t('Подробности совпадения')}</summary><div className="result-ranking"><span>{t('Сообщение #{p0}', { p0: hit.message_id })}</span>
               {hit.image_similarity != null && Number.isFinite(hit.image_similarity) && <span title={t('Сходство изображения с описанием: от −1 до 1. Чем выше, тем ближе совпадение; это не вероятность.')}>
                 {t('Сходство изображения: {p0}', { p0: hit.image_similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 4, maximumFractionDigits: 4 }) })}
               </span>}
-            </div>
+            </div></details>
             {hit.matched_by && <div className="match-reasons">{hit.matched_by.map(reason => t(reasons[reason])).join(' · ')}</div>}
             {hit.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}
             {hit.matched_parts?.some(part => !hit.messages.some(message => message.message_id === part.message_id)) && <p className="baseline-note">{t("Показана часть найденного фрагмента. Другие сообщения доступны через «Открыть контекст».")}</p>}
             {hit.ocr_match && hit.ocr_match.kind !== 'exact' && <p className="baseline-note ocr-match">{hit.ocr_match.kind === 'substring' ? t('OCR: совпала часть слова') : t('OCR: неточное совпадение · отличий: {p0}', { p0: hit.ocr_match.edits })}</p>}
             {hit.ocr_text && <details className="ocr-evidence"><summary>{t("Распознанный текст")}{hit.ocr_confidence != null ? t(" · уверенность OCR {p0} / 100", { p0: Math.round(hit.ocr_confidence) }) : ''}</summary><div className="message-text"><Highlight text={hit.ocr_text} query={submitted} /></div><p>{t("Распознавание может содержать ошибки. Откройте фотографию для проверки.")}</p></details>}
-            <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<span>↗</span></button>
+            <button className="context-button" disabled={loadingContext} onClick={() => void openContext(hit)}>{t("Открыть контекст ")}<Icon name="arrow" size={16} /></button>
           </article>)}</div>
           {(nextOffset !== null || browseCursor) && <div className="more-results"><button type="button" className="primary" disabled={busy || loadingMore} onClick={() => void showMore()}>{loadingMore ? t('Загружаем…') : t('Показать ещё')}</button></div>}
           {pagingError && <p className="error" role="alert">{t(pagingError)}</p>}
@@ -467,25 +474,21 @@ export default function App() {
 
     {modal === 'import' && <div className="overlay"><ImportDialog chats={chats} initialPreview={activePreview} onClose={() => setModal(null)} onApplied={refresh} /></div>}
     {conflictJob && <div className="overlay"><ConflictDialog job={conflictJob} onClose={() => setConflictJob(null)} onChanged={refresh} /></div>}
-    {indexChat && <ChatIndexDialog onSources={() => { setIndexChat(null); setModal('sources'); }} onModels={() => { setIndexChat(null); void settings(); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
+    {indexChat && <ChatIndexDialog onResources={() => { setIndexChat(null); settings('performance', null); }} onSources={() => { setIndexChat(null); setModal('sources'); }} onModels={() => { setIndexChat(null); settings('models', null); }} onPerformance={() => { const id = indexChat.id; setIndexChat(null); settings('performance', id); }} key={indexChat.id} chat={indexChat} onClose={() => { setIndexChat(null); void refresh().catch(reportError); }} />}
     {modal === 'sources' && <SettingsDialog titleId="sources-title" onClose={() => { setModal(null); void refresh().catch(reportError); }}>
       <div className="eyebrow">{t('ИСТОЧНИКИ')}</div><h2 id="sources-title">{t('Источники')}</h2>
       <TelegramPanel chats={chats} onChanged={refresh} />
     </SettingsDialog>}
-    {modal === 'settings' && <SettingsDialog titleId="modal-title" onClose={() => setModal(null)}>
-      <div className="eyebrow">{t("ЭТОТ КОМПЬЮТЕР")}</div><h2 id="modal-title">{t("Настройки и диагностика")}</h2><p>{t("Обработка сообщений проходит локально на выбранном устройстве.")}</p>
-      {diagnostics ? <dl className="diagnostics"><dt>{t("База")}</dt><dd>{diagnostics.database_check === 'ok' ? t('Исправна') : t('Требует проверки')}</dd><dt>{t("Сообщений")}</dt><dd>{String(diagnostics.messages)}</dd><dt>{t("Сегменты в очереди индекса")}</dt><dd>{String(diagnostics.pending_index_segments)}</dd><dt>{t("Доступно памяти")}</dt><dd>{(Number(diagnostics.ram_available_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd><dt>{t("Свободно на диске")}</dt><dd>{(Number(diagnostics.disk_free_bytes) / 1024 ** 3).toFixed(1)}{t(" ГиБ")}</dd></dl> : <p>{t("Проверяем…")}</p>}
-      <p className="baseline-note">{t("База хранится локально без шифрования.")}</p>
-      <ResourcePanel />
-      <SemanticPanel status={semantic} onChange={setSemantic} />
-      <RerankPanel />
-      <WorkspacePanel media={media} onMediaChange={setMedia} />
-      <UpdatePanel onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
+    {modal === 'settings' && <SettingsDialog wide titleId="modal-title" onClose={() => setModal(null)}>
+      <h2 id="modal-title">{t('Настройки')}</h2>
+      <SettingsCenter section={settingsSection} onSection={setSettingsSection} chats={chats} scope={performanceScope} onScope={setPerformanceScope}
+        semantic={semantic} media={media} onSemantic={setSemantic} onMedia={setMedia}
+        onRestart={() => { updateObserverRevision.current++; restarting.current = true; setError(''); }} />
     </SettingsDialog>}
 
     {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">
-      <button className="close" aria-label={t("Закрыть контекст")} onClick={closeContext}>×</button><div className="eyebrow">{t("КОНТЕКСТ ДИАЛОГА")}</div><h2 id="context-title">{context.hit.chat_name}</h2>
-      <div className="context-nav"><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[0].message_id)}>{t("← Более ранние")}</button><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[context.messages.length - 1].message_id)}>{t("Более поздние →")}</button></div>
+      <button className="close" aria-label={t("Закрыть контекст")} onClick={closeContext}><Icon name="close" /></button><div className="eyebrow">{t("КОНТЕКСТ ДИАЛОГА")}</div><h2 id="context-title">{context.hit.chat_name}</h2>
+      <div className="context-nav"><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[0].message_id)}><Icon name="left" size={16} />{t('Более ранние')}</button><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[context.messages.length - 1].message_id)}>{t('Более поздние')}<Icon name="arrow" size={16} /></button></div>
       <div className="context-messages">{context.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={context.hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}</div>
     </section></div>}
     {openImage && <ImageViewer key={`${openImage.id}/${openImage.messageId}`} image={openImage} onClose={() => setOpenImage(null)} />}

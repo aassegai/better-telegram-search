@@ -16,7 +16,7 @@ test('an external top-level entry loads the app and remains usable after reload'
   expect((await page.reload())?.status()).toBe(200);
   await expect(page.getByLabel('Поисковый запрос')).toBeVisible();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Настройки и диагностика' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Настройки', exact: true })).toBeVisible();
 });
 
 test('an external top-level link cannot open the session API', async ({ page }) => {

@@ -67,7 +67,7 @@ test('Telegram app setup clears the API hash, applies immediately and translates
   await expect(page.getByLabel('API Hash', { exact: true })).toHaveValue('');
   expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain('a'.repeat(32));
   await page.keyboard.press('Escape');
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await page.getByRole('button', { name: 'Sources · Telegram' }).click();
   await expect(page.getByText('Telegram connection setup', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Phone number with country code')).toBeVisible();
@@ -149,7 +149,7 @@ test('Telegram binding requires preview and account confirmation; success follow
   await page.getByLabel('Подтверждаю, что это нужный аккаунт и диалог Telegram').check();
   await bind.click();
   await expect(page.getByText('Диалог подключён. Получение новых сообщений запущено.')).toBeVisible();
-  await page.getByRole('slider').press('End');
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
   await expect(page.getByText('Chat connected. Fetching new messages has started.')).toBeVisible();
   await page.getByRole('button', { name: 'Log out of Telegram', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Server logout' })).toBeVisible();
