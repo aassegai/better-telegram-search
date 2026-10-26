@@ -110,3 +110,22 @@ exact effective policies, overrides, borrowed-context protection, atomic explici
 text-only apply/rebuild, real-encoder token/padding dry-run and shared UI/CLI.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
+
+## Exact-policy foundation (not an apply workflow)
+
+A separate `NoisePolicy` format now composes the unchanged v2 episode policy with
+canonical exact omit/keep sets and a versioned protection contract. Its cached
+JSON/hash contains effective rules only. Manual keep wins, including for an
+existing seed. Corpus counts, timestamps and analysis IDs cannot alter identity.
+Legacy/v2 JSON and checkpoints keep their old identity and borrowed-context path.
+
+For the new format only, borrowed parents pass the same protections as owned
+messages. An omitted parent still remains a dependency; changing it invalidates
+the owning segment and can make it useful again. A bounded extra lookup protects
+a borrowed answer to a question without recursive classification. Import and
+model rebuild retain an explicitly selected new policy, pauses and other indexes.
+
+This is an internal compiler/runtime foundation with synthetic tests. No analysis
+report can yet activate it, and no user's existing policy is switched on startup.
+The future apply action must check report integrity, scope/revision, overrides and
+idempotence atomically before an explicit text-only rebuild.

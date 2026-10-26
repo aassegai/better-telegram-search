@@ -96,7 +96,28 @@ class EpisodeBuilder(ChunkBuilder):
                 or abs(parent.timestamp - message.timestamp) > self.policy.parent_max_age_seconds
             ):
                 break
-            if current not in known and parent.text.strip():
+            include_parent = True
+            if getattr(self.policy, "filter_borrowed_context", False):
+                # Apply the same exact rules to borrowed context. One extra
+                # bounded lookup protects a meaningful reply to a question;
+                # it does not recursively expand context or classify ancestry.
+                question = None
+                if parent.reply_to is not None:
+                    if parent.reply_to == parent.message_id:
+                        question = parent
+                    elif parent.reply_to == message.message_id:
+                        question = message
+                    else:
+                        question = self.lookup(parent.chat_id, parent.reply_to)
+                    dependencies[parent.reply_to] = question.content_hash if question else None
+                    if question is not None and (
+                        question.chat_id != message.chat_id
+                        or question.remote_deleted
+                        or question.kind != "message"
+                    ):
+                        question = None
+                include_parent = classify(parent, self.policy, question).include
+            if current not in known and parent.text.strip() and include_parent:
                 candidate = Entry(
                     parent,
                     TextPart(current, 0, len(parent.text), "borrowed_context"),

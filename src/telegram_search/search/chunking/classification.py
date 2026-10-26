@@ -31,7 +31,10 @@ def classify(message, policy, parent=None):
         return Classification("attachment", False, False)
     form = whole_word(text)
     # Captions and structured entities protect their contents from filler filtering.
-    if form in policy.filler and not (
+    if hasattr(policy, "omits_form"):
+        if policy.omits_form(form, message, parent):
+            return Classification("filler", False, False)
+    elif form in policy.filler and not (
         message.has_attachment or message.has_photo or message.protected
     ):
         if not parent or "?" not in parent.text:

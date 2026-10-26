@@ -77,6 +77,10 @@ class ChunkPolicy:
         import json
 
         data = json.loads(value)
+        if data.get("version") == "telegram-episodes-noise-v3":
+            from telegram_search.search.chunking.noise.compile import NoisePolicy
+
+            return NoisePolicy.from_json(value)
         data["filler"] = tuple(data["filler"])
         policy = cls(**data)
         if policy.version != "telegram-episodes-v2" or policy.bot_commands != "disabled":
