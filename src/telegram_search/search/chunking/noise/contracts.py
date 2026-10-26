@@ -4,6 +4,23 @@ from dataclasses import dataclass
 from typing import Literal
 
 CANDIDATE_VERSION = "one-edit-runs-periods-v1"
+ANALYSIS_VERSION = "bounded-chat-statistics-v1"
+
+
+@dataclass(frozen=True)
+class AnalysisOptions:
+    max_messages: int = 100000
+    max_forms: int = 50000
+    time_limit_seconds: int = 300
+
+    def __post_init__(self):
+        for value, minimum, maximum in (
+            (self.max_messages, 1, 1000000),
+            (self.max_forms, 1, 50000),
+            (self.time_limit_seconds, 1, 3600),
+        ):
+            if type(value) is not int or not minimum <= value <= maximum:
+                raise ValueError("Invalid noise analysis limits")
 
 
 @dataclass(frozen=True)

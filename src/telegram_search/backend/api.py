@@ -23,6 +23,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from telegram_search import __version__
 from telegram_search.backend.ann import router as ann_router
 from telegram_search.backend.history import router as history_router
+from telegram_search.backend.noise import router as noise_router
 from telegram_search.backend.search import router as search_router
 from telegram_search.backend.tabs import router as tabs_router
 from telegram_search.config.diagnostics import doctor
@@ -30,6 +31,7 @@ from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.ann import AnnIndexService
 from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
+from telegram_search.indexing.noise_analysis import NoiseAnalysisService
 from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
@@ -138,6 +140,7 @@ def create_app(
         importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = (
             ann_indexes
         ) = None
+        noise_analyses = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -146,6 +149,8 @@ def create_app(
             hold_background = bool(verification_nonce) or updates.recovery_required
             importer = ImportService(db)
             app.state.importer = importer
+            noise_analyses = NoiseAnalysisService(db)
+            app.state.noise_analyses = noise_analyses
             semantic = SemanticService(
                 db, importer.lifecycle_lock, start_background=not hold_background
             )
@@ -227,6 +232,8 @@ def create_app(
                 await telegram.close()
             if search_jobs:
                 search_jobs.close()
+            if noise_analyses:
+                noise_analyses.close()
             if ann_indexes:
                 ann_indexes.close()
             if maintenance:
@@ -242,6 +249,7 @@ def create_app(
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.include_router(ann_router)
+    app.include_router(noise_router)
     app.include_router(telegram_router)
     app.include_router(search_router)
     app.include_router(history_router)
@@ -285,7 +293,14 @@ def create_app(
             cancelling_ann = (
                 request.method == "POST" and request.url.path == "/api/ann-indexes/cancel"
             )
-            if maintenance and maintenance.busy and not (cancelling_search or cancelling_ann):
+            cancelling_noise = request.method == "POST" and re.fullmatch(
+                r"/api/chats/[^/]+/noise-analyses/[a-f0-9]{32}/cancel", request.url.path
+            )
+            if (
+                maintenance
+                and maintenance.busy
+                and not (cancelling_search or cancelling_ann or cancelling_noise)
+            ):
                 return JSONResponse(
                     {"detail": "Дождитесь очистки векторного индекса."}, status_code=409
                 )

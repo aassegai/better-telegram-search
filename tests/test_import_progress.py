@@ -256,6 +256,7 @@ def test_v14_paused_import_migrates_and_resumes_its_committed_position(
     importer.shutdown()
     with db.connect() as conn:
         for table in (
+            "noise_analyses",
             "search_tab_state",
             "search_tabs",
             "search_snapshot_owners",

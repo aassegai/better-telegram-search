@@ -1,0 +1,5 @@
+[project]
+name = "bts-noise-lexicon-builder"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["wordfreq==3.1.1"]
