@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('memory waits explain the app threshold and stop promising an ETA', async ({ page }) => {
   let mode: 'waiting' | 'paused' | 'running' = 'waiting';

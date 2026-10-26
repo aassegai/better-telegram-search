@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 for (const english of [false, true]) {
   test(`advanced chunking is the default without a policy selector (${english ? 'EN' : 'RU'})`, async ({ page }) => {

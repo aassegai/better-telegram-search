@@ -121,6 +121,17 @@ def test_repeated_query_does_not_replace_another_tabs_snapshot_or_view(services)
         tabs.result(first["id"], snapshot_id=latest["entry"]["snapshot_id"])
 
 
+def test_late_favorite_action_cannot_star_a_replacement_snapshot(services):
+    tabs, jobs = services
+    tab = tabs.create()
+    previous = complete(tabs, jobs, tab["id"])["entry"]
+    current = complete(tabs, jobs, tab["id"], SearchSpec(query="different"))["entry"]
+    with pytest.raises(TabConflict):
+        tabs.favorite(tab["id"], True, snapshot_id=previous["snapshot_id"])
+    assert not tabs.metadata(tab["id"])["snapshot"]["favorite"]
+    assert tabs.favorite(tab["id"], True, snapshot_id=current["snapshot_id"])["favorite"]
+
+
 def test_browse_tabs_have_independent_bounded_windows_and_cursors(services, importer, tmp_path):
     tabs, jobs = services
     load(importer, export(tmp_path / "source", [message(i) for i in range(1, 112)]))

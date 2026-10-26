@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import path from 'node:path';
 
 test('search, conjunctive author filter and context preserve markers', async ({ page }) => {

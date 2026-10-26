@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 const disconnected = { configured: true, runtime_installed: true, connected: false,
   state: 'disconnected', error: null, account_user_id: null, retry_after: 0 };

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('an external top-level entry loads the app and remains usable after reload', async ({ page }) => {
   // A different hostname supplies real cross-site navigation metadata without

@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 
 async function longArchive(page: Page) {

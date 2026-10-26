@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 for (const variant of [
   { language: 'ru', theme: 'light', width: 1280, height: 800, zoom: 1 },

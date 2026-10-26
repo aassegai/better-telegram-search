@@ -10,7 +10,7 @@ export async function mockSearchJobs(page: Page, handler: (route: SearchRoute) =
   const status = (id: string) => ({ job_id: id, state: 'completed', phase: 'render',
     completed: 0, total: 0, unit: 'messages', elapsed_seconds: 0.1, rate: null,
     eta_seconds: null, queue_position: null, warnings: [], error: null });
-  await page.route('**/api/search-jobs', async route => {
+  await page.route('**/api/search-tabs/*/jobs', async route => {
     const id = ++serial === 1 ? 'snapshot' : `snapshot-${serial}`;
     await handler({ request: () => route.request(), fulfill: async reply => {
       if (reply.status && reply.status >= 400) return route.fulfill(reply);

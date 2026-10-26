@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const progress = { phase: 'metadata', completed: 12 * 1024 ** 2, total: 100 * 1024 ** 2,
   unit: 'bytes', elapsed_seconds: 12, phase_elapsed_seconds: 12, rate: null, eta_seconds: null, activity: null };

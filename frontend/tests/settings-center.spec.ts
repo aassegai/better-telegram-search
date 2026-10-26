@@ -1,8 +1,12 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('four sections retain drafts, avoid accidental preparation and keep language accessible', async ({ page }) => {
   const mutations: string[] = [];
-  page.on('request', request => { if (['POST', 'PATCH'].includes(request.method())) mutations.push(request.url()); });
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname;
+    const tabDraft = path === '/api/search-tabs' || /^\/api\/search-tabs\/[^/]+$/.test(path);
+    if (['POST', 'PATCH'].includes(request.method()) && !tabDraft) mutations.push(request.url());
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -65,7 +69,9 @@ test('date hit areas and language padding work without submitting or changing a 
     } });
   });
   const mutations: string[] = [];
-  page.on('request', request => { if (request.method() === 'POST') mutations.push(request.url()); });
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname !== '/api/search-tabs') mutations.push(request.url());
+  });
   await page.goto('/');
   const from = page.getByLabel('С даты (UTC)', { exact: true });
   await from.click();

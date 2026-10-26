@@ -13,13 +13,22 @@ export type SearchIntent = {
 export type SearchPage = { results: Hit[]; has_more: boolean; effective_mode: string; warnings: string[];
   rerank_applied?: boolean; limit: number; job_id: string; browse_cursor?: string | null;
   next_offset?: number | null; cached_results?: number; spec?: SearchIntent;
-  history_id?: string; snapshot_id?: string; completed_at?: number; favorite?: boolean };
+  history_id?: string | null; snapshot_id?: string; completed_at?: number; favorite?: boolean };
 export type SavedSearch = {
   id: string; snapshot_id: string; spec: SearchIntent; completed_at: number;
   favorite: boolean; recent: boolean; cache_available: boolean; stale_reason: string | null;
   cached_results: number; models: Record<string, unknown>; coverage: Record<string, unknown>;
 };
 export type RestoredSearch = { entry: SavedSearch; result: SearchPage | null };
+export type SearchSnapshot = Omit<SavedSearch, 'id'> & { id: string | null };
+export type TabView = { visible_count: number; scroll_y: number; display_settings_open: boolean };
+export type SearchTab = {
+  id: string; kind: 'search'; position: number; revision: number; draft: SearchIntent;
+  view: TabView; snapshot: SearchSnapshot | null; job_id: string | null;
+  interrupted: boolean; last_state: string | null; error: string | null;
+};
+export type TabList = { tabs: SearchTab[]; active_tab_id: string | null; capacity: number };
+export type TabResult = { entry: SearchSnapshot | null; result: SearchPage | null };
 export type SearchJobStatus = {
   job_id: string; state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
   phase: string; completed: number; total: number | null; unit: string;

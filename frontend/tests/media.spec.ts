@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 const media = { ocr_enabled: 1, images_enabled: 1, paused: 0, running: false, preparation_state: 'ready', error: null,
   resource_error: null, total_photos: 2, ocr_ready: 1, ocr_failed: 0, ocr_dense_ready: 1, images_ready: 2,

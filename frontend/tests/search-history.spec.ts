@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import type { Page } from '@playwright/test';
 
 async function prepare(page: Page) {
@@ -16,7 +16,7 @@ for (const english of [false, true]) {
     const original = await (await page.request.get('/api/settings')).json();
     await page.request.patch('/api/settings', { headers, data: { search_result_limit: 1, display_chunk_size: 1 } });
     let searches = 0;
-    await page.route('**/api/search-jobs', route => { searches++; return route.continue(); });
+    await page.route('**/api/search-tabs/*/jobs', route => { searches++; return route.continue(); });
     try {
       await page.goto('/');
       await page.getByRole('checkbox', { name: english ? 'Images' : 'Изображения', exact: true }).uncheck();
@@ -62,14 +62,16 @@ for (const english of [false, true]) {
 test('stale history restores its conditions without showing old messages or running a search', async ({ page }) => {
   await prepare(page);
   let searches = 0;
-  await page.route('**/api/search-jobs', route => { searches++; return route.continue(); });
+  await page.route('**/api/search-tabs/*/jobs', route => { searches++; return route.continue(); });
   await page.goto('/');
   await page.getByLabel('Поисковый запрос', { exact: true }).fill('велосипед');
   await page.getByRole('button', { name: 'Найти', exact: true }).click();
   await expect(page.locator('.result-card')).toHaveCount(2);
   const entries = (await (await page.request.get('/api/search-history')).json()).entries;
-  const entry = { ...entries[0], cache_available: false, stale_reason: 'revision_changed' };
-  await page.route(`**/api/search-history/${entry.id}`, route => route.fulfill({ json: { entry, result: null } }));
+  const token = (await (await page.request.get('/api/session')).json()).token;
+  expect(entries.length).toBeGreaterThan(0);
+  const cleared = await page.request.delete('/api/search-history/collections/cache', { headers: { 'X-Session-Token': token } });
+  expect(cleared.ok()).toBeTruthy();
   await page.getByLabel('Поисковый запрос', { exact: true }).fill('черновик');
   await page.getByRole('button', { name: 'История поиска', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Открыть поиск', exact: true }).click();

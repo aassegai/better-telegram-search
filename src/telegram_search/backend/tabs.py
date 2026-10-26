@@ -87,5 +87,10 @@ def tab_result(
 
 
 @router.post("/{tab_id}/favorite")
-def favorite(tab_id: str, body: FavoriteRequest, request: Request):
-    return invoke(request, "favorite", tab_id, body.favorite)
+def favorite(
+    tab_id: str,
+    body: FavoriteRequest,
+    request: Request,
+    snapshot_id: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+):
+    return invoke(request, "favorite", tab_id, body.favorite, snapshot_id=snapshot_id)

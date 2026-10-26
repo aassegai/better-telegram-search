@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 for (const english of [false, true]) {
   test(`new model switches require explicit reindex; Giga is a separate role (${english ? 'EN' : 'RU'})`, async ({ page }) => {

@@ -3,7 +3,32 @@
 Tabs live in the current workspace's SQLite database. They retain editing drafts,
 the exact completed snapshot, display state, and the active tab across restarts.
 They do not retain a Python model session or automatically restart computation.
-This document describes the backend contract; the tab interface is a separate step.
+
+The search page has a tab strip with **New search tab** and separate close buttons.
+Each tab retains its own query draft, chat/author/date/forward filters, mode,
+modalities, captured display preferences, completed result, job progress/errors,
+pagination and scroll position. Switching never starts a new search. Arrow keys,
+Home/End switch tabs; Delete closes the focused tab and moves focus to a neighbor.
+Inactive tabs can finish their own jobs. Only the active tab renders result cards,
+photos, context and the image viewer. A tab deleted in another window is removed
+when its next metadata/save request discovers it; navigation remains available.
+
+History offers **Open search** in the current tab and **Open in new tab**.
+The result's star refers to the completed snapshot even while its draft changes.
+Opening tabs or history uses the shared workspace model space; it never prepares
+or switches a model. New tabs inherit current display defaults; existing drafts
+keep their captured values.
+
+Draft/view updates are coalesced and serialized, with revision checks. Switching
+flushes the current draft. Browser-window `sessionStorage` temporarily journals
+unsaved editor parameters and view state, never messages, result bodies or media.
+This covers reload during an in-flight save: a journal is recovered only if the
+server draft matches a known acknowledged/in-flight predecessor. View recovery
+additionally requires the same snapshot. A different server draft wins over an
+unmatched journal. Acknowledged journals and closed-tab journals are removed;
+blocked/full browser storage gracefully leaves ordinary SQLite persistence in use.
+Normal saves do not use `fetch` keepalive, whose small byte quota would reject
+otherwise valid large author/forward filters.
 
 `GET /api/search-tabs` returns ordered tab metadata, `active_tab_id`, and `capacity`
 (8). Result bodies are loaded separately. `POST /api/search-tabs` creates and
@@ -52,6 +77,8 @@ browse snapshots opened in another tab get separate bounded windows/cursors.
 snapshot metadata. It refers to the performed search, even if the draft was
 edited or its recent-history record has already been evicted. It can restore that
 record as a favorite without adding it to the last ten completed searches.
+The UI also sends `snapshot_id` to fence a late favorite action against a newer
+result replacing the tab's snapshot (409).
 
 All mutations require the existing local-session token and origin checks.
 Switching workspaces switches tab storage. Archive changes, model or retrieval

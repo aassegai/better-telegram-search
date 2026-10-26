@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('models show actual paths in details while performance owns device controls', async ({ page }) => {
   const models = await (await page.request.get('/api/models')).json();

@@ -1,9 +1,9 @@
 import { mockSearchJobs } from './search-mocks';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('search display settings persist and control result cards and their message windows', async ({ page }) => {
   let searches = 0;
-  await page.route('**/api/search-jobs', route => { searches++; return route.continue(); });
+  await page.route('**/api/search-tabs/*/jobs', route => { searches++; return route.continue(); });
   await page.goto('/');
   const token = (await (await page.request.get('/api/session')).json()).token;
   const original = await (await page.request.get('/api/settings')).json();
@@ -33,7 +33,7 @@ test('search display settings persist and control result cards and their message
     await expect(page.locator('.result-card')).toHaveCount(2);
     expect(searches).toBe(1);
     await page.reload();
-    await page.getByText('Выдача', { exact: true }).click();
+    await expect(displayButton).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByLabel('Результатов на странице', { exact: true })).toHaveValue('1');
     await expect(page.getByLabel('Сообщений в одном фрагменте', { exact: true })).toHaveValue('1');
     await page.getByLabel('Сообщений в одном фрагменте', { exact: true }).fill('101');

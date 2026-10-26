@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('GPU presets save live load and per-model memory without changing devices', async ({ page }) => {
   let settings = await (await page.request.get('/api/settings')).json();

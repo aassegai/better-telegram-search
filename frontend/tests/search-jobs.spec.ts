@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('empty query browses messages explicitly and an empty chat selection never means all', async ({ page }) => {
   const specs: { query: string; scope: { mode: string; chat_ids?: string[] } }[] = [];
-  await page.route('**/api/search-jobs', route => {
+  await page.route('**/api/search-tabs/*/jobs', route => {
     specs.push(route.request().postDataJSON());
     return route.continue();
   });
@@ -36,7 +36,7 @@ test('measured job progress and native-call cancellation keep the previous compl
   const status = () => ({ job_id: 'controlled', state, phase: 'image_vectors',
     completed, total: 100, unit: 'vectors', elapsed_seconds: 2, rate: 12.5,
     eta_seconds: 6, queue_position: null, error: null, warnings: [] });
-  await page.route('**/api/search-jobs', route => route.fulfill({ json: status() }));
+  await page.route('**/api/search-tabs/*/jobs', route => route.fulfill({ json: status() }));
   await page.route('**/api/search-jobs/controlled', route => route.fulfill({ json: status() }));
   await page.route('**/api/search-jobs/controlled/cancel', route => {
     expect(route.request().method()).toBe('POST');
@@ -89,7 +89,7 @@ for (const failed of [false, true]) {
     const status = (id: string, value = state) => ({ job_id: id, state: value, phase: 'query_text',
       completed: 0, total: null, unit: 'texts', elapsed_seconds: 1, rate: null,
       eta_seconds: null, queue_position: null, error: null, warnings: [] });
-    await page.route('**/api/search-jobs', route => route.fulfill({ json: status(current, 'running') }));
+    await page.route('**/api/search-tabs/*/jobs', route => route.fulfill({ json: status(current, 'running') }));
     await page.route('**/api/search-jobs/first', route => route.fulfill({ json: status('first') }));
     await page.route('**/api/search-jobs/second', route => route.fulfill({ json: status('second', 'running') }));
     await page.route('**/api/search-jobs/first/cancel', async route => {
@@ -121,7 +121,7 @@ test('failed cancellation returns to running and can be retried', async ({ page 
     total: null, unit: 'texts', elapsed_seconds: 1, rate: null, eta_seconds: null,
     queue_position: null, error: null, warnings: [] };
   let calls = 0;
-  await page.route('**/api/search-jobs', route => route.fulfill({ json: status }));
+  await page.route('**/api/search-tabs/*/jobs', route => route.fulfill({ json: status }));
   await page.route('**/api/search-jobs/retry', route => route.fulfill({ json: status }));
   await page.route('**/api/search-jobs/retry/cancel', route => {
     calls++;

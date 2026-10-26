@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const update = {
   state: 'ready', error: null, current_version: '0.3.0', available_version: '0.4.0',

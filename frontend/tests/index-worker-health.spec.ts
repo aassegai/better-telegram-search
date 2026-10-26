@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('SQLite waits replace the stale indexing ETA and recover independently', async ({ page }) => {
   let waiting = true;

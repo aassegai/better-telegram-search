@@ -306,10 +306,12 @@ class SearchTabs:
                             )
                         )
 
-    def favorite(self, tab_id, selected):
+    def favorite(self, tab_id, selected, *, snapshot_id=None):
         with self.lock:
             with self.db.connect() as conn:
-                snapshot_id = self._row(conn, tab_id)["snapshot_id"]
-            if not snapshot_id:
+                current_snapshot = self._row(conn, tab_id)["snapshot_id"]
+            if snapshot_id is not None and snapshot_id != current_snapshot:
+                raise TabConflict("Сохранённая выдача изменилась. Откройте вкладку заново.")
+            if not current_snapshot:
                 raise KeyError(tab_id)
-            return self.history.favorite_snapshot(snapshot_id, selected)
+            return self.history.favorite_snapshot(current_snapshot, selected)

@@ -257,6 +257,19 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .saved-search .dialog-actions { flex-wrap: wrap; }
 .snapshot-notice { border-inline-start: 3px solid var(--accent); padding: 10px 14px; font-size: 13px; }
 .history-storage { padding-bottom: 20px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.search-tabs-toolbar { display: flex; align-items: stretch; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line, #cfd9c7); flex-shrink: 0; min-width: 0; }
+.search-tabs { display: flex; gap: 6px; overflow-x: auto; min-width: 0; }
+.search-tab { display: flex; align-items: stretch; border: 1px solid var(--line, #cfd9c7); border-radius: 8px; flex-shrink: 0; max-width: 220px; }
+.search-tab.selected { background: var(--selected-bg, #e5efdf); border-color: var(--accent, #2a7153); }
+.search-tab button { border: 0; background: transparent; color: var(--text, #22392f); padding: 8px; }
+.search-tab [role="tab"] { display: flex; gap: 6px; min-width: 0; align-items: center; }
+.search-tab [role="tab"] > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-tab [role="tab"] small { display: block; font-size: 10px; color: var(--text-muted, #738277); }
+.search-tab button:focus-visible { outline-offset: -3px; }
+.search-tab .close-search-tab { display: grid; place-items: center; flex-shrink: 0; }
+.new-search-tab { flex-shrink: 0; display: grid; place-items: center; min-width: 36px; }
+.tabs-error { margin: 12px 20px 0; flex-shrink: 0; }
+.tab-busy { color: var(--accent, #2a7153); font-size: 10px; }
 .search-progress progress { width: 100%; height: 7px; accent-color: var(--accent, #356449); }
 .release-notes { white-space: normal; overflow-wrap: anywhere; font: inherit; max-height: 18rem; overflow-y: auto; }
 .update-progress { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin: .75rem 0; }

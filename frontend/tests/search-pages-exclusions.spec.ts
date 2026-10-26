@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const hit = (id: number) => ({ chat_id: 'synthetic', chat_name: 'Тест', message_id: id,
   timestamp: 1750000000, matched_by: ['words'], messages: [{ chat_id: 'synthetic', message_id: id,

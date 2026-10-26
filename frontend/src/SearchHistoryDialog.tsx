@@ -9,7 +9,7 @@ import type { RestoredSearch, SavedSearch } from './types';
 type Page = { entries: SavedSearch[]; next_offset: number | null };
 
 export default function SearchHistoryDialog({ onClose, onRestore }: {
-  onClose: () => void; onRestore: (value: RestoredSearch, repeat: boolean) => void;
+  onClose: () => void; onRestore: (value: RestoredSearch, repeat: boolean, newTab?: boolean) => void;
 }) {
   const [page, setPage] = useState<Page | null>(null);
   const op = useDialogOperation();
@@ -20,9 +20,9 @@ export default function SearchHistoryDialog({ onClose, onRestore }: {
       .catch(error => { if (alive) op.setError(error.message); });
     return () => { alive = false; controller.abort(); };
   }, []);
-  const restore = (id: string, repeat: boolean) => void op.run(async current => {
+  const restore = (id: string, repeat: boolean, newTab = false) => void op.run(async current => {
     const value = await api<RestoredSearch>(`/api/search-history/${encodeURIComponent(id)}`);
-    if (current()) onRestore(value, repeat);
+    if (current()) onRestore(value, repeat, newTab);
   });
   const favorite = (entry: SavedSearch) => void op.run(async current => {
     await api(`/api/search-history/${encodeURIComponent(entry.id)}/favorite`, {
@@ -48,6 +48,7 @@ export default function SearchHistoryDialog({ onClose, onRestore }: {
       {!entry.cache_available && <p className="warning-note">{t('Сохранённая выдача недоступна. Параметры и избранное сохранены; повторите поиск.')}</p>}
       <div className="dialog-actions">
         <button type="button" className="secondary" disabled={op.busy} onClick={() => restore(entry.id, false)}>{t('Открыть поиск')}</button>
+        <button type="button" className="secondary" disabled={op.busy} onClick={() => restore(entry.id, false, true)}>{t('Открыть в новой вкладке')}</button>
         <button type="button" className="text-button" disabled={op.busy} onClick={() => restore(entry.id, true)}>{t('Повторить поиск')}</button>
       </div>
     </article>)}</div>

@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('forward authors have searchable checkboxes, combined selection and a reset', async ({ page }) => {
   const names = ['Альфа', 'Бета <img src=x onerror=window.forwardInjected=true>'];

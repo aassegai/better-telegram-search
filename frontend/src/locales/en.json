@@ -842,5 +842,21 @@
   "База данных занята. Индексация продолжится автоматически.": "The database is busy. Indexing will resume automatically.",
   "Фоновый индексатор сообщил об ошибке.": "The background indexer reported an error.",
   "Фоновый индексатор остановлен. Запустите его снова.": "The background indexer stopped. Start it again.",
-  "Перезапустить индексатор": "Restart indexer"
+  "Перезапустить индексатор": "Restart indexer",
+  "Вкладки поиска": "Search tabs",
+  "Новая вкладка поиска": "New search tab",
+  "Новый поиск": "New search",
+  "Закрыть вкладку {p0}": "Close tab {p0}",
+  "Открыть в новой вкладке": "Open in a new tab",
+  "Загрузка вкладок…": "Loading tabs…",
+  "Загрузка вкладки…": "Loading tab…",
+  "Предыдущий поиск прерван. Запустите его снова, когда будете готовы.": "The previous search was interrupted. Run it again when you are ready.",
+  "Вкладка закрыта.": "The tab is closed.",
+  "Вкладка изменена в другом окне. Обновите её состояние.": "The tab changed in another window. Reload its state.",
+  "Достигнут лимит открытых вкладок. Закройте лишние вкладки.": "The open tab limit has been reached. Close unused tabs.",
+  "Вкладка или сохранённая выдача не найдена.": "The tab or saved results could not be found.",
+  "Сохранённая выдача изменилась. Откройте вкладку заново.": "The saved results changed. Reopen the tab.",
+  "Остановите поиск перед заменой сохранённой выдачи.": "Stop the search before replacing saved results.",
+  "В этой вкладке уже выполняется поиск.": "A search is already running in this tab.",
+  "Обновить вкладки": "Refresh tabs"
 }

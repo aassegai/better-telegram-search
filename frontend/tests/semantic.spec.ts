@@ -1,5 +1,5 @@
 import { mockSearchJobs } from './search-mocks';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 const status = {
   runtime_installed: true, dense_available: true, enabled: 1, paused: 0,
@@ -24,7 +24,7 @@ test('search modes show partial coverage, fallback and exact phrase semantics', 
   await page.getByLabel('Режим поиска').selectOption('hybrid');
   await page.getByLabel('Поисковый запрос').fill('велосипед');
   let requested = '';
-  await page.route('**/api/search-jobs', async route => {
+  await page.route('**/api/search-tabs/*/jobs', async route => {
     requested = route.request().postDataJSON().mode;
     const response = await route.fetch();
     await route.fulfill({ response });

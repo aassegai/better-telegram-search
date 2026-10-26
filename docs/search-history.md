@@ -9,7 +9,8 @@ Repeating the same conditions updates one history entry and keeps its star.
 Failed and stopped searches do not displace completed searches.
 
 **Open search** restores the request, available results and loaded pagination
-without invoking a model. **Repeat search** explicitly starts a new search.
+in the current tab without invoking a model. **Open in new tab** keeps the current
+tab intact. **Repeat search** explicitly starts a new search.
 An unsuccessful repeat keeps the previous result and its favorite association.
 Empty results and browsing with an empty query are saved too.
 
@@ -35,9 +36,11 @@ Opening or paging rechecks compatibility before returning stored messages.
 - **Clear history** removes ordinary history and keeps favorites.
 - **Clear favorites** removes stars; the last ten ordinary searches remain.
 
-An open result can outlive deletion of its history entry through its bounded
-temporary job snapshot. Its history star is detached; deleting history is distinct
-from clearing result caches. Unreferenced persistent snapshots are collected.
+An open [search tab](search-tabs-api.md) pins its exact bounded snapshot separately
+from recent history. Removing its history entry keeps that tab's result, and its
+star can recreate a favorite after the entry has been evicted or removed. Closing
+the tab releases its reference; snapshots without any remaining owners are
+collected. Clearing result caches also invalidates open-tab results.
 
 ## Local HTTP API
 
@@ -51,7 +54,8 @@ Mutations use the existing session token and local Host/Origin guards.
   pagination pinned to the accepted snapshot. Browsing uses `cursor` instead of
   an offset. Repeating a query cannot mix a newer snapshot into an older page.
 - `GET /api/search-history/{id}/status?snapshot_id=...`: metadata only, including
-  current favorite/cache status. The UI checks it every three seconds.
+  current favorite/cache status. Open tabs check their own snapshot metadata every
+  three seconds and validate it before becoming visible again.
 - `POST /api/search-history/{id}/favorite` with `{"favorite": true|false}`: toggle
   a completed search's favorite status; HTTP 204 on success.
 - `DELETE /api/search-history/collections/{history|favorites|cache}`: clear the
