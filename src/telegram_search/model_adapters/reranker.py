@@ -32,9 +32,7 @@ class AdapterReranker:
             self.manifest.role != "reranker"
             or self.registration["environment"] != spec.manifest["adapter_environment"]
         ):
-            raise UserError(
-                "The custom model environment changed. Validate and rebuild explicitly."
-            )
+            raise UserError("The reranker environment changed. Validate and prepare it again.")
         self.execution = AdapterExecution(
             settings.model_device("e5", query=True), settings, self.manifest.data["devices"]
         )
@@ -66,7 +64,7 @@ class AdapterReranker:
                 worker.request("info", cancelled=self.cancelled)["environment"]
                 != self.registration["environment"]
             ):
-                raise UserError("The adapter environment changed. Validate and rebuild explicitly.")
+                raise UserError("The reranker environment changed. Validate and prepare it again.")
             worker.request("validate", cancelled=self.cancelled)
             worker.request("load", timeout=180, cancelled=self.cancelled)
             return worker

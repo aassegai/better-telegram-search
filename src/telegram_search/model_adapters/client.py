@@ -25,6 +25,15 @@ from telegram_search.shared.errors import UserError
 
 _failed_cleanup = set()
 _failed_cleanup_lock = threading.Lock()
+STARTUP_STAGES = (
+    "process_started",
+    "bootstrap_started",
+    "dll_reset",
+    "python_started",
+    "worker_started",
+    "package_verified",
+    "adapter_ready",
+)
 
 
 @dataclass(frozen=True)
@@ -128,6 +137,7 @@ class AdapterWorker:
         self._cleanup_done = False
         self._group_stopped = False
         self.on_progress = on_progress
+        self.startup_phase = "process_started"
         self.job = None
         command = [str(python), "-I", "-B", "-u", str(runner), str(package), manifest.identity]
         if os.name == "nt" and getattr(sys, "frozen", False):
@@ -240,6 +250,12 @@ class AdapterWorker:
                 os.killpg(self.process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                # Darwin returns EPERM for a group containing only zombies.
+                # Keep the leader unreaped while checking membership: its PID
+                # cannot be recycled into another process group during cleanup.
+                if sys.platform != "darwin" or not self._group_exited():
+                    raise
             self._group_stopped = True
         elif self.process.poll() is None:
             self.process.kill()
@@ -256,6 +272,38 @@ class AdapterWorker:
         cleanup = threading.Thread(target=close_streams, name="adapter-pipes", daemon=True)
         cleanup.start()
         cleanup.join(timeout=0.1)
+
+    def _group_exited(self):
+        import psutil
+
+        try:
+            try:
+                if psutil.Process(self.process.pid).status() != psutil.STATUS_ZOMBIE:
+                    return False
+            except psutil.ZombieProcess:
+                pass
+            except psutil.NoSuchProcess:
+                return False
+            for process in psutil.process_iter():
+                try:
+                    if (
+                        os.getpgid(process.pid) == self.process.pid
+                        and process.status() != psutil.STATUS_ZOMBIE
+                    ):
+                        return False
+                except (ProcessLookupError, psutil.NoSuchProcess):
+                    continue
+        except psutil.Error:
+            # Unknown membership is not proof of a dead group. Keep the original
+            # killpg PermissionError, so _abort retains this worker for cleanup.
+            return False
+        try:
+            # A live descendant might fork while process_iter takes its snapshot.
+            # Signal zero detects a newly visible, signalable group member.
+            os.killpg(self.process.pid, 0)
+        except (PermissionError, ProcessLookupError):
+            return True
+        return False
 
     def request(self, operation, payload=None, *, timeout=60, cancelled=None):
         if not number(timeout) or not 0.05 <= timeout <= 3600:
@@ -302,6 +350,13 @@ class AdapterWorker:
                         "Custom model worker failed. "
                         "Check its interpreter, files and dependency versions."
                     )
+                if isinstance(message, dict) and message.get("event") == "startup":
+                    phase = message.get("phase")
+                    if set(message) != {"event", "phase"} or phase not in STARTUP_STAGES:
+                        raise UserError("Custom model worker returned an invalid response.")
+                    if STARTUP_STAGES.index(phase) > STARTUP_STAGES.index(self.startup_phase):
+                        self.startup_phase = phase
+                    continue
                 if not isinstance(message, dict) or message.get("id") != request_id:
                     raise UserError("Custom model worker returned an invalid response.")
                 if message.get("event") == "progress":
@@ -330,8 +385,9 @@ class AdapterWorker:
                         raise UserError("Invalid custom model lifecycle response.")
                     return result
                 return validate_result(self.manifest, operation, payload, result)
-        except BaseException:
+        except BaseException as exc:
             # Cancellation must terminate a native call, not just abandon its reply.
+            exc.add_note("Adapter startup: " + self.startup_phase)
             self._abort()
             raise
         finally:

@@ -38,7 +38,7 @@ for (const english of [false, true]) {
     const card = page.getByRole('region', { name: english ? 'Custom reranking' : 'Пользовательское переранжирование', exact: true });
     const prepare = card.getByRole('button', { name: english ? 'Prepare adapter' : 'Подготовить адаптер', exact: true });
     await expect(prepare).toBeDisabled();
-    const enabled = card.getByLabel(english ? 'Custom reranking' : 'Пользовательское переранжирование', { exact: true });
+    const enabled = card.getByRole('checkbox', { name: english ? 'Custom reranking' : 'Пользовательское переранжирование', exact: true });
     await expect(enabled).toBeDisabled();
     expect(writes).toEqual([]); expect(runs).toBe(0);
     await card.getByRole('button', { name: english ? 'Save model settings' : 'Сохранить настройки модели', exact: true }).click();
@@ -78,3 +78,29 @@ test('an unavailable registered reranker can be replaced by a built-in model', a
   await expect(selector).toHaveValue('giga');
   await expect(page.getByRole('button', { name: 'Подготовить Giga', exact: true })).toBeEnabled();
 });
+
+for (const english of [false, true]) {
+  test(`another window preparing a long custom name does not widen draft Jina (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 760 });
+    await page.addInitScript(({ english }) => {
+      localStorage.setItem('bts.language', english ? 'en' : 'ru');
+      localStorage.setItem('bts.theme', english ? 'dark' : 'light');
+    }, { english });
+    const profile = 'custom:' + 'd'.repeat(64);
+    const name = 'custom/' + 'x'.repeat(64);
+    let status = { profile, ready: false, enabled: false, preparation_state: 'idle', error: null,
+      profiles: [{ profile, model_id: name }, { profile: 'jina-v2', model_id: 'Jina v2' }],
+      path: '/synthetic/local-model', device: 'cpu', download_bytes: 0, download_completed_bytes: 0 };
+    await page.route('**/api/rerank', route => route.fulfill({ json: status }));
+    await page.goto('/');
+    await page.getByRole('button', { name: english ? 'Settings' : 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: english ? 'Models' : 'Модели', exact: true }).click();
+    await page.getByLabel(english ? 'Reranking model' : 'Модель переранжирования', { exact: true }).selectOption('jina-v2');
+    status = { ...status, preparation_state: 'preparing' };
+    const card = page.getByRole('region', { name: english ? 'Result reranking · Jina' : 'Уточнение результатов · Jina', exact: true });
+    const notice = card.getByText(english ? `The model being prepared is ${name}.` : `Сейчас подготавливается модель: ${name}.`, { exact: true });
+    await expect(notice).toBeVisible();
+    expect(await page.getByRole('dialog').locator('.modal').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await expect(card.getByRole('button', { name: english ? 'Prepare Jina' : 'Подготовить Jina', exact: true })).toBeDisabled();
+  });
+}

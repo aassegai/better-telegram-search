@@ -227,17 +227,41 @@ def test_timeout_and_cancel_terminate_a_noncooperative_call(tmp_path, cancel):
             timer.start()
         start = time.monotonic()
         try:
-            with pytest.raises(InterruptedError if cancel else UserError):
+            with pytest.raises(InterruptedError if cancel else UserError) as failure:
                 worker.request(
                     "encode_text",
                     {"items": [{"id": "one", "text": "HANG"}], "operation": "query"},
                     timeout=10 if cancel else 0.2,
                     cancelled=event,
                 )
+            assert failure.value.__notes__ == ["Adapter startup: adapter_ready"]
         finally:
             if cancel:
                 timer.join()
         assert time.monotonic() - start < 5
+        assert worker.process.poll() is not None
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"event": "startup", "phase": "PRIVATE_UNTRUSTED_STAGE"},
+        {"event": "startup", "phase": []},
+        {"event": "startup", "phase": "worker_started", "payload": "PRIVATE_UNTRUSTED_STAGE"},
+    ],
+)
+def test_startup_diagnostics_reject_unknown_or_arbitrary_worker_output(tmp_path, event):
+    path, _ = package(tmp_path)
+    store = AdapterStore(tmp_path / "workspace")
+    manifest, stage = store.stage(path)
+    with AdapterWorker(manifest, stage, sys.executable, store.runner()) as worker:
+        worker.request("load")
+        assert worker.startup_phase == "adapter_ready"
+        worker.events.put(("message", event))
+        with pytest.raises(UserError, match="invalid response") as failure:
+            worker.request("count_tokens", {"texts": ["public"]})
+        assert "PRIVATE" not in str(failure.value)
+        assert failure.value.__notes__ == ["Adapter startup: adapter_ready"]
         assert worker.process.poll() is not None
 
 
@@ -369,13 +393,13 @@ def test_failed_cleanup_is_retained_and_retried_before_another_worker(tmp_path, 
     def flaky(*args):
         calls.append("stop")
         if len(calls) == 1:
-            raise PermissionError("public fixture")
+            raise OSError("public fixture")
         return original(*args)
 
     monkeypatch.setattr(target, attribute, flaky)
     try:
         with pytest.raises(UserError, match="stop the previous"):
-            first.close()
+            first._abort()
         assert not first._cleanup_done
         assert first.process.poll() is None
         with AdapterWorker(manifest, stage, sys.executable, store.runner()) as second:
@@ -384,6 +408,86 @@ def test_failed_cleanup_is_retained_and_retried_before_another_worker(tmp_path, 
         assert len(calls) >= 2
     finally:
         monkeypatch.setattr(target, attribute, original)
+        first.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+@pytest.mark.parametrize("member", ["zombie", "live", "new-live"])
+def test_darwin_zombie_group_does_not_mask_a_live_worker(monkeypatch, member):
+    import io
+    import os
+    from types import SimpleNamespace
+
+    import psutil
+
+    signals = []
+    reaped = []
+    process = SimpleNamespace(
+        pid=123, stdin=io.BytesIO(), stdout=io.BytesIO(), wait=lambda **kw: reaped.append(True)
+    )
+    worker = object.__new__(AdapterWorker)
+    worker.process, worker.job, worker._group_stopped = process, None, False
+    primary = SimpleNamespace(pid=123, status=lambda: psutil.STATUS_ZOMBIE)
+    child = SimpleNamespace(
+        pid=124, status=lambda: psutil.STATUS_RUNNING if member == "live" else psutil.STATUS_ZOMBIE
+    )
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(psutil, "Process", lambda pid: primary)
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter([primary, child]))
+    monkeypatch.setattr(os, "getpgid", lambda pid: 123)
+
+    def signal_group(pid, signal):
+        assert not reaped  # Do not free the owned PID before group classification.
+        signals.append(signal)
+        if signal == 0 and member == "new-live":
+            return
+        raise PermissionError("Darwin empty signalable group")
+
+    monkeypatch.setattr(os, "killpg", signal_group)
+    if member == "zombie":
+        worker._stop_process()
+        assert worker._group_stopped and reaped == [True] and signals == [9, 0]
+    else:
+        with pytest.raises(PermissionError):
+            worker._stop_process()
+        assert not worker._group_stopped and not reaped
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups")
+def test_unreadable_darwin_group_is_retained_until_cleanup_can_retry(tmp_path, monkeypatch):
+    import os
+    from types import SimpleNamespace
+
+    import psutil
+
+    from telegram_search.model_adapters.client import _failed_cleanup
+
+    path, _ = package(tmp_path)
+    store = AdapterStore(tmp_path / "workspace")
+    manifest, staged = store.stage(path)
+    first = AdapterWorker(manifest, staged, sys.executable, store.runner())
+    try:
+        first.request("load")
+
+        def denied(*args):
+            raise PermissionError("Darwin classification requires verification")
+
+        def unreadable():
+            raise psutil.AccessDenied(first.process.pid)
+
+        with monkeypatch.context() as injected:
+            injected.setattr(sys, "platform", "darwin")
+            injected.setattr(os, "killpg", denied)
+            injected.setattr(psutil, "Process", lambda pid: SimpleNamespace(status=unreadable))
+            with pytest.raises(UserError, match="stop the previous"):
+                first._abort()
+            assert first in _failed_cleanup and not first._cleanup_done
+            assert first.process.poll() is None
+        with AdapterWorker(manifest, staged, sys.executable, store.runner()) as second:
+            assert first._cleanup_done and first.process.poll() is not None
+            assert first not in _failed_cleanup
+            assert second.request("count_tokens", {"texts": ["public"]}) == [3]
+    finally:
         first.close()
 
 
@@ -443,6 +547,12 @@ def test_role_outputs_reject_bad_ids_nan_coordinates_and_timestamps(tmp_path, ro
 def test_worker_dies_with_owner_during_a_noncooperative_call(tmp_path):
     import psutil
 
+    def alive(process):
+        try:
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except psutil.NoSuchProcess:
+            return False
+
     path, _ = package(tmp_path)
     store = AdapterStore(tmp_path / "workspace")
     manifest, stage = store.stage(path)
@@ -474,14 +584,14 @@ with AdapterWorker(manifest, Path(sys.argv[1]), sys.executable, Path(sys.argv[2]
         owner.kill()
         owner.wait(timeout=3)
         deadline = time.monotonic() + 3
-        while child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+        while alive(child):
             assert time.monotonic() < deadline, "worker survived owner death"
             time.sleep(0.01)
     finally:
         if owner.poll() is None:
             owner.kill()
             owner.wait(timeout=3)
-        if child and child.is_running() and child.status() != psutil.STATUS_ZOMBIE:
+        if child and alive(child):
             child.kill()
 
 

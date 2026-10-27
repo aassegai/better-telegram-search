@@ -37,6 +37,8 @@ def run(root, expected_identity):
             wire.write(raw)
             wire.flush()
 
+    emit({"event": "startup", "phase": "worker_started"})
+
     def regular(path):
         for parent in (path, *path.parents):
             info = parent.lstat()
@@ -97,6 +99,7 @@ def run(root, expected_identity):
     versions = {name: importlib.metadata.version(name) for name in manifest["dependencies"]}
     if versions != manifest["dependencies"]:
         raise ValueError("dependency_version")
+    emit({"event": "startup", "phase": "package_verified"})
     file, factory = manifest["entrypoint"].split(":")
     sys.path.insert(0, str(root))
     spec = importlib.util.spec_from_file_location("bts_user_model_adapter", root / file)
@@ -104,6 +107,7 @@ def run(root, expected_identity):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     adapter = getattr(module, factory)()
+    emit({"event": "startup", "phase": "adapter_ready"})
     methods = {
         "text_embedding": {"encode_text", "count_tokens"},
         "image_embedding": {"encode_images", "encode_image_queries"},

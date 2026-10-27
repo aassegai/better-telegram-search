@@ -436,5 +436,6 @@
   "Не удалось проверить локальный пакет адаптера.": "Could not check the local adapter package.",
   "GPU своей модели недоступен; режим Авто использует CPU.": "Custom GPU unavailable; Auto uses CPU.",
   "Недопустимый лимит символов для переранжирования.": "Invalid reranker character budget.",
-  "Зарегистрированная модель переранжирования недоступна. Выберите или зарегистрируйте модель.": "The registered reranker is unavailable. Select or register a model."
+  "Зарегистрированная модель переранжирования недоступна. Выберите или зарегистрируйте модель.": "The registered reranker is unavailable. Select or register a model.",
+  "Окружение переранжирования изменилось. Повторите проверку и подготовку модели.": "The reranker environment changed. Validate and prepare it again."
 }

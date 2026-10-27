@@ -196,6 +196,35 @@ def test_damaged_optional_package_leaves_base_search_and_settings_available(db, 
         service.shutdown()
 
 
+def test_reranker_status_uses_one_settings_snapshot(db):
+    old = replace(
+        db.settings, rerank_profile="jina-v2", giga_rerank_enabled=True, search_device="gpu"
+    )
+    new = replace(
+        db.settings, rerank_profile="giga", giga_rerank_enabled=False, search_device="cpu"
+    )
+
+    class ChangingSettings:
+        workspace = db.workspace
+        connect = db.connect
+        reads = 0
+
+        @property
+        def settings(self):
+            self.reads += 1
+            return old if self.reads == 1 else new
+
+    service = RerankService(db)
+    changing = ChangingSettings()
+    try:
+        service.db = changing
+        status = service.status()
+        assert status["profile"] == "jina-v2" and status["enabled"]
+        assert status["device"] == "gpu" and changing.reads == 1
+    finally:
+        service.shutdown()
+
+
 def test_role_mismatch_unregistered_profile_and_catalog_activation(db, tmp_path):
     profile, _, _ = register(db, tmp_path)
     jobs = AdapterJobs(db.workspace)

@@ -76,7 +76,7 @@ class RerankService:
 
     def status(self):
         settings = self.db.settings
-        spec = self.spec
+        spec = rerank_spec(settings.rerank_profile, self.db.workspace)
         profiles = rerank_registry(self.db.workspace)
         profiles.setdefault(spec.profile, spec)
         custom = spec.manifest.get("runtime") == "python-adapter"
@@ -223,6 +223,7 @@ class RerankService:
     def check_memory(self, encoder):
         import psutil
 
+        from telegram_search.inference.memory import process_tree_rss
         from telegram_search.inference.providers import CPU
 
         if encoder.session is not None or encoder.query_session is not None:
@@ -234,8 +235,5 @@ class RerankService:
             64 * 1024**2 if encoder.spec.manifest.get("runtime") == "python-adapter" else 0,
         )
         budget = self.db.settings.memory_limit_mib * 1024**2
-        if (
-            needed > psutil.virtual_memory().available
-            or psutil.Process().memory_info().rss + needed > budget
-        ):
+        if needed > psutil.virtual_memory().available or process_tree_rss() + needed > budget:
             raise UserError("Недостаточно памяти для переранжирования. Базовый порядок сохранён.")

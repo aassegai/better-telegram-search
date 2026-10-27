@@ -413,7 +413,7 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
 .model-card-heading h3 { margin: 0; }
 .model-state { padding: 3px 8px; background: var(--surface-soft, #eaf0e3); color: var(--text-secondary, #365a43); border-radius: 6px; font-size: 11px; }
 .model-purpose { font-size: 12px; color: var(--text-secondary, #47633e); }
-.model-card small, .custom-models small { display: block; font-size: 11px; }
+.model-card small, .custom-models small { display: block; font-size: 11px; overflow-wrap: anywhere; }
 .model-device-summary, .inheritance { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; }
 .model-device-summary { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line, #cfd9c7); }
 .model-card .model-paths { margin: 8px 0; }
