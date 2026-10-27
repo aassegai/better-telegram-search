@@ -22,7 +22,7 @@ jobs:
       - run: uv run python scripts/check_repository.py
   frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -39,7 +39,7 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
-        timeout-minutes: 5
+        timeout-minutes: 10
         working-directory: frontend
       - run: npm test
         working-directory: frontend

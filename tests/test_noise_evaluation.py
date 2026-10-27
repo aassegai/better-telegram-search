@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def dataset():
-    return json.loads((ROOT / "tests/fixtures/synthetic/noise-evaluation.json").read_text())
+    return json.loads(
+        (ROOT / "tests/fixtures/synthetic/noise-evaluation.json").read_text(encoding="utf-8")
+    )
 
 
 @pytest.fixture(scope="module")
@@ -172,6 +174,20 @@ def test_graded_ndcg_and_recall_match_independent_hand_calculation(dataset):
         (("scopes", 0, "frequencies", "сука", "whole"), True),
         (("scopes", 0, "frequencies", "сука", "eligible"), 0),
     ],
+    # Pytest exports the node ID in PYTEST_CURRENT_TEST. Keep the 16K input
+    # inside the test, rather than exceeding Windows' 32767-character env cap.
+    ids=[
+        "boolean-schema",
+        "invalid-kind",
+        "machine-label-source",
+        "duplicate-partition",
+        "oversized-text",
+        "nonboolean-protection",
+        "unknown-label",
+        "eligible-exceeds-total",
+        "boolean-total",
+        "zero-eligible",
+    ],
 )
 def test_invalid_annotations_and_inconsistent_corpus_counts(dataset, generator, path, value):
     current = dataset
@@ -234,7 +250,7 @@ def test_command_confines_reports_and_refuses_input_or_unowned_overwrite(
     unowned.write_text('{"synthetic-user-setting":true}')
     with pytest.raises(UserError):
         command.run(source, unowned)
-    assert unowned.read_text() == '{"synthetic-user-setting":true}'
+    assert unowned.read_text(encoding="utf-8") == '{"synthetic-user-setting":true}'
     with pytest.raises(UserError):
         command.run(source, tmp_path / "outside.json")
     with pytest.raises(UserError):

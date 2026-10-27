@@ -67,6 +67,9 @@ PUBLICATION_FILES = {
     "tests/test_noise_candidates.py",
     "tests/test_noise_analysis.py",
     "scripts/benchmark_ann_embeddings.py",
+    "tests/test_noise_evaluation.py",
+    # Browser dependency download timeouts affect CI, not the native payload.
+    ".github/workflows/checks.yml",
 }
 
 
