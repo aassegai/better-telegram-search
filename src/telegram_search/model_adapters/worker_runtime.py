@@ -260,6 +260,13 @@ def run(root, expected_identity):
             emit(
                 {
                     "id": request_id,
+                    "category": "import_error"
+                    if isinstance(exc, ImportError)
+                    else "invalid_argument"
+                    if isinstance(exc, (ValueError, TypeError))
+                    else "runtime_error"
+                    if isinstance(exc, RuntimeError)
+                    else "other",
                     "error": "cancelled"
                     if isinstance(exc, InterruptedError)
                     else "out_of_memory"

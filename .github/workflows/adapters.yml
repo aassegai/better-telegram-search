@@ -57,6 +57,23 @@ jobs:
               phases = re.findall(r'Adapter startup: ([a-z_]{1,32})', output)
               stage = phases[-1] if phases else 'not_recorded'
               print('::error title=Custom adapter native smoke::Startup stage: ' + stage)
+              operations = re.findall(r'Adapter operation: ([a-z_]{1,32})', output)
+              operation = operations[-1] if operations else 'not_recorded'
+              print('::error title=Custom adapter native smoke::Operation: ' + operation)
+              failures = re.findall(r'Adapter failure: ([a-z_]{1,32})', output)
+              failure = failures[-1] if failures else 'not_recorded'
+              print('::error title=Custom adapter native smoke::Failure category: ' + failure)
+              transports = re.findall(r'Adapter transport: ([a-z_]{1,32})', output)
+              transport = transports[-1] if transports else 'not_recorded'
+              print('::error title=Custom adapter native smoke::Transport: ' + transport)
+              reason = next((code for code, phrase in [
+                  ('timeout', 'Custom model timed out;'),
+                  ('worker_failed', 'Custom model worker failed.'),
+                  ('operation_failed', 'Custom model operation failed.'),
+                  ('invalid_response', 'Custom model worker returned an invalid response.'),
+                  ('capabilities', 'Custom model capabilities'),
+              ] if phrase in output), 'not_recorded')
+              print('::error title=Custom adapter native smoke::Failure reason: ' + reason)
           print(output)
           sys.exit(result.returncode)
       - uses: actions/upload-artifact@v4

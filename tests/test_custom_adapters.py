@@ -210,6 +210,9 @@ def test_model_error_stops_only_its_worker_and_has_no_private_details(tmp_path):
                 "encode_text", {"items": [{"id": "one", "text": "ERROR"}], "operation": "query"}
             )
         assert "PRIVATE" not in str(error.value)
+        assert "Adapter failure: runtime_error" in error.value.__notes__
+        assert "Adapter operation: encode_text" in error.value.__notes__
+        assert "PRIVATE" not in str(error.value.__notes__)
         assert first.process.poll() is not None
         assert second.request("count_tokens", {"texts": ["still alive"]}) == [4]
 
@@ -234,7 +237,10 @@ def test_timeout_and_cancel_terminate_a_noncooperative_call(tmp_path, cancel):
                     timeout=10 if cancel else 0.2,
                     cancelled=event,
                 )
-            assert failure.value.__notes__ == ["Adapter startup: adapter_ready"]
+            assert failure.value.__notes__ == [
+                "Adapter startup: adapter_ready",
+                "Adapter operation: encode_text",
+            ]
         finally:
             if cancel:
                 timer.join()
@@ -261,7 +267,10 @@ def test_startup_diagnostics_reject_unknown_or_arbitrary_worker_output(tmp_path,
         with pytest.raises(UserError, match="invalid response") as failure:
             worker.request("count_tokens", {"texts": ["public"]})
         assert "PRIVATE" not in str(failure.value)
-        assert failure.value.__notes__ == ["Adapter startup: adapter_ready"]
+        assert failure.value.__notes__ == [
+            "Adapter startup: adapter_ready",
+            "Adapter operation: count_tokens",
+        ]
         assert worker.process.poll() is not None
 
 
@@ -611,3 +620,26 @@ def test_examples_have_current_pinned_manifests():
     root = Path(__file__).parents[1] / "examples/custom-adapters"
     for path in root.glob("*.manifest.json"):
         AdapterManifest.read(path).verify_files(root)
+
+
+@pytest.mark.parametrize("category", [[], "PRIVATE_CATEGORY"])
+def test_untrusted_failure_categories_cannot_enter_diagnostic_notes(tmp_path, category):
+    path, _ = package(tmp_path)
+    store = AdapterStore(tmp_path / "workspace")
+    manifest, staged = store.stage(path)
+    with AdapterWorker(manifest, staged, sys.executable, store.runner()) as worker:
+        worker.request("load")
+        worker.events.put(
+            (
+                "message",
+                {
+                    "id": worker.sequence + 1,
+                    "error": "adapter_failure",
+                    "category": category,
+                },
+            )
+        )
+        with pytest.raises(UserError, match="invalid response") as error:
+            worker.request("count_tokens", {"texts": ["public"]})
+        assert "PRIVATE" not in str(error.value.__notes__)
+        assert worker.process.poll() is not None

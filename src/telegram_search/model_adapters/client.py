@@ -346,10 +346,18 @@ class AdapterWorker:
                 except queue.Empty:
                     continue
                 if kind != "message":
-                    raise UserError(
+                    failure = UserError(
                         "Custom model worker failed. "
                         "Check its interpreter, files and dependency versions."
                     )
+                    if isinstance(message, str) and message in {
+                        "size",
+                        "protocol",
+                        "exited",
+                        "write",
+                    }:
+                        failure.add_note("Adapter transport: " + message)
+                    raise failure
                 if isinstance(message, dict) and message.get("event") == "startup":
                     phase = message.get("phase")
                     if set(message) != {"event", "phase"} or phase not in STARTUP_STAGES:
@@ -363,11 +371,21 @@ class AdapterWorker:
                     self._progress(message)
                     continue
                 if "error" in message:
+                    category = message.get("category")
+                    if category is not None and (
+                        not isinstance(category, str)
+                        or category
+                        not in {"import_error", "invalid_argument", "runtime_error", "other"}
+                    ):
+                        raise UserError("Custom model worker returned an invalid response.")
                     if message["error"] == "out_of_memory":
                         raise UserError("Custom model out of memory; reduce the batch size.")
-                    raise UserError(
+                    failure = UserError(
                         "Custom model operation failed. Check the adapter implementation."
                     )
+                    if category is not None:
+                        failure.add_note("Adapter failure: " + category)
+                    raise failure
                 if "result" not in message:
                     raise UserError("Custom model worker returned an invalid response.")
                 result = message["result"]
@@ -388,6 +406,7 @@ class AdapterWorker:
         except BaseException as exc:
             # Cancellation must terminate a native call, not just abandon its reply.
             exc.add_note("Adapter startup: " + self.startup_phase)
+            exc.add_note("Adapter operation: " + operation)
             self._abort()
             raise
         finally:
