@@ -220,7 +220,9 @@ class SearchService:
             # Stream ranked rows until enough distinct windows survive deduplication.
             rows = conn.execute(
                 "SELECT m.*, c.name AS chat_name,bm25(message_fts) AS lexical_score "
-                "FROM message_fts JOIN indexable_messages m ON m.rowid=message_fts.rowid "
+                # Keep FTS outermost: after ANALYZE a narrow chat/date scope can
+                # otherwise make SQLite restart MATCH for every source message.
+                "FROM message_fts CROSS JOIN indexable_messages m ON m.rowid=message_fts.rowid "
                 "JOIN chats c ON c.id=m.chat_id WHERE message_fts MATCH ? "
                 f"AND {where} ORDER BY lexical_score,m.timestamp,m.message_id",
                 (match, *params),

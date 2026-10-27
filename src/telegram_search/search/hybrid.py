@@ -106,7 +106,7 @@ class HybridSearch:
                     source_where, source_params = filters.sql()
                     for row in conn.execute(
                         "SELECT m.*,ch.name AS chat_name FROM message_fts "
-                        "JOIN indexable_messages m ON m.rowid=message_fts.rowid "
+                        "CROSS JOIN indexable_messages m ON m.rowid=message_fts.rowid "
                         "JOIN chats ch ON ch.id=m.chat_id WHERE message_fts MATCH ? "
                         f"AND {source_where} ORDER BY bm25(message_fts),"
                         "m.chat_id,m.message_id LIMIT ?",

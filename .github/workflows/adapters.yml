@@ -19,6 +19,8 @@ jobs:
     env:
       UV_PROJECT_ENVIRONMENT: workspace/adapter-native-env
       BTS_RUNTIME_EXTRA: semantic
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,17 +42,22 @@ jobs:
           import re
           import subprocess
           import sys
-          result = subprocess.run(
-              ['uv', 'run', '--no-sync', 'python', 'scripts/build_app.py',
-               '--expected-arch', 'x86_64', '--variant', 'cpu'],
-              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-          )
+          sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+          try:
+              result = subprocess.run(
+                  ['uv', 'run', '--no-sync', 'python', 'scripts/build_app.py',
+                   '--expected-arch', 'x86_64', '--variant', 'cpu'],
+                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+              )
+          except Exception as exc:
+              print('::error title=Native build runner::' + type(exc).__name__)
+              raise
           output = result.stdout.decode('utf-8', errors='replace')
-          print(output)
           if result.returncode:
               phases = re.findall(r'Adapter startup: ([a-z_]{1,32})', output)
               stage = phases[-1] if phases else 'not_recorded'
               print('::error title=Custom adapter native smoke::Startup stage: ' + stage)
+          print(output)
           sys.exit(result.returncode)
       - uses: actions/upload-artifact@v4
         with:

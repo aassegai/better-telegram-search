@@ -27,7 +27,7 @@ from telegram_search.backend.history import router as history_router
 from telegram_search.backend.noise import router as noise_router
 from telegram_search.backend.search import router as search_router
 from telegram_search.backend.tabs import router as tabs_router
-from telegram_search.config.diagnostics import doctor
+from telegram_search.config.diagnostics import DiagnosticsBusy, DiagnosticsSnapshot, doctor
 from telegram_search.config.runtime import frontend_directory, frozen
 from telegram_search.indexing.ann import AnnIndexService
 from telegram_search.indexing.chats import ChatIndexing
@@ -143,6 +143,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        diagnostics_cache = None
         importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = (
             ann_indexes
         ) = None
@@ -204,6 +205,39 @@ def create_app(
             tabs.recover()
             search_jobs.tabs = tabs
             app.state.search_tabs = tabs
+            integrity_result = None
+
+            def collect_diagnostics(stop):
+                nonlocal integrity_result
+                with db.connection_timeout(0.1), db.connection_cancellation(stop):
+                    if not importer.lifecycle_lock.acquire(blocking=False):
+                        raise DiagnosticsBusy()
+                    try:
+                        status = semantic.status()
+                    finally:
+                        importer.lifecycle_lock.release()
+                    media_status = media.status()
+                    backend = status["backend"] or media_status.get("backend")
+                    result = doctor(db, database_check=integrity_result, stop=stop)
+                    integrity_result = result["database_check"]
+                    result["hardware"]["selected_provider"] = (
+                        backend.get("provider") if backend else None
+                    )
+                    return {
+                        **result,
+                        "device": backend.get("device", db.settings.device)
+                        if backend
+                        else db.settings.device,
+                        "semantic": status,
+                        "media": media_status,
+                        "dense_available": status["dense_available"],
+                        "models_loaded": int(
+                            bool(status["backend"] and status["backend"]["loaded"])
+                        ),
+                    }
+
+            diagnostics_cache = DiagnosticsSnapshot(db, collect_diagnostics)
+            app.state.diagnostics = diagnostics_cache
             app.state.update_database_check = "checking" if verification_nonce else "ok"
             if verification_nonce:
 
@@ -236,6 +270,8 @@ def create_app(
                 updates.start_cleanup()
             yield
         finally:
+            if diagnostics_cache:
+                diagnostics_cache.close()
             if adapter_jobs:
                 adapter_jobs.shutdown()
             verification_stop.set()
@@ -838,22 +874,13 @@ def create_app(
         return {"semantic": app.state.semantic.worker_status()}
 
     @app.get("/api/doctor")
-    def diagnostics():
+    async def diagnostics():
         if verification_nonce and app.state.update_verifying:
             return {"version": __version__, "database_check": app.state.update_database_check}
-        status = app.state.semantic.status()
-        media_status = app.state.media.status()
-        media_backend = media_status.get("backend")
-        backend = status["backend"] or media_backend
-        result = doctor(db)
-        result["hardware"]["selected_provider"] = backend.get("provider") if backend else None
         return {
-            **result,
-            "device": backend.get("device", db.settings.device) if backend else db.settings.device,
-            "semantic": status,
-            "media": media_status,
-            "dense_available": status["dense_available"],
-            "models_loaded": int(bool(status["backend"] and status["backend"]["loaded"])),
+            **app.state.diagnostics.snapshot(),
+            "search": app.state.search_jobs.diagnostics(),
+            "indexing_health": app.state.semantic.worker_status(),
         }
 
     @app.post("/api/rebuild")

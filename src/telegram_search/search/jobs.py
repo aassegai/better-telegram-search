@@ -283,6 +283,20 @@ class SearchJobs:
         with self.lock:
             return self._status(self._get(job_id))
 
+    def diagnostics(self):
+        # Persistence can own the scheduler lock while SQLite is busy. Doctor
+        # must still respond; omit the snapshot rather than wait behind it.
+        if not self.lock.acquire(blocking=False):
+            return {"available": False, "reason": "scheduler_busy"}
+        try:
+            return {
+                "available": True,
+                "queued": len(self.queue),
+                "active": self._status(self.running) if self.running else None,
+            }
+        finally:
+            self.lock.release()
+
     def cancel(self, job_id):
         with self.lock:
             job = self._get(job_id)

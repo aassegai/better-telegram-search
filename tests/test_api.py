@@ -137,6 +137,9 @@ def test_missing_frontend_and_invalid_filters(client):
     assert client.get("/").status_code == 503
     assert client.get("/api/search", params={"q": "a", "date_from": "invalid"}).status_code == 400
     assert client.get("/api/search", params={"q": "a", "limit": 101}).status_code == 422
+    initial = client.get("/api/doctor").json()
+    assert initial["database_check"] in {"checking", "ok"}
+    client.app.state.diagnostics.worker.join(timeout=2)
     result = client.get("/api/doctor").json()
     assert result["device"] == "cpu" and result["models_loaded"] == 0
     assert result["database_check"] == "ok"

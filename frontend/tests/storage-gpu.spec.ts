@@ -87,7 +87,7 @@ test('vector cleanup confirms the kind, reports progress and refreshes retained 
   expect(requests).toBe(1);
 });
 
-test('storage controls wait for initial status and terminal refresh settles before retry', async ({ page }) => {
+test('storage controls wait for initial status and show completion before inventory settles', async ({ page }) => {
   const chat = (await (await page.request.get('/api/chats')).json())[0];
   let releaseInitial!: () => void;
   let releaseInventory!: () => void;
@@ -125,6 +125,8 @@ test('storage controls wait for initial status and terminal refresh settles befo
   await storage.getByRole('region', { name: 'Текстовые векторы', exact: true }).getByRole('button', { name: 'Очистить', exact: true }).click();
   await page.getByRole('dialog', { name: 'Очистить векторный индекс?', exact: true }).getByRole('button', { name: 'Очистить векторы', exact: true }).click();
   await expect.poll(() => inventoryRequests).toBe(1);
+  await expect(storage.getByRole('status')).toContainText('Индекс очищен.');
+  await expect(storage.getByRole('region', { name: 'Текстовые векторы', exact: true }).getByRole('button', { name: 'Очистить', exact: true })).toBeEnabled();
   await page.waitForTimeout(1300);
   expect(inventoryRequests).toBe(1);
   releaseInventory();
@@ -213,4 +215,110 @@ test('a failed disk cleanup can be retried after the logical vector count reache
   await page.getByRole('dialog', { name: 'Clear the vector index?', exact: true }).getByRole('button', { name: 'Clear vectors', exact: true }).click();
   await expect.poll(() => requests).toBe(2);
   await expect(page.getByRole('region', { name: 'Indexes for this chat', exact: true }).getByRole('region', { name: 'Text vectors', exact: true }).getByRole('button')).toBeDisabled();
+});
+
+test('slow inventory does not block confirmed cleanup or accept its stale response', async ({ page }) => {
+  const chat = (await (await page.request.get('/api/chats')).json())[0];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let inventoryRequests = 0;
+  let clears = 0;
+  let job = { state: 'idle', chat_id: chat.id, kind: null as string | null, deleted_vectors: 0 };
+  const inventory = (vectors: number) => ({ indexes: Object.fromEntries(['text', 'images', 'ocr'].map(kind => [kind, {
+    vectors, reclaimable_vectors: vectors, shared_vectors: 0, bytes: vectors * 1024, shared: false,
+  }])) });
+  await page.route('**/api/storage/vectors/clear', route => route.fulfill({ json: job }));
+  await page.route('**/api/chats/*/storage/vectors', async route => {
+    if (++inventoryRequests === 1) {
+      await held;
+      await route.fulfill({ json: inventory(99) }).catch(() => {});
+    } else await route.fulfill({ json: inventory(0) });
+  });
+  await page.route('**/api/chats/*/storage/vectors/images/clear', route => {
+    clears++;
+    expect(route.request().postDataJSON()).toEqual({ confirm: true });
+    job = { state: 'done', chat_id: chat.id, kind: 'images', deleted_vectors: 5 };
+    return route.fulfill({ json: job });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: `Настройки индексации ${chat.name}`, exact: true }).click();
+  const storage = page.getByRole('region', { name: 'Индексы этого диалога', exact: true });
+  const images = storage.getByRole('region', { name: 'Векторы изображений', exact: true });
+  await expect(storage.getByRole('status')).toHaveText('Подсчитываем размер индексов. Очистка уже доступна.');
+  await images.getByRole('button', { name: 'Очистить', exact: true }).click();
+  expect(clears).toBe(0);
+  await page.getByRole('dialog', { name: 'Очистить векторный индекс?', exact: true }).getByRole('button', { name: 'Очистить векторы', exact: true }).click();
+  await expect(images).toContainText('Векторов: 0');
+  release();
+  await expect(storage.getByRole('status')).toContainText('Удалено векторов: 5');
+  await expect(images).not.toContainText('99');
+  expect(clears).toBe(1);
+});
+
+test('failed inventory leaves cleanup available and permits a storage retry', async ({ page }) => {
+  const chat = (await (await page.request.get('/api/chats')).json())[0];
+  let attempts = 0;
+  await page.route('**/api/storage/vectors/clear', route => route.fulfill({ json: { state: 'idle', chat_id: null, kind: null } }));
+  await page.route('**/api/chats/*/storage/vectors', route => ++attempts === 1
+    ? route.fulfill({ status: 500, json: { detail: 'Synthetic inventory failure' } })
+    : route.fulfill({ json: { indexes: Object.fromEntries(['text', 'images', 'ocr'].map(kind => [kind, {
+      vectors: 1, reclaimable_vectors: 1, shared_vectors: 0, bytes: 1024, shared: false,
+    }])) } }));
+  await page.goto('/');
+  await page.getByRole('button', { name: `Настройки индексации ${chat.name}`, exact: true }).click();
+  const storage = page.getByRole('region', { name: 'Индексы этого диалога', exact: true });
+  await expect(storage.getByRole('alert')).toHaveText('Synthetic inventory failure');
+  for (const button of await storage.getByRole('button', { name: 'Очистить', exact: true }).all()) await expect(button).toBeEnabled();
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
+  const english = page.getByRole('region', { name: 'Indexes for this chat', exact: true });
+  await expect(english).toContainText('Index sizes are not available yet. Cleanup is available; vectors shared with other chats will be kept.');
+  await english.getByRole('button', { name: 'Refresh disk usage', exact: true }).click();
+  await expect(english.getByRole('alert')).toHaveCount(0);
+  await expect(english.getByRole('region', { name: 'Image vectors', exact: true })).toContainText('Vectors: 1');
+  expect(attempts).toBe(2);
+});
+
+test('unknown cleanup status stays blocked and can be retried after a request failure', async ({ page }) => {
+  const chat = (await (await page.request.get('/api/chats')).json())[0];
+  let attempts = 0;
+  await page.route('**/api/storage/vectors/clear', route => ++attempts === 1
+    ? route.fulfill({ status: 500, json: { detail: 'Synthetic status failure' } })
+    : route.fulfill({ json: { state: 'idle', kind: null, chat_id: null } }));
+  await page.route('**/api/chats/*/storage/vectors', route => route.fulfill({ json: { indexes: Object.fromEntries(['text', 'images', 'ocr'].map(kind => [kind, {
+    vectors: 1, reclaimable_vectors: 1, shared_vectors: 0, bytes: 1, shared: false,
+  }])) } }));
+  await page.goto('/');
+  await page.getByRole('button', { name: `Настройки индексации ${chat.name}`, exact: true }).click();
+  const storage = page.getByRole('region', { name: 'Индексы этого диалога', exact: true });
+  await expect(storage.getByRole('alert')).toHaveText('Synthetic status failure');
+  for (const button of await storage.getByRole('button', { name: 'Очистить', exact: true }).all()) await expect(button).toBeDisabled();
+  await storage.getByRole('button', { name: 'Обновить сведения о месте', exact: true }).click();
+  await expect(storage.getByRole('alert')).toHaveCount(0);
+  for (const button of await storage.getByRole('button', { name: 'Очистить', exact: true }).all()) await expect(button).toBeEnabled();
+});
+
+test('stalled inventory times out visibly while cleanup stays available', async ({ page }) => {
+  const chat = (await (await page.request.get('/api/chats')).json())[0];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let attempts = 0;
+  await page.route('**/api/storage/vectors/clear', route => route.fulfill({ json: { state: 'idle', kind: null, chat_id: null } }));
+  await page.route('**/api/chats/*/storage/vectors', async route => {
+    if (++attempts === 1) await held;
+    await route.fulfill({ json: { indexes: Object.fromEntries(['text', 'images', 'ocr'].map(kind => [kind, {
+      vectors: 1, reclaimable_vectors: 1, shared_vectors: 0, bytes: 1, shared: false,
+    }])) } }).catch(() => {});
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: `Настройки индексации ${chat.name}`, exact: true }).click();
+  const storage = page.getByRole('region', { name: 'Индексы этого диалога', exact: true });
+  const refresh = storage.getByRole('button', { name: 'Обновить сведения о месте', exact: true });
+  await expect(storage.getByRole('alert')).toContainText('Подсчёт размера индексов задерживается.', { timeout: 15000 });
+  await expect(refresh).toBeEnabled();
+  for (const button of await storage.getByRole('button', { name: 'Очистить', exact: true }).all()) await expect(button).toBeEnabled();
+  await refresh.click();
+  await expect(storage.getByRole('region', { name: 'Векторы изображений', exact: true })).toContainText('Векторов: 1');
+  release();
+  await expect(storage.getByRole('alert')).toHaveCount(0);
+  expect(attempts).toBe(2);
 });
