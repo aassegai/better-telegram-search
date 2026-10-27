@@ -9,7 +9,6 @@ import ChatPerformancePanel from './ChatPerformancePanel';
 import SemanticPanel from './SemanticPanel';
 import RerankPanel from './RerankPanel';
 import MediaModelsPanel from './MediaModelsPanel';
-import CustomModelsPanel from './CustomModelsPanel';
 import DatabasePanel from './DatabasePanel';
 import UpdatePanel from './UpdatePanel';
 import { ModelSettingsProvider } from './ModelSettings';
@@ -65,7 +64,6 @@ export default function SettingsCenter({ section, onSection, chats, scope, onSco
           <SemanticPanel status={semantic} onChange={onSemantic} onPerformance={performance} />
           <RerankPanel onPerformance={performance} />
           <MediaModelsPanel media={media} onMediaChange={onMedia} onPerformance={performance} />
-          <CustomModelsPanel onSemantic={onSemantic} />
         </>}
         {key === 'database' && <DatabasePanel chats={chats} />}
         {key === 'updates' && <UpdatePanel onRestart={onRestart} />}

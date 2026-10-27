@@ -21,7 +21,6 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from telegram_search import __version__
-from telegram_search.backend.adapters import router as adapters_router
 from telegram_search.backend.ann import router as ann_router
 from telegram_search.backend.history import router as history_router
 from telegram_search.backend.noise import router as noise_router
@@ -38,7 +37,6 @@ from telegram_search.indexing.noise_policy import NoisePolicyService
 from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
 from telegram_search.ingestion.importer import ImportService
-from telegram_search.model_adapters.jobs import AdapterJobs
 from telegram_search.search.cache import SearchCache
 from telegram_search.search.history import SearchHistory
 from telegram_search.search.hybrid import HybridSearch
@@ -76,9 +74,7 @@ class ConflictResolution(BaseModel):
 
 
 class ModelRequest(BaseModel):
-    profile: (
-        Annotated[str, Field(pattern=r"^(small|base|berta|ultrabert|custom:[0-9a-f]{64})$")] | None
-    ) = None
+    profile: Literal["small", "base", "berta", "ultrabert"] | None = None
     reindex: bool = False
     offline: bool = False
     repair: bool = False
@@ -146,7 +142,7 @@ def create_app(
         importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = (
             ann_indexes
         ) = None
-        noise_analyses = noise_comparisons = adapter_jobs = None
+        noise_analyses = noise_comparisons = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -155,8 +151,6 @@ def create_app(
             hold_background = bool(verification_nonce) or updates.recovery_required
             importer = ImportService(db)
             app.state.importer = importer
-            adapter_jobs = AdapterJobs(db.workspace)
-            app.state.adapter_jobs = adapter_jobs
             noise_analyses = NoiseAnalysisService(db)
             app.state.noise_analyses = noise_analyses
             semantic = SemanticService(
@@ -236,8 +230,6 @@ def create_app(
                 updates.start_cleanup()
             yield
         finally:
-            if adapter_jobs:
-                adapter_jobs.shutdown()
             verification_stop.set()
             if verification_thread:
                 verification_thread.join(timeout=10)
@@ -266,7 +258,6 @@ def create_app(
 
     app = FastAPI(title="Telegram Search", lifespan=lifespan)
     app.include_router(ann_router)
-    app.include_router(adapters_router)
     app.include_router(noise_router)
     app.include_router(telegram_router)
     app.include_router(search_router)
@@ -316,15 +307,10 @@ def create_app(
                 r"(?:/dry-runs/[a-f0-9]{32})?/cancel",
                 request.url.path,
             )
-            cancelling_adapter = request.method == "POST" and re.fullmatch(
-                r"/api/adapters/jobs/[a-f0-9]{32}/cancel", request.url.path
-            )
             if (
                 maintenance
                 and maintenance.busy
-                and not (
-                    cancelling_search or cancelling_ann or cancelling_noise or cancelling_adapter
-                )
+                and not (cancelling_search or cancelling_ann or cancelling_noise)
             ):
                 return JSONResponse(
                     {"detail": "Дождитесь очистки векторного индекса."}, status_code=409

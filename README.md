@@ -6,7 +6,7 @@ Search your Telegram archive by words, meaning, image descriptions, or text insi
 pictures. Open a result with its surrounding conversation to find the message you
 remember, even when you cannot recall its exact wording.
 
-The app runs locally and opens in your browser. Built-in models process messages on your
+The app runs locally and opens in your browser. Models process messages on your
 computer through ONNX Runtime; conversation contents are not sent to an external
 AI service.
 
@@ -97,7 +97,6 @@ and package requirements are covered in the guides below.
 - [Standalone packages, data locations and updates](docs/portable-builds.en.md)
 - [Telegram connection](docs/telegram-sync.en.md)
 - [Models and reindexing](docs/model-migration.en.md) · [UltraBERT](docs/ultrabert.md) · [Jina](docs/jina-reranking.md)
-- [Custom Python model adapters](docs/custom-model-adapters.en.md)
 - [Text chunks](docs/chunking.en.md) · [Noise analysis](docs/noise-analysis.md) · [Search filters](docs/query-filters.md)
 - [Indexing estimates](docs/indexing-estimates.en.md) · [SQLite diagnostics](docs/sqlite-indexing-recovery.md)
 - [Architecture](docs/architecture.md) · [Release notes](https://github.com/aassegai/better-telegram-search/releases)

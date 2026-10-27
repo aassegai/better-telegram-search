@@ -23,8 +23,6 @@ datas = [
 if (assets / "telegram-app.json").is_file():
     datas.append((str(assets / "telegram-app.json"), "."))
 datas += collect_data_files("telegram_search", includes=["**/*.json", "**/*.sql"])
-datas += collect_data_files("telegram_search", include_py_files=True,
-                            includes=["model_adapters/worker_runtime.py"])
 binaries = []
 nvidia_dlls = set()
 for package in ("onnxruntime", "pyarrow", "lancedb", "tesserocr"):

@@ -6,7 +6,7 @@
 Помогает найти нужное сообщение, даже если вы не помните точную формулировку,
 и открыть его вместе с окружающим разговором.
 
-Приложение работает локально и открывается в браузере. Встроенные модели обрабатывают сообщения
+Приложение работает локально и открывается в браузере. Модели обрабатывают сообщения
 на вашем компьютере через ONNX Runtime; переписка не отправляется во внешний
 AI-сервис.
 
@@ -99,7 +99,6 @@ uv run --no-sync telegram-search run
 - [Готовые сборки, расположение данных и обновления](docs/portable-builds.md)
 - [Подключение Telegram](docs/telegram-sync.md)
 - [Модели и переиндексация](docs/model-migration.md) · [UltraBERT](docs/ultrabert.ru.md) · [Jina](docs/jina-reranking.ru.md)
-- [Свои модели через Python-адаптеры](docs/custom-model-adapters.md)
 - [Текстовые фрагменты](docs/chunking.md) · [Анализ шума](docs/noise-analysis.ru.md) · [Фильтры поиска](docs/query-filters.ru.md)
 - [Оценки индексации](docs/indexing-estimates.md) · [Диагностика SQLite](docs/sqlite-indexing-recovery.md)
 - [Архитектура](docs/architecture.md) · [Изменения в релизах](https://github.com/aassegai/better-telegram-search/releases)

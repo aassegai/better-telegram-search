@@ -401,7 +401,7 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
 .settings-content .check-label { display: flex; align-items: center; gap: 9px; }
 .settings-content .check-label input { margin: 0; }
 .settings-content .job-actions, .model-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-.model-card, .custom-models, .settings-content .device-panel, .settings-content .resource-settings > section, .ann-settings { border: 1px solid var(--line, #cfd9c7); border-radius: 12px; padding: 18px; margin: 0 0 18px; background: var(--surface, #fff); }
+.model-card, .settings-content .device-panel, .settings-content .resource-settings > section, .ann-settings { border: 1px solid var(--line, #cfd9c7); border-radius: 12px; padding: 18px; margin: 0 0 18px; background: var(--surface, #fff); }
 .ann-indexes { display: grid; gap: 12px; margin-top: 16px; }
 .ann-index { padding: 14px; border: 1px solid var(--line, #cfd9c7); border-radius: 9px; min-width: 0; }
 .ann-index progress { display: block; width: 100%; height: 7px; accent-color: var(--accent, #356449); }
@@ -413,7 +413,7 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
 .model-card-heading h3 { margin: 0; }
 .model-state { padding: 3px 8px; background: var(--surface-soft, #eaf0e3); color: var(--text-secondary, #365a43); border-radius: 6px; font-size: 11px; }
 .model-purpose { font-size: 12px; color: var(--text-secondary, #47633e); }
-.model-card small, .custom-models small { display: block; font-size: 11px; }
+.model-card small { display: block; font-size: 11px; }
 .model-device-summary, .inheritance { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 12px; }
 .model-device-summary { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line, #cfd9c7); }
 .model-card .model-paths { margin: 8px 0; }
@@ -436,7 +436,7 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
   .settings-navigation { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-navigation button { justify-content: center; text-align: center; font-size: 12px; }
   .settings-center .modal { padding: 18px; }
-  .model-card, .custom-models, .settings-content .device-panel, .settings-content .resource-settings > section, .ann-settings { padding: 14px; }
+  .model-card, .settings-content .device-panel, .settings-content .resource-settings > section, .ann-settings { padding: 14px; }
   .resource-fields { grid-template-columns: 1fr; }
   .date-control { min-width: 0; }
 }
@@ -448,6 +448,3 @@ summary { cursor: pointer; min-height: 34px; padding-block: 6px; }
 .import-progress.compact progress { height: 5px; }
 .import-activity { margin-top: 8px; overflow-wrap: anywhere; }
 .import-job-panel details { margin: 18px 0; }
-.custom-models, .model-details { overflow-wrap: anywhere; }
-.custom-models progress { display: block; width: 100%; margin: 8px 0; }
-.custom-models ul { padding-inline-start: 20px; }

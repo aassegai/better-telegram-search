@@ -69,12 +69,10 @@ def _signature(stat):
 def scan_export(path, progress=None):
     metadata, has_messages, total_messages = {}, False, 0
     try:
-        before = path.stat()
-        if progress:
-            progress.phase("metadata", total=before.st_size, unit="bytes")
         with path.open("rb") as stream:
-            if _signature(os.fstat(stream.fileno())) != _signature(before):
-                raise UserError("JSON изменился во время чтения. Повторите проверку.")
+            before = os.fstat(stream.fileno())
+            if progress:
+                progress.phase("metadata", total=before.st_size, unit="bytes")
             source = ExportReader(stream, progress, before.st_size)
             for prefix, event, value in ijson.parse(source, use_float=True):
                 if prefix in {"id", "name", "type"} and event in {"string", "number", "null"}:
@@ -92,8 +90,12 @@ def scan_export(path, progress=None):
                     total_messages += 1
             if _signature(os.fstat(stream.fileno())) != _signature(before):
                 raise UserError("JSON изменился во время чтения. Повторите проверку.")
-        if _signature(path.stat()) != _signature(before):
-            raise UserError("JSON изменился во время чтения. Повторите проверку.")
+            # Windows stat(path) and fstat(fd) can report different file/device
+            # identifiers. Compare two open handles through the same API instead.
+            # This probe reads no content: the JSON still has one streaming pass.
+            with path.open("rb") as current:
+                if _signature(os.fstat(current.fileno())) != _signature(before):
+                    raise UserError("JSON изменился во время чтения. Повторите проверку.")
         if progress:
             progress.update(source.completed, force=True)
     except UserError:

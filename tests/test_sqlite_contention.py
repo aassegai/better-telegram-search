@@ -122,6 +122,9 @@ def test_busy_work_requeues_its_existing_checkpoint_and_continues(
         return {"state": "done"}
 
     monkeypatch.setattr(service, "_worker", lambda encoder: SimpleNamespace(run=run))
+    # This test exercises SQLite pause publication with a synthetic encoder;
+    # it must not require a native vector runtime in the base dependency job.
+    monkeypatch.setattr(service, "cleanup", lambda **_kwargs: None)
     service.start_background()
     assert claimed.wait(3)
     writer = locker(db)

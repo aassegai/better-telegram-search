@@ -200,9 +200,6 @@ def main():
                 "LD_LIBRARY_PATH",
             }
         }
-        # Check the optional external adapter environment using the build Python;
-        # the archived app itself still contains no training framework/interpreter SDK.
-        clean_env["BTS_ADAPTER_SMOKE_PYTHON"] = sys.executable
         try:
             result = run(
                 str(executable),

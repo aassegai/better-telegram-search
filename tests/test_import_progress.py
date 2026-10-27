@@ -42,7 +42,42 @@ def test_one_header_pass_counts_messages_and_hashes_even_with_trailing_metadata(
     metadata, fingerprint, total = scan_export(path)
     assert metadata == {"id": 100, "name": "synthetic", "type": "personal_chat"}
     assert fingerprint == hashlib.sha256(data).hexdigest() and total == 3
-    assert len(opens) == 1
+    # One streaming read plus an unread handle verifying the path still refers
+    # to the same file, without mixing Windows stat and fstat identifiers.
+    assert len(opens) == 2
+
+
+def test_final_path_probe_rejects_another_file_with_identical_content(tmp_path, monkeypatch):
+    path = export(tmp_path / "source", [message()])
+    replacement = tmp_path / "replacement.json"
+    replacement.write_bytes(path.read_bytes())
+    original = Path.open
+    opens = 0
+
+    def opened(self, *args, **kwargs):
+        nonlocal opens
+        if self == path:
+            opens += 1
+            if opens == 2:
+                return original(replacement, *args, **kwargs)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", opened)
+    with pytest.raises(UserError, match="JSON изменился"):
+        scan_export(path)
+
+
+def test_header_scan_does_not_compare_path_and_handle_stat_identifiers(tmp_path, monkeypatch):
+    path = export(tmp_path / "source", [message()])
+    original = Path.stat
+
+    def path_stat(self, *args, **kwargs):
+        if self == path:
+            raise AssertionError("Path stat cannot identify the open file on every platform")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", path_stat)
+    assert scan_export(path)[2] == 1
 
 
 def test_source_changes_during_header_pass_are_rejected(tmp_path, monkeypatch):
