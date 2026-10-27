@@ -54,6 +54,49 @@ test('stale active analysis can be cancelled, and partial/old reports stay read-
   await expect(panel.getByText('Для применения этого отчёта нужен новый анализ.')).toBeVisible();
 });
 
+for (const english of [false, true]) {
+  test(`complete source with limited hypotheses can apply exact rules (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    state.job = readyNoiseJob({ coverage_version: 'source-and-evidence-v1', source_complete: true, evidence_complete: false, policy_applicable: true, new_auto_omit_enabled: false, limited_evidence_forms: 2 });
+    state.job.summary.complete = false; state.job.summary.limits = ['candidate_limit'];
+    const panel = await openNoise(page, english);
+    await expect(panel.getByText(english ? 'All messages in scope were processed. The hypothesis list is limited; ambiguous forms are kept. You can apply exact rules.' : 'Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')).toBeVisible();
+    await panel.getByRole('button', { name: english ? 'Review report' : 'Просмотреть отчёт' }).click();
+    const rule = panel.getByRole('combobox', { name: english ? 'Decision for бял' : 'Решение для бял', exact: true });
+    await expect(rule).toBeEnabled(); await expect(rule).toHaveValue('');
+    await panel.getByRole('button', { name: english ? 'Preview rules' : 'Предпросмотр правил' }).click();
+    await panel.getByRole('button', { name: english ? 'Apply rules and rebuild text' : 'Применить правила и перестроить текст' }).click();
+    expect(state.writes.find(write => write.path.endsWith('/apply'))?.body).toEqual({ revision: 0 });
+    expect(state.overrides).toEqual({});
+  });
+}
+
+for (const invalid of ['old-partial', 'source-partial', 'unknown-version', 'new-auto-gate', 'legacy-auto-true', 'legacy-auto-missing', 'hybrid-without-version']) {
+  test(`inconsistent or old limited coverage stays read-only: ${invalid}`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    state.job = invalid === 'old-partial' ? readyNoiseJob() : readyNoiseJob({ coverage_version: 'source-and-evidence-v1', source_complete: true, evidence_complete: false, policy_applicable: true, new_auto_omit_enabled: false });
+    state.job.summary.complete = false; state.job.summary.limits = ['candidate_limit'];
+    if (invalid === 'source-partial') state.job.summary.limits.push('message_limit');
+    if (invalid === 'unknown-version') state.job.summary.coverage_version = 'unknown';
+    if (invalid === 'new-auto-gate') state.job.summary.new_auto_omit_enabled = true;
+    if (invalid.startsWith('legacy-auto-')) {
+      state.job = readyNoiseJob();
+      if (invalid === 'legacy-auto-true') state.job.summary.new_auto_omit_enabled = true;
+      else delete state.job.summary.new_auto_omit_enabled;
+    }
+    if (invalid === 'hybrid-without-version') {
+      state.job.summary.complete = true; state.job.summary.limits = [];
+      delete state.job.summary.coverage_version;
+    }
+    const panel = await openNoise(page);
+    await panel.getByRole('button', { name: 'Просмотреть отчёт' }).click();
+    await expect(panel.getByText('Для применения этого отчёта нужен новый анализ.')).toBeVisible();
+    await expect(panel.getByRole('combobox', { name: 'Решение для бял', exact: true })).toBeDisabled();
+    await expect(panel.getByRole('button', { name: 'Предпросмотр правил' })).toBeDisabled();
+    expect(state.writes).toEqual([]);
+  });
+}
+
 test('closing and reopening settings ignores a held report response', async ({ page }) => {
   const state = await mockNoise(page, true);
   let release!: () => void;
@@ -91,6 +134,7 @@ test('real synthetic API report is applied from the chat UI without model prepar
     { id: 1, type: 'message', date_unixtime: '1750000000', from: 'Synthetic author', from_id: 'user1', text: 'Содержательная фраза' },
     { id: 2, type: 'message', date_unixtime: '1750000001', from: 'Synthetic author', from_id: 'user1', text: 'бял' },
     { id: 3, type: 'message', date_unixtime: '1750000002', from: 'Synthetic author', from_id: 'user1', text: 'сука' },
+    { id: 4, type: 'message', date_unixtime: '1750000003', from: 'Synthetic author', from_id: 'user1', text: 'да' },
   ] }));
   const token = (await (await page.request.get('/api/session')).json()).token;
   const headers = { 'X-Session-Token': token };
@@ -113,6 +157,7 @@ test('real synthetic API report is applied from the chat UI without model prepar
     await panel.locator(':scope > details > summary').click();
     await panel.getByRole('button', { name: 'Запустить анализ', exact: true }).click();
     await expect(panel.getByText('Отчёт готов', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(panel.getByText('Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')).toBeVisible();
     await panel.getByRole('button', { name: 'Просмотреть отчёт' }).click();
     await panel.getByRole('combobox', { name: 'Решение для бял', exact: true }).selectOption('omit');
     await panel.getByRole('combobox', { name: 'Решения анализа', exact: true }).selectOption('');

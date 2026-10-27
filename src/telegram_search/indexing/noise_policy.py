@@ -11,6 +11,7 @@ from telegram_search.search.chunking.noise.compile import (
     compile_policy,
     exact_forms,
 )
+from telegram_search.search.chunking.noise.coverage import application_ready
 from telegram_search.search.chunking.policy import (
     APPROVED_FILLER,
     DEFAULT_POLICY,
@@ -148,7 +149,7 @@ class NoisePolicyService:
         if (
             row["state"] != "ready"
             or not isinstance(summary, dict)
-            or summary.get("complete") is not True
+            or not application_ready(summary)
             or summary.get("new_auto_omit_enabled") is not False
             or not isinstance(summary.get("report_sha256"), str)
             or not re.fullmatch(r"[a-f0-9]{64}", summary["report_sha256"])

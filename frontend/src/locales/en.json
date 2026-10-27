@@ -1045,6 +1045,7 @@
   "Эти правила выбраны для диалога.": "These rules are selected for the chat.",
   "Эти правила уже используются. Повторное перестроение не запущено.": "These rules are already in use. No additional rebuild was started.",
   "Для применения этого отчёта нужен новый анализ.": "Run a new analysis before applying this report.",
+  "Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.": "All messages in scope were processed. The hypothesis list is limited; ambiguous forms are kept. You can apply exact rules.",
   "Допускается не более 1000 переопределений в одном отчёте.": "A report allows at most 1,000 overrides.",
   "Дополнительных точных исключений: {p0} · правил сохранения: {p1}": "Additional exact exclusions: {p0} · keep rules: {p1}",
   "Итог включает унаследованные правила выбранной политики.": "The totals include inherited rules from the selected policy.",

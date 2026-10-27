@@ -318,6 +318,7 @@ class NoiseReport:
         ).fetchone()[0]
 
     def add_candidates(self, rows):
+        limited = 0
         with self.connect(write=True) as conn:
             for count, payload in rows:
                 encoded = serialize(payload)
@@ -330,6 +331,7 @@ class NoiseReport:
                         "useful": payload["useful"][:4],
                     }
                     encoded = serialize(payload)
+                limited += int(not payload["complete"])
                 conn.execute(
                     "UPDATE forms SET decision=?,payload=? WHERE form=?",
                     (payload["decision"], encoded, count["form"]),
@@ -353,6 +355,7 @@ class NoiseReport:
                         "keep_count=keep_count+excluded.keep_count",
                         values,
                     )
+        return limited
 
     def page(self, *, decision=None, offset=0, limit=50):
         self._validate_page(offset, limit)

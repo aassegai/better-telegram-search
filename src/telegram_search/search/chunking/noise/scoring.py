@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 from telegram_search.search.chunking.policy import APPROVED_FILLER
 
-SCORE_VERSION = "unit-error-weights-log1p-v1-uncalibrated"
+SCORE_VERSION = "unit-error-weights-log1p-v2-uncalibrated"
 
 
 def evaluate(report, count, frequency):
@@ -31,10 +31,10 @@ def evaluate(report, count, frequency):
         decision, reason = "keep", "lexicon_form"
     elif len(report.form) < 3:
         decision, reason = "keep", "short_new_form"
-    elif not noise:
-        decision, reason = "keep", "no_noise_hypothesis"
     elif not report.complete:
         decision, reason = "review", "candidate_limit"
+    elif not noise:
+        decision, reason = "keep", "no_noise_hypothesis"
     return {
         "schema_version": 1,
         "decision": decision,

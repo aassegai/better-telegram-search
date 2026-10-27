@@ -1,13 +1,14 @@
 import type { Page } from '@playwright/test';
+import type { NoiseJob } from '../src/noiseTypes';
 
 export const noiseJobId = 'a'.repeat(32);
-export function readyNoiseJob() {
+export function readyNoiseJob(coverage: Partial<Pick<NonNullable<NoiseJob['summary']>, 'coverage_version' | 'source_complete' | 'evidence_complete' | 'policy_applicable' | 'limited_evidence_forms' | 'new_auto_omit_enabled'>> = {}) {
   return { id: noiseJobId, state: 'ready', stale: false, active: false, created_at: 1750000000,
     error: null as string | null, progress: { phase: 'candidates', completed: 51, total: 51, elapsed_seconds: 2,
       scanned_messages: 55, whole_messages: 54, forms: 51 },
     summary: { complete: true, limits: [], scanned_messages: 55, whole_messages: 54, forms: 51,
       decisions: { keep: 49, review: 1, omit: 1 }, cpu_seconds: 1, process_rss_mib: 80,
-      report_sha256: '1'.repeat(64) } };
+      report_sha256: '1'.repeat(64), new_auto_omit_enabled: false, ...coverage } };
 }
 function form(name: string, decision = 'keep') {
   return { inherited_decision: null as 'keep' | 'omit' | null, default_decision: (decision === 'omit' ? 'omit' : 'keep') as 'keep' | 'omit', default_origin: 'analysis' as 'analysis' | 'base' | 'inherited', form: name, whole_count: 1, eligible_count: 1, days: 1, authors: 1, protections: {},

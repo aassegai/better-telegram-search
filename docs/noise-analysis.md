@@ -61,8 +61,9 @@ Allowed maxima: one million messages, 50,000 forms in each whole/phrase vocabula
 one hour. Pages contain at most 100 entries. At most eight reports are saved,
 with one active job per chat and one CPU analysis worker across the workspace.
 A report is capped at 128 MiB. Delete unused reports before starting a ninth.
-Partial coverage/candidate/size/time limits are explicit; they never authorize
-omission. Timing and sampled RSS are measured costs, not claimed GPU savings.
+Source, candidate, detail and time limits are explicit. Source/time limits block
+application. Bounded hypothesis lists never authorize automatic omission of new
+forms. Timing and sampled RSS are measured costs, not claimed GPU savings.
 
 Short canonical reads use timestamp/message-ID keysets. Text processing runs
 outside archive connections and write/lifecycle locks. Detailed private reports
@@ -131,9 +132,27 @@ the owning segment and can make it useful again. A bounded extra lookup protects
 a borrowed answer to a question without recursive classification. Import and
 model rebuild retain an explicitly selected new policy, pauses and other indexes.
 
-A full, current report with a stored SHA-256 is required for preview, override
-changes and apply. Older reports remain reviewable; re-run analysis to apply them.
-Limited reports cannot be applied. No policy changes on application startup.
+A current report with full source coverage and a stored SHA-256 is required for
+preview, override changes and apply. Older reports remain reviewable; re-run
+analysis when they lack the required metadata. Source-limited reports cannot be
+applied. No policy changes on application startup.
+
+The versioned `source-and-evidence-v1` summary separates `source_complete` from
+`evidence_complete`. `complete` retains its strict meaning: any limit makes it
+false. When every message/form was collected but a hypothesis/detail list is
+bounded (`candidate_limit`/`payload_limit`), the job can be `ready` with
+`policy_applicable=true`. `limited_evidence_forms` counts affected forms. This
+permits only approved seeds and explicit overrides, with the new automatic gate
+off. Ordinary short words such as `да` can have over 16 useful hypotheses; their
+limited display must not block exact rules for an otherwise fully scanned chat.
+Scores remain uncalibrated. A candidate search that stopped before finding a
+match is reviewable, not evidence that no noise hypothesis exists.
+
+Message/form/phrase/text/time limits still prevent application. Unknown limit or
+coverage versions, contradictory flags and versionless hybrid summaries fail
+closed. Old full checksum-bearing reports remain compatible; old partial reports
+are never silently upgraded. The UI explains when the source is complete but
+evidence is limited, and why an incompatible report requires a new analysis.
 
 At most 1,000 canonical observed forms may have `keep`/`omit` overrides. Save uses
 a draft revision; stale edits return `409`. Preview compiles effective rules
@@ -166,7 +185,7 @@ uv run telegram-search --workspace ./workspace noise apply --chat-id CHAT_ID --j
 ```
 
 `analyze` waits for completion; Ctrl+C cancels and joins its worker before releasing
-the lease. Analysis limits have the same names/defaults as the API. A partial
+the lease. Analysis limits have the same names/defaults as the API. A source-partial
 report is useful for review but cannot be applied. A failed/stale analysis exits
 with code 1. `override` supports repeated `--keep`, `--omit`, and `--clear` options;
 keep wins if the same form is passed to both keep and omit.
@@ -185,7 +204,7 @@ After saving overrides, compare the frozen proposal without applying it:
 uv run telegram-search --workspace ./workspace noise dry-run --chat-id CHAT_ID --job-id JOB_ID --revision 1 --max-messages 100000 --time-limit-seconds 300
 ```
 
-The command requires a full current analysis and the active text model's local
+The command requires a current source-complete analysis and the active text model's local
 tokenizer. It verifies both tokenizer files against the pinned model manifest,
 the active space identity and the installed tokenizer version. Missing or
 incompatible files cause a fixed error; nothing is downloaded, and no ONNX
@@ -245,7 +264,7 @@ draft revision: refreshing a changed draft invalidates it, and Apply cannot subm
 a newer unreviewed revision. Preview totals include inherited rules. No repeated
 rebuild runs when effective rules are unchanged.
 
-Partial and older checksum-free reports are read-only. Source/exclusion changes
+Source-partial and older checksum-free reports are read-only. Source/exclusion changes
 hide old evidence and require a new analysis. Closing settings or changing chat,
 policy or sender scope cannot publish a late response into a newer view. The UI
 is available in Russian/English and both themes. Forms are shown literally and

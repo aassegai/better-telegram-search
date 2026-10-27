@@ -13,6 +13,7 @@ import psutil
 
 from telegram_search.search.chunking.noise.candidates import CandidateGenerator
 from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION, AnalysisOptions
+from telegram_search.search.chunking.noise.coverage import application_ready, coverage
 from telegram_search.search.chunking.noise.lexicon import load_lexicon
 from telegram_search.search.chunking.noise.scoring import SCORE_VERSION, evaluate
 from telegram_search.search.chunking.noise.statistics import (
@@ -243,6 +244,7 @@ class NoiseAnalysisService:
         self._progress(job, phase="candidates", completed=0, total=report.forms_count)
         after, completed, comparisons, postings = "", 0, 0, 0
         decisions = {"keep": 0, "review": 0, "omit": 0}
+        limited_evidence_forms = 0
         with report.connect() as frequency_reader:
 
             @lru_cache(maxsize=4096)
@@ -262,7 +264,7 @@ class NoiseAnalysisService:
                         report.limits.add("candidate_limit")
                     decisions[payload["decision"]] += 1
                     candidates.append((count, payload))
-                report.add_candidates(candidates)
+                limited_evidence_forms += report.add_candidates(candidates)
                 completed += len(counts)
                 after = counts[-1]["form"]
                 self._progress(job, completed=completed)
@@ -273,6 +275,8 @@ class NoiseAnalysisService:
             "lexicon": {"id": lexicon.id, "sha256": lexicon.sha256, "license": lexicon.license},
             "complete": not report.limits,
             "limits": sorted(report.limits),
+            **coverage(report.limits),
+            "limited_evidence_forms": limited_evidence_forms,
             "scanned_messages": scanned,
             "whole_messages": whole,
             "forms": report.forms_count,
@@ -301,7 +305,7 @@ class NoiseAnalysisService:
         try:
             self._current(job)
             job.summary = self._analyze(job)
-            job.state = "ready" if job.summary["complete"] else "limited"
+            job.state = "ready" if application_ready(job.summary) else "limited"
         except AnalysisCancelled:
             job.state, job.error = "cancelled", None
         except (AnalysisStale, KeyError):

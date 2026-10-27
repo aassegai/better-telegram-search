@@ -3,7 +3,7 @@ import { api } from './api';
 import { t, uiLocale } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
 import NoiseReport from './NoiseReport';
-import { noiseActive, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview } from './noiseTypes';
+import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview } from './noiseTypes';
 
 const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Неполный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
 const phases: Record<string, string> = { queued: 'Ожидаем очередь', scan: 'Считаем сообщения', lexicon: 'Готовим словарь гипотез', candidates: 'Сравниваем варианты', failed: 'Ошибка анализа' };
@@ -181,7 +181,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const active = noiseActive(job);
   const canReview = !!job && !job.stale && ['ready', 'limited'].includes(job.state) && !active;
   const hasDigest = /^[a-f0-9]{64}$/u.test(job?.summary?.report_sha256 ?? '');
-  const canEdit = canReview && job?.state === 'ready' && job.summary?.complete === true && hasDigest && !!draft?.overrides_available && !draft.stale;
+  const canEdit = canReview && job?.state === 'ready' && noiseApplicable(job.summary) && hasDigest && !!draft?.overrides_available && !draft.stale;
   const canApply = canEdit && !dirty;
   const validOptions = Number.isInteger(maxMessages) && maxMessages >= 1 && maxMessages <= 1000000 && Number.isInteger(timeLimit) && timeLimit >= 1 && timeLimit <= 3600;
   const applied = !!draft?.applied_policy_id && draft.applied_policy_id === currentPolicyId;
@@ -220,8 +220,9 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
         {job.stale && <p className="warning">{t('Диалог или исключения изменились. Запустите анализ заново.')}</p>}
         {job.error && !job.stale && <p className="error" role="alert">{t(noiseLabel(errors, job.error, 'Не удалось выполнить анализ. Запустите его заново.'))}</p>}
         {job.summary?.limits?.map(limit => <p className="warning" key={limit}>{t(noiseLabel(limits, limit, 'Неполное покрытие анализа'))}</p>)}
+        {job.state === 'ready' && noiseApplicable(job.summary) && job.summary?.evidence_complete === false && <p className="baseline-note">{t('Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')}</p>}
         {job.state === 'limited' && <p className="baseline-note">{t('Неполный отчёт можно просматривать, но нельзя применить. Увеличьте лимиты и запустите новый анализ.')}</p>}
-        {job.state === 'ready' && !hasDigest && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
+        {job.state === 'ready' && (!hasDigest || !noiseApplicable(job.summary)) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
         <div className="job-actions"><button type="button" disabled={busy || !canReview} onClick={() => loadReport(view, decision, 0)}>{t('Просмотреть отчёт')}</button><button type="button" disabled={busy || active || dirty} onClick={remove}>{t('Удалить отчёт')}</button></div>
         <p className="baseline-note">{t('Удаление отчёта не меняет уже выбранные правила и индексы.')}</p>
       </div>}
