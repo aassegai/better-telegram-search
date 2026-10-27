@@ -15,6 +15,11 @@ def main():
 
         browser_worker(sys.argv[2])
         return
+    if len(sys.argv) == 6 and sys.argv[1] == "--internal-adapter":
+        from telegram_search.model_adapters.bootstrap import launch
+
+        launch(*sys.argv[2:])
+        return
     if sys.argv[1:2] == ["--internal-ocr"]:
         from telegram_search.inference.ocr_worker import main as worker
 

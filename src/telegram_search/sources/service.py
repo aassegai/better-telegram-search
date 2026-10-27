@@ -138,7 +138,15 @@ class WorkspaceService:
 
         settings = self.db.settings
         store = BundleStore(self.db.workspace)
-        text = registry()
+        text = registry(self.db.workspace)
+
+        def text_path(spec):
+            if "adapter_identity" in spec.manifest:
+                from telegram_search.model_adapters.store import AdapterStore
+
+                return AdapterStore(self.db.workspace).root / spec.manifest["adapter_identity"]
+            return store.path(spec)
+
         with self.db.connect() as conn:
             profile = (
                 conn.execute(
@@ -157,8 +165,8 @@ class WorkspaceService:
             "e5": {
                 "device": settings.model_device("e5"),
                 "search_device": settings.model_device("e5", query=True),
-                "paths": [str(store.path(text[profile]))],
-                "profile_paths": {key: str(store.path(spec)) for key, spec in text.items()},
+                "paths": [str(text_path(text[profile]))] if profile in text else [],
+                "profile_paths": {key: str(text_path(spec)) for key, spec in text.items()},
             },
             "clip": {
                 "device": settings.model_device("clip"),

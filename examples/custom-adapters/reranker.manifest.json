@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "adapter_api_version": 1,
+  "id": "example-reranker",
+  "role": "reranker",
+  "entrypoint": "adapter.py:Reranker",
+  "revision": "demo-v1",
+  "description": "Protocol demonstration only, not a pretrained model.",
+  "supported_languages": [
+    "ru",
+    "en"
+  ],
+  "runtime": {
+    "name": "python",
+    "version": "3"
+  },
+  "devices": [
+    "cpu"
+  ],
+  "input_contract": {
+    "max_batch": 16
+  },
+  "output_contract": {
+    "higher_is_better": true
+  },
+  "preprocessing": {
+    "version": "demo-v1"
+  },
+  "dependencies": {},
+  "network": false,
+  "files": [
+    {
+      "path": "adapter.py",
+      "bytes": 4877,
+      "sha256": "316a85008db087a83bc83f71440050ff0d1732a6335e13a20f68cfe1e7d78ee6"
+    }
+  ]
+}
