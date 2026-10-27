@@ -3,8 +3,10 @@
 This is an engineering checkpoint, not a completed ANN feature or a claim of
 measured search quality. Exact retrieval remains the application default. Native
 retrieval, background building, resource configuration and their APIs are
-implemented. The UI controls/selector and real-embedding quality/latency comparison
-are still required by the product plan.
+implemented, including the UI controls and selector. The broader real-embedding
+quality/latency acceptance remains required by the product plan; the isolated
+[generated-text comparison](ann-benchmark.md) documents its reproducible protocol
+and limits.
 
 ## Implemented query path
 
