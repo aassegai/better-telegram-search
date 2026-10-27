@@ -115,7 +115,7 @@ export type SemanticStatus = {
   total_segments: number; ready_segments: number; pending_segments: number;
   estimated_remaining_seconds?: number | null;
   works: { state: string; count: number; chunks_total: number; chunks_done: number }[];
-  profiles: { profile: string; model_id: string; download_bytes: number; dimension: number }[];
+  profiles: { profile: string; model_id: string; download_bytes: number; dimension: number; revision?: string }[];
 };
 export type Job = {
   id: string; chat_name: string; state: string; processed: number; added: number;

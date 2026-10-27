@@ -14,6 +14,7 @@ from telegram_search.config.runtime import default_workspace
 from telegram_search.indexing.noise_commands import add_noise_parser, noise_command
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.ingestion.progress import TerminalProgress
+from telegram_search.model_adapters.commands import adapter_command, add_adapter_parser
 from telegram_search.shared.errors import UserError
 from telegram_search.storage.database import Database
 
@@ -23,6 +24,7 @@ def main() -> None:
     parser.add_argument("--workspace", type=Path, default=default_workspace())
     commands = parser.add_subparsers(dest="command", required=True)
     add_noise_parser(commands)
+    add_adapter_parser(commands)
     for name in ("setup", "doctor", "rebuild", "compact"):
         commands.add_parser(name)
     run = commands.add_parser("run")
@@ -44,7 +46,7 @@ def main() -> None:
         "--no-progress", action="store_true", help="Не показывать прогресс в терминале"
     )
     prepare = commands.add_parser("prepare-model")
-    prepare.add_argument("--profile", choices=["small", "base", "berta", "ultrabert"])
+    prepare.add_argument("--profile", help="Built-in profile or registered custom:<identity>")
     prepare.add_argument("--reindex", action="store_true")
     prepare.add_argument("--offline", action="store_true")
     prepare.add_argument("--repair", action="store_true")
@@ -61,8 +63,11 @@ def main() -> None:
     args = parser.parse_args()
     if getattr(args, "run_workspace", None) is not None:
         args.workspace = args.run_workspace
-    db = Database(args.workspace)
     try:
+        if args.command == "adapters":
+            print(json.dumps(adapter_command(args), ensure_ascii=False, indent=2))
+            return
+        db = Database(args.workspace)
         if args.command == "run" and os.environ.get("BTS_UPDATE_HEALTHCHECK"):
             from telegram_search.updates.installer import wait_for_startup
 

@@ -33,12 +33,21 @@ class ModelSpec:
         return hashlib.sha256(serialize(self.manifest).encode()).hexdigest()
 
 
-def registry() -> dict[str, ModelSpec]:
+def registry(workspace=None) -> dict[str, ModelSpec]:
     manifest = json.loads(files("telegram_search.config").joinpath("models.json").read_text())
-    return {profile: ModelSpec(profile, value) for profile, value in manifest.items()}
+    result = {profile: ModelSpec(profile, value) for profile, value in manifest.items()}
+    if workspace is not None:
+        from telegram_search.model_adapters.registry import custom_text_specs
+
+        result.update(custom_text_specs(workspace))
+    return result
 
 
-def model_spec(profile: str) -> ModelSpec:
+def model_spec(profile: str, workspace=None) -> ModelSpec:
+    if workspace is not None and isinstance(profile, str) and profile.startswith("custom:"):
+        from telegram_search.model_adapters.registry import custom_spec
+
+        return custom_spec(workspace, profile)
     try:
         return registry()[profile]
     except KeyError as exc:

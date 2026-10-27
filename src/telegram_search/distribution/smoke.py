@@ -1,6 +1,7 @@
 """Offline smoke test of the actual frozen executable, using synthetic data only."""
 
 import base64
+import importlib.metadata
 import importlib.util
 import json
 import os
@@ -155,6 +156,9 @@ def main():
             raise RuntimeError("Native ONNX OCR CTC decoding")
         # Free Lance handles before temporary-directory cleanup (important on Windows).
         del vectors
+        adapter_python = os.environ.get("BTS_ADAPTER_SMOKE_PYTHON")
+        if adapter_python:
+            _custom_adapter_check(db.workspace, root, adapter_python, gpu_build=gpu_build)
         _update_check(db.workspace, root)
         _http_check(db.workspace, root)
     print(
@@ -175,10 +179,78 @@ def main():
                 "update_installer": True,
                 "device_selection": True,
                 "telegram_runtime": True,
+                **({"custom_adapter_worker": True} if adapter_python else {}),
                 **({"cuda_libraries": True} if gpu_build else {}),
             }
         )
     )
+
+
+def _custom_adapter_check(workspace, root, python, *, gpu_build=False):
+    """The extracted executable imports native SDKs only in an external Python."""
+    import hashlib
+
+    from telegram_search.model_adapters.store import AdapterStore
+    from telegram_search.model_adapters.validation import validate_adapter
+
+    # macOS system temp paths may use /var -> /private/var aliases. Canonicalize
+    # our owned scratch directory before applying the package's no-link policy.
+    source = Path(root).resolve() / "Custom adapter Тест 中文"
+    source.mkdir()
+    code = """
+import base64
+class Adapter:
+    def info(self):
+        return {'adapter_api_version':1,'role':'text_embedding','devices':['cpu'],
+                'operations':['count_tokens','encode_text']}
+    def validate(self, context):
+        import numpy as np
+        import onnxruntime as ort
+        options = ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        session = ort.InferenceSession(base64.b64decode(GRAPH), options,
+                                       providers=['CPUExecutionProvider'])
+        values = np.array([[3,4]], dtype=np.float32)
+        np.testing.assert_array_equal(session.run(None, {'x':values})[0], values)
+    def load(self, context): pass
+    def unload(self, context): pass
+    def close(self, context): pass
+    def count_tokens(self, texts, context): return [len(text.split())+2 for text in texts]
+    def encode_text(self, items, operation, context):
+        return {'ids':[i['id'] for i in items], 'dtype':'float32',
+                'vectors':[[0.6,0.8] for i in items]}
+"""
+    code = ("GRAPH = " + repr(IDENTITY_ONNX) + "\n" + code).encode()
+    (source / "adapter.py").write_bytes(code)
+    runtime = "onnxruntime-gpu" if gpu_build else "onnxruntime"
+    manifest = {
+        "schema_version": 1,
+        "adapter_api_version": 1,
+        "id": "native-adapter-smoke",
+        "role": "text_embedding",
+        "entrypoint": "adapter.py:Adapter",
+        "revision": "v1",
+        "supported_languages": ["ru", "en"],
+        "devices": ["cpu"],
+        "runtime": {"name": runtime, "version": importlib.metadata.version(runtime)},
+        "dependencies": {name: importlib.metadata.version(name) for name in (runtime, "numpy")},
+        "input_contract": {"max_batch": 4, "query_max_tokens": 512, "document_max_tokens": 480},
+        "output_contract": {
+            "dimension": 2,
+            "dtype": "float32",
+            "normalization": "l2",
+            "metric": "cosine",
+        },
+        "preprocessing": {"version": "v1", "query_prefix": "", "document_prefix": ""},
+        "network": False,
+        "files": [
+            {"path": "adapter.py", "bytes": len(code), "sha256": hashlib.sha256(code).hexdigest()}
+        ],
+    }
+    path = source / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    if validate_adapter(AdapterStore(workspace), path, python)["state"] != "passed":
+        raise RuntimeError("External custom adapter smoke failed")
 
 
 def _update_check(workspace, root):

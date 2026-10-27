@@ -478,6 +478,7 @@ def test_model_switch_between_status_and_query_falls_back_with_warning(
 
 
 def test_failed_new_model_restores_old_encoder_and_user_pause(db, importer, tmp_path, monkeypatch):
+    from telegram_search.config.model_registry import model_spec
     from telegram_search.inference.bundles import BundleStore
 
     _, service, _, _ = setup_index(db, importer, tmp_path)
@@ -488,7 +489,7 @@ def test_failed_new_model_restores_old_encoder_and_user_pause(db, importer, tmp_
     new.unload = lambda: unloaded.append(True)
     monkeypatch.setattr(BundleStore, "prepare", lambda *args, **kwargs: tmp_path)
     monkeypatch.setattr(service, "_new_encoder", lambda profile: new)
-    service._prepare(SimpleNamespace(profile="base"), True, True, False, None)
+    service._prepare(model_spec("base"), True, True, False, None)
     assert service.encoder is old and not old.suspended
     assert not service.preparing_encoder.is_set() and unloaded == [True]
     assert service.status()["preparation_state"] == "failed"
@@ -496,13 +497,14 @@ def test_failed_new_model_restores_old_encoder_and_user_pause(db, importer, tmp_
 
 
 def test_preparation_checks_indexing_and_query_devices(db, importer, tmp_path, monkeypatch):
+    from telegram_search.config.model_registry import model_spec
     from telegram_search.inference.bundles import BundleStore
 
     service = SemanticService(db, importer.lifecycle_lock, start_background=False)
     encoder = TestEncoder()
     monkeypatch.setattr(BundleStore, "prepare", lambda *args, **kwargs: tmp_path)
     monkeypatch.setattr(service, "_new_encoder", lambda profile: encoder)
-    service._prepare(SimpleNamespace(profile="small"), False, True, False, None)
+    service._prepare(model_spec("small"), False, True, False, None)
     assert encoder.purposes == ["passage", "query"]
     assert service.encoder is encoder
     assert service.status()["preparation_state"] == "ready"

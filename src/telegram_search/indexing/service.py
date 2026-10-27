@@ -92,8 +92,12 @@ class SemanticService:
         from telegram_search.inference.bundles import BundleStore
         from telegram_search.inference.e5 import E5Encoder
 
-        spec = model_spec(profile)
+        spec = model_spec(profile, self.db.workspace)
         settings = settings or self.db.settings
+        if "adapter_identity" in spec.manifest:
+            from telegram_search.model_adapters.text_encoder import AdapterTextEncoder
+
+            return AdapterTextEncoder(spec, self.db.workspace, settings)
         return E5Encoder(
             spec,
             BundleStore(self.db.workspace).verify(spec),
@@ -215,7 +219,9 @@ class SemanticService:
                     "ON s.active_space_id=e.id"
                 ).fetchone()
                 profile = profile or (current[0] if current else "berta")
-                spec = model_spec(profile)
+                spec = model_spec(profile, self.db.workspace)
+                if "adapter_identity" in spec.manifest and local_bundle:
+                    raise UserError("Register the custom adapter package before preparing it.")
                 if current and current[0] != profile and not reindex:
                     raise UserError("Подтвердите переиндексацию при смене модели.")
                 conn.execute(
@@ -248,9 +254,21 @@ class SemanticService:
         previous = None
         encoder = None
         try:
-            BundleStore(self.db.workspace).prepare(
-                spec, offline=offline, progress=progress, repair=repair, local_bundle=local_bundle
-            )
+            if "adapter_identity" in spec.manifest:
+                from telegram_search.model_adapters.store import AdapterStore
+
+                manifest, package, _registration = AdapterStore(self.db.workspace).get(
+                    spec.manifest["adapter_identity"]
+                )
+                manifest.verify_files(package, closed=True)
+            else:
+                BundleStore(self.db.workspace).prepare(
+                    spec,
+                    offline=offline,
+                    progress=progress,
+                    repair=repair,
+                    local_bundle=local_bundle,
+                )
             if self.stop.is_set():
                 raise UserError("Подготовка модели остановлена.")
             with self.lock, self.db.connect() as conn:
@@ -418,8 +436,9 @@ class SemanticService:
                     "model_id": spec.model_id,
                     "download_bytes": spec.download_bytes,
                     "dimension": spec.dimension,
+                    **({"revision": spec.revision} if "adapter_identity" in spec.manifest else {}),
                 }
-                for spec in registry().values()
+                for spec in registry(self.db.workspace).values()
             ],
         }
 

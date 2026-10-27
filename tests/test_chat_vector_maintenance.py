@@ -294,9 +294,15 @@ def test_retry_compacts_old_versions_even_when_logical_deletion_already_committe
     )
     original = type(table).optimize
     calls = []
+    versions = []
+    path = semantic._vector_store().table_path(semantic.encoder.space_id)
+
+    def files():
+        return {p.relative_to(path): p.stat().st_size for p in path.rglob("*") if p.is_file()}
 
     def fail_once(self, *args, **kwargs):
-        calls.append(True)
+        calls.append(files())
+        versions.append({v["version"] for v in self.list_versions()})
         if len(calls) == 1:
             raise OSError("Synthetic compaction failure after deletion")
         return original(self, *args, **kwargs)
@@ -309,7 +315,18 @@ def test_retry_compacts_old_versions_even_when_logical_deletion_already_committe
     maintenance.start("text", chat)
     wait_finished(maintenance)
     assert len(calls) == 2
-    assert maintenance.status()["freed_bytes"] > 0
+    after = files()
+    # Compaction can create new manifests/indices larger than the tiny deleted
+    # fixture. Prove physical reclamation, then check the reported net saving.
+    assert sum(size for name, size in calls[1].items() if name not in after) > 0
+    # optimize may compact into another version after pruning old manifests.
+    old_versions = versions[1] - {max(versions[1])}
+    assert old_versions and not old_versions.intersection(
+        v["version"] for v in table.list_versions()
+    )
+    assert maintenance.status()["freed_bytes"] == max(
+        0, sum(calls[1].values()) - sum(after.values())
+    )
 
 
 def test_clear_then_resume_fences_an_old_multibatch_ocr_attempt(db, importer, mixed, monkeypatch):
