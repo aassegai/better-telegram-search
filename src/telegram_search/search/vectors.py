@@ -91,14 +91,18 @@ class VectorStore:
         """Use requested ANN only with a compatible index and canonical prefilter.
 
         Direct calls without a search execution retain the exact default. On a
-        failed native attempt, rescan the SQLite snapshot through ``eligible``;
-        the one-shot canonical cursor may already have been partially consumed.
+        failed native attempt, a batch factory can reopen the canonical cursor in
+        the same SQLite snapshot. Legacy one-shot iterators require a full scan
+        through ``eligible`` after they may have been partially consumed.
         """
         from telegram_search.search.ann import AnnOptions, index_status, retrieve
         from telegram_search.search.ann_process import AnnProcess, AnnUnavailable
 
         options = ann_options or self.ann_options or AnnOptions()
         execution = current_execution()
+        batch_factory = eligible_batches if callable(eligible_batches) else None
+        if batch_factory is not None:
+            eligible_batches = batch_factory()
         arguments = dict(
             predicate=predicate,
             eligible_batches=eligible_batches,
@@ -162,7 +166,11 @@ class VectorStore:
             checkpoint()
             strategy("exact", reason)
             if attempted:
+                # Release the consumed reader before opening another SQLite
+                # cursor, including its materialized canonical-ID scope.
                 arguments["eligible_batches"] = None
+                eligible_batches = None
+                arguments["eligible_batches"] = batch_factory() if batch_factory else None
             return self.exact_filtered(space_id, dimension, query, eligible, limit, **arguments)
 
     @staticmethod
@@ -308,7 +316,17 @@ class VectorStore:
             # would otherwise rescan a large unindexed append tail many times.
             scoped = eligible_batches is not None
             if scoped and eligible is not None and total is not None:
-                scoped = total * 4 < table.count_rows(predicate)
+                rows = table.count_rows(predicate)
+                scoped = total * 4 < rows
+                if scoped:
+                    # Older archives may lack the scalar ID index, or have a
+                    # large unindexed append tail. Each small IN predicate then
+                    # rereads that tail. One sequential, canonically checked
+                    # pass is cheaper than repeating it for every ID batch.
+                    indices = [index for index in table.list_indices() if "id" in index.columns]
+                    stats = table.index_stats(indices[0].name) if indices else None
+                    batches = (total + 511) // 512
+                    scoped = bool(stats and total + stats.num_unindexed_rows * batches < rows)
 
             def scans():
                 if not scoped:

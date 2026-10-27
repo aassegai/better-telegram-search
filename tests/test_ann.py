@@ -394,3 +394,43 @@ def test_mixed_branch_strategy_and_unknown_counts_are_aggregated():
     assert status["fallback_reasons"] == ["ann_scope_too_small"]
     assert status["diagnostics"]["vectors_scored"] is None
     assert status["diagnostics"]["exact_vectors_scored"] == 10
+
+
+def test_failed_ann_reopens_canonical_batches_for_scoped_exact_retry(corpus):
+    store, rows, matrix = corpus
+    store.build_ann("ann-test", 24, options=OPTIONS)
+    keys = [row["id"] for row in rows[:400]]
+    allowed = set(keys)
+    opened, native_calls = [], []
+
+    def batches():
+        opened.append(True)
+        return (keys[start : start + 100] for start in range(0, len(keys), 100))
+
+    def unavailable(**kwargs):
+        native_calls.append(kwargs)
+        raise AnnUnavailable("ann_memory_limit")
+
+    store.ann_process = SimpleNamespace(
+        query=unavailable, close=lambda: True, threads=4, memory_limit_mib=512
+    )
+    execution = SearchExecution()
+    execution.requested_strategy = "ann"
+    with execution_context(execution):
+        actual = store.search_filtered(
+            "ann-test",
+            24,
+            matrix[-1],
+            lambda ids: allowed.intersection(ids),
+            20,
+            eligible_batches=batches,
+            total=len(keys),
+            ann_options=OPTIONS,
+        )
+    assert_same(actual, store.exact("ann-test", 24, matrix[-1], keys, 20))
+    measured = execution.snapshot()
+    assert len(opened) == 2 and len(native_calls) == 1
+    assert measured["fallback_reasons"] == ["ann_memory_limit"]
+    assert measured["diagnostics"]["exact_vectors_read"] == len(keys)
+    assert measured["diagnostics"]["exact_vectors_scored"] == len(keys)
+    assert measured["effective_strategy"] == "exact"

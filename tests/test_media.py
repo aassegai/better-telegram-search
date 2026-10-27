@@ -707,3 +707,54 @@ def test_cleanup_without_any_vector_space_does_not_require_semantic_runtime(
     media.cleanup(compact=True)
     with db.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM media_vector_cleanup").fetchone()[0] == 0
+
+
+def test_search_coverage_is_scoped_deduplicated_and_skips_indexer_status(
+    db, importer, tmp_path, monkeypatch
+):
+    first = load(importer, photo_export(tmp_path / "first"))["chat_id"]
+    second = load(importer, photo_export(tmp_path / "second", chat_id=200))["chat_id"]
+    semantic, media = services(db, importer)
+    fake_ocr(media, text="стоимость ремонта")
+    assert media._ocr_one()
+    semantic.encoder = SimpleNamespace(space_id="text-space", spec=SimpleNamespace(dimension=4))
+    media.clip = SimpleNamespace(space_id="image-space")
+    with db.connect() as conn:
+        sha = conn.execute("SELECT sha256 FROM media_blobs").fetchone()[0]
+        conn.executemany(
+            "INSERT INTO media_embeddings(id,sha256,space_id,kind,ocr_version,ordinal) "
+            "VALUES(?,?,?,?,?,?)",
+            [
+                ("image", sha, "image-space", "image", None, 0),
+                ("ocr1", sha, "text-space", "ocr", media.ocr.version, 0),
+                ("ocr2", sha, "text-space", "ocr", media.ocr.version, 1),
+                ("old", sha, "text-space", "ocr", "other-version", 0),
+            ],
+        )
+        conn.execute("UPDATE messages SET author_id='bot' WHERE chat_id=?", (second,))
+        conn.execute("INSERT INTO index_excluded_authors VALUES(?,?)", (second, "bot"))
+    monkeypatch.setattr(
+        media, "status", lambda *a, **kw: pytest.fail("Search invoked indexer status")
+    )
+    search = MediaSearch(db, media, semantic, importer.lifecycle_lock)
+    expected = {
+        "total_photos": 1,
+        "images_ready": 1,
+        "ocr_ready": 1,
+        "ocr_nonempty_ready": 1,
+        "ocr_dense_ready": 1,
+    }
+    assert search.coverage(Filters(chat_ids=[first])) == expected
+    assert search.coverage(Filters()) == expected
+    assert not any(search.coverage(Filters(chat_ids=[second])).values())
+    assert not any(search.coverage(Filters(date_from=2_000_000_000)).values())
+    assert not any(search.coverage(Filters(forwarded_from=["absent"])).values())
+    combined = UnifiedSearch(HybridSearch(db, semantic, importer.lifecycle_lock), search)
+    response = combined.search(
+        "ремонта", Filters(chat_ids=[first]), False, 20, "words", modalities=["ocr"]
+    )
+    assert response["results"] and response["coverage"] == expected
+    media.ocr.version = "new-version"
+    changed = search.coverage(Filters())
+    assert changed["images_ready"] == 1 and changed["total_photos"] == 1
+    assert changed["ocr_ready"] == changed["ocr_dense_ready"] == 0

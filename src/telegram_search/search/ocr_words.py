@@ -1,6 +1,6 @@
 """Indexed OCR substrings and bounded typo tolerance, independent of embeddings."""
 
-from telegram_search.search.execution import checkpoint
+from telegram_search.search.execution import advance, checkpoint, phase
 from telegram_search.search.stopwords import WORD, keyword_terms
 from telegram_search.shared.text import normalize_text
 
@@ -94,13 +94,15 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
     where, params = filters.sql("m")
     eligible = (
         "o.version=? AND o.state='ready' AND EXISTS (SELECT 1 FROM media_refs r "
-        "JOIN indexable_messages m ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
         "WHERE r.sha256=o.sha256 AND r.kind='photo' AND r.status='ready' "
-        f"AND {where})"
+        "AND EXISTS(SELECT 1 FROM indexable_messages m "
+        "WHERE m.chat_id=r.chat_id AND m.message_id=r.message_id "
+        f"AND {where}))"
     )
     extra = " AND instr(o.text_normalized,?)>0" if exact else ""
+    phase("ocr_tokens", unit="images")
     rows = conn.execute(
-        "SELECT o.rowid FROM ocr_fts JOIN ocr_cache o ON o.rowid=ocr_fts.rowid "
+        "SELECT o.rowid FROM ocr_fts CROSS JOIN ocr_cache o ON o.rowid=ocr_fts.rowid "
         f"WHERE ocr_fts MATCH ? AND {eligible}{extra} ORDER BY bm25(ocr_fts),o.rowid LIMIT ?",
         (match, version, *params, *([normalize_text(query.strip())] if exact else []), maximum),
     )
@@ -121,9 +123,10 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
     if not groups:
         return result, evidence, []
     candidates = {}
+    phase("ocr_substrings", unit="images")
     for row in conn.execute(
         "SELECT o.rowid,o.text_normalized,bm25(ocr_gram_fts) FROM ocr_gram_fts g "
-        "JOIN ocr_cache o ON o.rowid=g.rowid "
+        "CROSS JOIN ocr_cache o ON o.rowid=g.rowid "
         f"WHERE ocr_gram_fts MATCH ? AND {eligible} ORDER BY bm25(ocr_gram_fts),o.rowid LIMIT ?",
         (" AND ".join(groups), version, *params, maximum * 3),
     ):
@@ -141,9 +144,10 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
                         swapped = term[:index] + term[index + 1] + term[index] + term[index + 2 :]
                         grams.update(gram_token(swapped[i : i + 2]) for i in range(3))
         if grams:
+            phase("ocr_typos", unit="images")
             for row in conn.execute(
                 "SELECT o.rowid,o.text_normalized,bm25(ocr_gram_fts) FROM ocr_gram_fts g "
-                "JOIN ocr_cache o ON o.rowid=g.rowid "
+                "CROSS JOIN ocr_cache o ON o.rowid=g.rowid "
                 f"WHERE ocr_gram_fts MATCH ? AND {eligible} "
                 "ORDER BY bm25(ocr_gram_fts),o.rowid LIMIT ?",
                 (" OR ".join(sorted(grams)), version, *params, maximum * 3),
@@ -152,8 +156,10 @@ def ocr_word_search(conn, query, version, filters, maximum, *, exact=False):
     ranked = []
     budget = VerificationBudget()
     fuzzy_allowed = len(terms) <= 12 and sum(map(len, terms)) <= 160
+    phase("ocr_verify", total=len(candidates), unit="images")
     for key, (text, bm25) in candidates.items():
         checkpoint()
+        advance()
         if key in evidence:
             continue
         distances = []

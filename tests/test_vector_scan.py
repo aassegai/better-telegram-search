@@ -127,3 +127,39 @@ def test_full_clear_recreates_id_index_without_restarting_the_store(tmp_path):
     store.clear([{"id": "scope", "dimension": 2}], predicate="utc_day='day'")
     store.upsert("scope", 2, rows, np.array([[1.0, 0.0]], dtype=np.float32))
     assert any("id" in index.columns for index in store.table("scope", 2).list_indices())
+
+
+@pytest.mark.parametrize("unindexed", [None, 1300])
+def test_narrow_scope_without_usable_id_index_reads_table_once(tmp_path, unindexed):
+    store = VectorStore(tmp_path)
+    matrix = np.random.default_rng(34).normal(size=(1401, 13)).astype(np.float32)
+    rows = [
+        {"id": f"{i:08x}", "chat_id": "synthetic", "utc_day": "2026-01-01", "generation": 1}
+        for i in range(len(matrix))
+    ]
+    store.upsert("scope", 13, rows, matrix)
+    table = store.table("scope", 13)
+    index = next(index for index in table.list_indices() if "id" in index.columns)
+    table.drop_index(index.name)
+    if unindexed is not None:
+        # Build the scalar index on a small prefix, then append most of the table.
+        store = VectorStore(tmp_path / "tail")
+        store.upsert("scope", 13, rows[:101], matrix[:101])
+        store.upsert("scope", 13, rows[101:], matrix[101:])
+    allowed = [row["id"] for row in rows[::3]][:300]
+    expected = store.exact("scope", 13, matrix[-1], allowed, 20)
+    execution = SearchExecution()
+    with execution_context(execution):
+        actual = store.search_filtered(
+            "scope",
+            13,
+            matrix[-1],
+            lambda ids: set(allowed).intersection(ids),
+            20,
+            eligible_batches=lambda: (
+                allowed[start : start + 100] for start in range(0, len(allowed), 100)
+            ),
+            total=len(allowed),
+        )
+    assert [hit["id"] for hit in actual] == [hit["id"] for hit in expected]
+    assert execution.snapshot()["diagnostics"]["exact_vectors_read"] == len(rows)

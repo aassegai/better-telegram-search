@@ -32,7 +32,7 @@ def branches():
     )
     media = SimpleNamespace(
         db=SimpleNamespace(settings=Settings()),
-        media=SimpleNamespace(status=lambda: {"device": "cpu"}),
+        coverage=Mock(return_value={"total_photos": 1}),
         search=Mock(
             side_effect=lambda *args, kind, **kwargs: (
                 [
@@ -71,6 +71,11 @@ def test_only_selected_branches_run_and_same_message_is_merged(branches, selecte
     expected = {"text": "words", "images": "image", "ocr": "ocr_words"}
     assert set(result["results"][0]["matched_by"]) == {expected[kind] for kind in selected}
     assert text.search.call_count == int("text" in selected)
+    if selected == ["text"]:
+        media.coverage.assert_not_called()
+    else:
+        media.coverage.assert_called_once_with(filters)
+        assert result["coverage"] == {"total_photos": 1}
     if "text" in selected:
         args = text.search.call_args.args
         assert args == ("проверка", filters, True, 1 if selected == ["text"] else 100, "hybrid", 3)

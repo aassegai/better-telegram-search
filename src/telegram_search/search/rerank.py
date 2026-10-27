@@ -17,6 +17,7 @@ class SearchReranker:
 
     def _documents(self, hits, kind, filters):
         documents = []
+        phase("rerank_documents", total=len(hits), unit="texts")
         where, params = filters.sql()
         with self.db.connect() as conn:
             conn.execute("BEGIN")
@@ -49,6 +50,7 @@ class SearchReranker:
                 else:
                     text = row[0]
                 documents.append(text)
+                advance()
         return documents
 
     def _remember(self, key, vector):
@@ -110,6 +112,7 @@ class SearchReranker:
         revision = SearchCache.revision(self.db, settings=settings)
         selected = hits[: min(50, self.db.settings.retrieval_candidates)]
         documents = self._documents(selected, kind, filters)
+        phase("rerank_setup", unit="texts")
         started = time.perf_counter()
         with search_lock(self.service.lock):
             try:
