@@ -1129,5 +1129,10 @@
   "Модель переранжирования обработала только начало части фрагментов или запроса.": "The reranking model processed only the beginning of some passages or the query.",
   "Для английского текста рекомендуется UltraBERT; язык интерфейса не меняет выбранную модель.": "UltraBERT is recommended for English text; changing the interface language does not change the selected model.",
   "Для русского текста рекомендуется BERTA; язык интерфейса не меняет выбранную модель.": "BERTA is recommended for Russian text; changing the interface language does not change the selected model.",
-  "Неподдерживаемая обработка выхода текстовой модели.": "The text model output processing is unsupported."
+  "Неподдерживаемая обработка выхода текстовой модели.": "The text model output processing is unsupported.",
+  "Проверяем состояние очистки…": "Checking cleanup status…",
+  "Подсчитываем размер индексов. Очистка уже доступна.": "Calculating index sizes. Cleanup is already available.",
+  "Подсчёт размера индексов задерживается. Очистка доступна без этого подсчёта; сведения можно обновить позже.": "Calculating index sizes is taking too long. Cleanup is available without this estimate; refresh the details later.",
+  "Не удалось проверить состояние очистки. Обновите сведения, чтобы повторить запрос.": "Could not check cleanup status. Refresh the details to try again.",
+  "Размер индексов пока неизвестен. Очистка доступна; общие с другими диалогами векторы сохранятся.": "Index sizes are not available yet. Cleanup is available; vectors shared with other chats will be kept."
 }
