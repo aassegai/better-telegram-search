@@ -1139,5 +1139,21 @@
   "Собираем подробную диагностику…": "Collecting detailed diagnostics…",
   "Не удалось собрать подробную диагностику. Повторите позже.": "Could not collect detailed diagnostics. Try again later.",
   "Диагностика ещё собирается. Обновите сведения позже.": "Diagnostics are still being collected. Refresh the details later.",
-  "Обновить диагностику": "Refresh diagnostics"
+  "Обновить диагностику": "Refresh diagnostics",
+  "Отбор текстовых фрагментов": "Selecting text fragments",
+  "Подбор фрагментов по совпадениям": "Mapping keyword matches to fragments",
+  "Сборка текстовой выдачи": "Building text results",
+  "Отбор изображений": "Selecting images",
+  "Отбор фрагментов OCR": "Selecting OCR fragments",
+  "Сборка выдачи изображений": "Building image results",
+  "Сборка выдачи OCR": "Building OCR results",
+  "Поиск слов в OCR": "Finding words in OCR",
+  "Поиск подстрок в OCR": "Finding substrings in OCR",
+  "Поиск вариантов с опечатками в OCR": "Finding typo variants in OCR",
+  "Проверка совпадений OCR": "Verifying OCR matches",
+  "фрагментов": "fragments",
+  "изображений": "images",
+  "Подготовка кандидатов для уточнения": "Preparing reranking candidates",
+  "Загрузка модели уточнения": "Loading the reranking model",
+  "Проверка покрытия медиаиндекса": "Checking media index coverage"
 }

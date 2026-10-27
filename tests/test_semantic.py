@@ -646,3 +646,16 @@ def test_stale_failed_result_cannot_pause_changed_queue(
     service._loop()
     assert not service.status()["paused"]
     assert service.status()["error"] is None
+
+
+def test_native_scope_bounds_use_chunk_owners_instead_of_witness_dates(db, importer, tmp_path):
+    chat, service, worker, work = setup_index(db, importer, tmp_path, ["поезд"])
+    assert worker.run(work)["state"] == "done"
+    # A support witness can be dated outside its owning chunk's day. Native
+    # pruning must follow the eligible chunk metadata, not copy source filters.
+    with db.connect() as conn:
+        conn.execute("UPDATE messages SET timestamp=timestamp+86400 WHERE chat_id=?", (chat,))
+    result = HybridSearch(db, service, importer.lifecycle_lock).search(
+        "поезд", Filters(chat_ids=[chat], date_from=1750086400), mode="meaning"
+    )
+    assert result["results"] and result["results"][0]["message_id"] == 1

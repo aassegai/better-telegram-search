@@ -1,4 +1,11 @@
-from telegram_search.search.execution import checkpoint, count, id_batches, phase, search_lock
+from telegram_search.search.execution import (
+    advance,
+    checkpoint,
+    count,
+    id_batches,
+    phase,
+    search_lock,
+)
 from telegram_search.search.lexical import ContextService
 from telegram_search.search.ocr_words import ocr_word_search
 from telegram_search.search.presentation import search_options
@@ -10,6 +17,64 @@ class MediaSearch:
         self.db, self.media, self.semantic, self.lock = db, media, semantic, lock
         self.context = ContextService(db)
 
+    def coverage(self, filters):
+        """Search coverage only: no indexing forecasts, device probes or queues."""
+        where, params = filters.sql()
+        with search_lock(self.lock):
+            ocr, clip, encoder = self.media.ocr, self.media.clip, self.semantic.encoder
+            version = ocr.version if ocr else ""
+            image_space = clip.space_id if clip else ""
+            text_space = encoder.space_id if encoder else ""
+        phase("media_coverage", unit="images")
+        photo = "r.kind='photo' AND r.status='ready' AND r.sha256 IS NOT NULL"
+        if (
+            filters.chat_ids
+            or filters.author_ids
+            or filters.forwarded_from
+            or filters.date_from is not None
+            or filters.date_to is not None
+            or filters.scope_mode == "selected"
+        ):
+            selected = (
+                "SELECT DISTINCT r.sha256 FROM "
+                "(SELECT m.chat_id,m.message_id FROM indexable_messages m "
+                f"WHERE {where} LIMIT -1) m CROSS JOIN media_refs r "
+                "ON r.chat_id=m.chat_id AND r.message_id=m.message_id "
+                f"WHERE {photo}"
+            )
+        else:
+            selected = (
+                f"SELECT DISTINCT r.sha256 FROM media_refs r WHERE {photo} "
+                "AND EXISTS(SELECT 1 FROM indexable_messages m "
+                "WHERE m.chat_id=r.chat_id AND m.message_id=r.message_id "
+                f"AND {where})"
+            )
+        with self.db.connect() as conn:
+            row = conn.execute(
+                f"WITH scoped AS ({selected}) "
+                "SELECT count(*),coalesce(sum(EXISTS(SELECT 1 FROM media_embeddings e "
+                "WHERE e.sha256=p.sha256 AND e.kind='image' AND e.space_id=?)),0),"
+                "count(o.rowid),coalesce(sum(o.text<>''),0),"
+                "coalesce(sum(o.text<>'' AND EXISTS(SELECT 1 FROM media_embeddings e "
+                "WHERE e.sha256=p.sha256 AND e.kind='ocr' AND e.space_id=? "
+                "AND e.ocr_version=?)),0) FROM scoped p LEFT JOIN ocr_cache o "
+                "ON o.sha256=p.sha256 AND o.version=? AND o.state='ready'",
+                (*params, image_space, text_space, version, version),
+            ).fetchone()
+        return dict(
+            zip(
+                (
+                    "total_photos",
+                    "images_ready",
+                    "ocr_ready",
+                    "ocr_nonempty_ready",
+                    "ocr_dense_ready",
+                ),
+                row,
+                strict=True,
+            )
+        )
+
     def _dense(self, space, dimension, vector, kind, filters, version=None):
         where, params = filters.sql("m")
         extra, arguments = ("AND e.ocr_version=?", [version]) if kind == "ocr" else ("", [])
@@ -18,12 +83,14 @@ class MediaSearch:
             conn.execute("BEGIN")
             predicate = (
                 "e.space_id=? AND e.kind=? "
-                f"{extra} AND EXISTS (SELECT 1 FROM media_refs r JOIN indexable_messages m "
-                "ON m.chat_id=r.chat_id AND m.message_id=r.message_id "
-                "WHERE r.sha256=e.sha256 "
-                f"AND r.status='ready' AND r.kind='photo' AND {where})"
+                f"{extra} AND EXISTS (SELECT 1 FROM media_refs r "
+                "WHERE r.sha256=e.sha256 AND r.status='ready' AND r.kind='photo' "
+                "AND EXISTS(SELECT 1 FROM indexable_messages m "
+                "WHERE m.chat_id=r.chat_id AND m.message_id=r.message_id "
+                f"AND {where}))"
             )
             parameters = (space, kind, *arguments, *params)
+            phase("image_scope" if kind == "image" else "ocr_scope", unit="vectors")
             total = conn.execute(
                 f"SELECT count(*) FROM media_embeddings e WHERE {predicate}", parameters
             ).fetchone()[0]
@@ -49,7 +116,7 @@ class MediaSearch:
                 eligible,
                 maximum,
                 predicate="utc_day = 'media'",
-                eligible_batches=id_batches(
+                eligible_batches=lambda: id_batches(
                     conn.execute(
                         f"SELECT e.id FROM media_embeddings e WHERE {predicate}", parameters
                     )
@@ -101,7 +168,7 @@ class MediaSearch:
             if not exact and mode != "words" and vector is None:
                 warnings.append("Смысловой OCR-индекс недоступен; OCR ищется по словам.")
             if vector is not None:
-                coverage = self.media.status()
+                coverage = self.coverage(filters)
                 if not coverage["ocr_dense_ready"]:
                     vector = None
                     warnings.append(
@@ -147,6 +214,11 @@ class MediaSearch:
                         for item in self._dense(space, dimension, vector, "ocr", filters, version)
                     ]
             candidates = {}
+            phase(
+                "image_results" if kind == "images" else "ocr_results",
+                total=len(lexical) + len(dense),
+                unit="images" if kind == "images" else "texts",
+            )
             with self.db.connect() as conn:
                 for channel, keys in (
                     ("ocr_words", lexical),
@@ -154,6 +226,7 @@ class MediaSearch:
                 ):
                     for rank, key in enumerate(keys, 1):
                         checkpoint()
+                        advance()
                         if channel == "ocr_words":
                             evidence = conn.execute(
                                 "SELECT sha256,text,confidence FROM ocr_cache "
@@ -172,9 +245,11 @@ class MediaSearch:
                         where, params = filters.sql("m")
                         refs = conn.execute(
                             "SELECT m.*,c.name AS chat_name,MIN(r.id) AS media_id "
-                            "FROM media_refs r JOIN indexable_messages m ON m.chat_id=r.chat_id "
+                            "FROM (SELECT id,chat_id,message_id FROM media_refs WHERE sha256=? "
+                            "AND status='ready' AND kind='photo' LIMIT -1) r "
+                            "CROSS JOIN indexable_messages m ON m.chat_id=r.chat_id "
                             "AND m.message_id=r.message_id JOIN chats c ON c.id=m.chat_id "
-                            f"WHERE r.sha256=? AND r.status='ready' AND r.kind='photo' AND {where} "
+                            f"WHERE {where} "
                             "GROUP BY m.chat_id,m.message_id "
                             "ORDER BY m.timestamp,m.message_id LIMIT 100",
                             (evidence["sha256"], *params),
@@ -352,6 +427,6 @@ class UnifiedSearch:
                 if "ocr_meaning" in reasons
                 else "words"
             )
-        result["coverage"] = self.media.media.status()
+        result["coverage"] = self.media.coverage(filters)
         result.update(rerank_status())
         return result

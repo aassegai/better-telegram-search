@@ -1,6 +1,14 @@
-from telegram_search.search.execution import checkpoint, count, id_batches, phase, search_lock
+from telegram_search.search.execution import (
+    advance,
+    checkpoint,
+    count,
+    id_batches,
+    phase,
+    search_lock,
+)
 from telegram_search.search.lexical import ContextService, Filters, SearchService, fts_query
 from telegram_search.search.presentation import search_options
+from telegram_search.search.vectors import sql_literal
 from telegram_search.shared.errors import UserError
 
 
@@ -15,21 +23,40 @@ class HybridSearch:
         self.context = ContextService(db)
 
     @staticmethod
-    def eligible_sql(filters, space_id):
+    def eligible_sql(filters, space_id, *, scope_first=False):
         where, params = filters.sql()
+        if scope_first:
+            # Build the candidate IDs once from the filtered source messages.
+            # LIMIT prevents flattening from turning this back into a repeated
+            # chronology scan for every chunk in every chat.
+            witness = (
+                "c.id IN (SELECT p.chunk_id FROM "
+                "(SELECT m.chat_id,m.message_id FROM indexable_messages m "
+                f"WHERE {where} LIMIT -1) m CROSS JOIN chunk_embedding_parts p "
+                "ON p.chat_id=m.chat_id AND p.message_id=m.message_id "
+                "WHERE p.role<>'borrowed_context')"
+            )
+        else:
+            # Point eligibility checks start with a bounded set of chunk IDs.
+            witness = (
+                "EXISTS(SELECT 1 FROM chunk_embedding_parts p "
+                "WHERE p.chunk_id=c.id AND p.role<>'borrowed_context' "
+                "AND EXISTS(SELECT 1 FROM indexable_messages m "
+                "WHERE m.chat_id=p.chat_id AND m.message_id=p.message_id "
+                f"AND {where}))"
+            )
         predicate = (
             "c.embedding_space_id=? AND c.generation=s.target_generation "
             "AND s.chunk_generation=s.target_generation "
             "AND s.dense_generation=s.target_generation AND s.embedding_space_id=? "
-            "AND EXISTS(SELECT 1 FROM chunk_embedding_parts p JOIN indexable_messages m "
-            "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
-            f"WHERE p.chunk_id=c.id AND p.role<>'borrowed_context' AND {where})"
+            f"AND {witness}"
         )
         if filters.exclude_deleted:
             predicate += (
-                " AND NOT EXISTS(SELECT 1 FROM chunk_parts dp JOIN indexable_messages dm "
-                "ON dm.chat_id=dp.chat_id AND dm.message_id=dp.message_id "
-                "WHERE dp.chunk_id=c.id AND dm.remote_deleted=1)"
+                " AND NOT EXISTS(SELECT 1 FROM chunk_parts dp WHERE dp.chunk_id=c.id "
+                "AND EXISTS(SELECT 1 FROM indexable_messages dm "
+                "WHERE dm.chat_id=dp.chat_id AND dm.message_id=dp.message_id "
+                "AND dm.remote_deleted=1))"
             )
         return predicate, [space_id, space_id, *params]
 
@@ -104,17 +131,19 @@ class HybridSearch:
                     # Source FTS covers filler-only days and messages with no dense
                     # chunk. Never use derived model text to confirm literal words.
                     source_where, source_params = filters.sql()
-                    for row in conn.execute(
+                    rows = conn.execute(
                         "SELECT m.*,ch.name AS chat_name FROM message_fts "
                         "CROSS JOIN indexable_messages m ON m.rowid=message_fts.rowid "
                         "JOIN chats ch ON ch.id=m.chat_id WHERE message_fts MATCH ? "
                         f"AND {source_where} ORDER BY bm25(message_fts),"
                         "m.chat_id,m.message_id LIMIT ?",
                         [match, *source_params, candidates],
-                    ):
+                    )
+                    phase("text_word_mapping", unit="messages")
+                    for row in rows:
                         checkpoint()
                         mapped = conn.execute(
-                            "SELECT c.id FROM chunk_parts p JOIN chunks c ON c.id=p.chunk_id "
+                            "SELECT c.id FROM chunk_parts p CROSS JOIN chunks c ON c.id=p.chunk_id "
                             "JOIN index_segments s ON s.chat_id=c.chat_id AND s.utc_day=c.utc_day "
                             "WHERE p.chat_id=? AND p.message_id=? AND c.embedding_space_id=? "
                             "AND c.generation=s.target_generation "
@@ -129,6 +158,7 @@ class HybridSearch:
                             key = f"message:{row['chat_id']}:{row['message_id']}"
                         lexical.append(key)
                         lexical_anchors[key] = row
+                        advance()
 
                 def eligible(ids):
                     placeholders = ",".join("?" for _ in ids)
@@ -141,20 +171,54 @@ class HybridSearch:
                     ]
 
                 found = []
-                total = conn.execute(
-                    f"SELECT count(*) {joins} WHERE {predicate}", params
-                ).fetchone()[0]
+                phase("text_scope", unit="chunks")
+                scoped_predicate, scoped_params = self.eligible_sql(
+                    filters,
+                    encoder.space_id,
+                    scope_first=bool(
+                        filters.chat_ids
+                        or filters.author_ids
+                        or filters.forwarded_from
+                        or filters.date_from is not None
+                        or filters.date_to is not None
+                        or filters.scope_mode == "selected"
+                    ),
+                )
+                scope = conn.execute(
+                    "SELECT count(*),min(c.chat_id),max(c.chat_id),"
+                    f"min(c.utc_day),max(c.utc_day) {joins} WHERE {scoped_predicate}",
+                    scoped_params,
+                ).fetchone()
+                total = scope[0]
                 count("eligible_vectors", total)
                 if total:
-                    rows = conn.execute(f"SELECT c.id {joins} WHERE {predicate}", params)
+                    # Coarse native bounds come from eligible chunk owners, not
+                    # the witness dates: support messages may belong to another
+                    # day. Canonical ID checks remain authoritative afterwards.
+                    native_scope = (
+                        "utc_day <> 'media' AND utc_day >= "
+                        + sql_literal(scope[3])
+                        + " AND utc_day <= "
+                        + sql_literal(scope[4])
+                    )
+                    if scope[1] == scope[2]:
+                        native_scope += " AND chat_id = " + sql_literal(scope[1])
+
+                    def batches():
+                        return id_batches(
+                            conn.execute(
+                                f"SELECT c.id {joins} WHERE {scoped_predicate}", scoped_params
+                            )
+                        )
+
                     found = self.semantic._vector_store().search_filtered(
                         encoder.space_id,
                         encoder.spec.dimension,
                         vector,
                         eligible,
                         candidates,
-                        predicate="utc_day <> 'media'",
-                        eligible_batches=id_batches(rows),
+                        predicate=native_scope,
+                        eligible_batches=batches,
                         total=total,
                         phase_name="text_vectors",
                     )
@@ -182,16 +246,20 @@ class HybridSearch:
                         "WHERE rowid=m.rowid AND message_fts MATCH ?) THEN 0 ELSE 1 END,"
                     )
                     anchor_params = [match.replace(" AND ", " OR ")]
+                phase("text_results", total=len(scores), unit="chunks")
                 for chunk_id in sorted(scores, key=lambda key: (-scores[key], key)):
                     checkpoint()
+                    advance()
                     anchor = lexical_anchors.get(chunk_id)
                     if anchor is None:
                         anchor = conn.execute(
-                            "SELECT m.*,ch.name AS chat_name FROM chunk_embedding_parts p "
-                            "JOIN indexable_messages m "
+                            "SELECT m.*,ch.name AS chat_name FROM "
+                            "(SELECT chat_id,message_id,role,ordinal FROM chunk_embedding_parts "
+                            "WHERE chunk_id=? AND role<>'borrowed_context' LIMIT -1) p "
+                            "CROSS JOIN indexable_messages m "
                             "ON m.chat_id=p.chat_id AND m.message_id=p.message_id "
                             "JOIN chats ch ON ch.id=m.chat_id "
-                            f"WHERE p.chunk_id=? AND p.role<>'borrowed_context' AND {witness} "
+                            f"WHERE {witness} "
                             f"ORDER BY {anchor_order}CASE WHEN p.role='core' THEN 0 ELSE 1 END,"
                             "p.ordinal LIMIT 1",
                             [chunk_id, *witness_params, *anchor_params],

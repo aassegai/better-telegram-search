@@ -62,11 +62,28 @@ time, measured rate and phase ETA once enough observations exist. Progress is
 per phase. A completed vector phase does not mean reranking/results are ready.
 Unknown work remains indeterminate rather than using a time-based percentage.
 
+Text search separates keyword matching, mapping matches to chunks, canonical
+scope selection, vector retrieval and result assembly. Images and OCR report
+their own scope/retrieval/assembly phases. OCR additionally separates tokens,
+substrings, typo candidates and verification. Reranking reports document
+preparation, model setup, query encoding and passage encoding. `media_coverage`
+counts eligible photos and current model coverage for the requested filters;
+it does not run indexing forecasts, inspect GPU resources or count unrelated
+queues. `render` includes snapshot preparation and persistence.
+
+`eta_seconds` estimates the current measurable phase, not the whole remaining
+request. Model loading and native ANN calls have unknown work. A cold CPU
+reranker can dominate the request even after vector retrieval has completed.
+
 For exact retrieval, `total` is frozen from the canonical SQLite eligibility
 query. `completed` counts valid eligible vectors actually scored. Narrow scopes
 stream canonical IDs in bounded predicates before fetching vectors. Broad
 scopes can use one sequential scan to avoid repeatedly scanning a large append
 tail; canonical eligibility is still checked before cosine and global top-K.
+The scan strategy checks scalar ID-index coverage: missing indexes and large
+unindexed tails must not cause one full reread per small ID predicate. Text
+native bounds use eligible chunk owners, including support across day boundaries,
+while canonical message filters remain authoritative.
 
 Hidden API diagnostics include `scope_messages`, `eligible_vectors`,
 `vectors_read`, `vectors_scored`, `candidates_before_rerank`, `returned` and phase
@@ -74,9 +91,15 @@ timings. `vectors_read` counts vector rows delivered by Lance to the scorer; it
 does not measure physical disk bytes or internal scalar-index reads. These
 counters are not GPU utilization measurements.
 
-`strategy` records requested and effective retrieval. At this implementation
-stage the scorer is exact; an ANN request reports `ann_index_unavailable` and
-effective `exact`. This endpoint is not an ANN implementation or benchmark.
+`strategy` records requested and effective retrieval. ANN uses a compatible
+IVF_FLAT index and canonical prefilters. Missing/incompatible indexes, native
+timeouts or `ann_memory_limit` report an explicit fallback to exact retrieval;
+requesting ANN does not guarantee it was used. A mixed search can use ANN for
+one modality and exact retrieval for another. Native ANN distance counts are
+unknown; returned candidates are not presented as vectors read or scored.
+After an interrupted ANN attempt, a canonical batch factory reopens the full
+eligible cursor in the same SQLite snapshot before exact retrieval. Legacy
+one-shot iterators fall back to a canonically checked sequential scan.
 
 ## Results and limits
 

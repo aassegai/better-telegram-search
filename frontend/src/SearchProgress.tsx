@@ -6,8 +6,15 @@ const phases: Record<string, string> = {
   queued: 'Ожидание в очереди', scope: 'Подготовка области поиска', query: 'Подготовка запроса',
   query_text: 'Подготовка текстового запроса', query_images: 'Подготовка описания изображения',
   query_ocr: 'Подготовка запроса к OCR', browse: 'Загрузка сообщений', text_words: 'Поиск в сообщениях',
+  text_scope: 'Отбор текстовых фрагментов', text_word_mapping: 'Подбор фрагментов по совпадениям',
+  text_results: 'Сборка текстовой выдачи', image_scope: 'Отбор изображений', ocr_scope: 'Отбор фрагментов OCR',
+  image_results: 'Сборка выдачи изображений', ocr_results: 'Сборка выдачи OCR',
+  media_coverage: 'Проверка покрытия медиаиндекса',
+  ocr_tokens: 'Поиск слов в OCR', ocr_substrings: 'Поиск подстрок в OCR',
+  ocr_typos: 'Поиск вариантов с опечатками в OCR', ocr_verify: 'Проверка совпадений OCR',
   text_vectors: 'Сравнение текстовых фрагментов', image_vectors: 'Сравнение изображений',
   ocr_words: 'Поиск в распознанном тексте', ocr_vectors: 'Сравнение распознанного текста',
+  rerank_documents: 'Подготовка кандидатов для уточнения', rerank_setup: 'Загрузка модели уточнения',
   rerank_query: 'Подготовка уточнения порядка', rerank_passage: 'Уточнение порядка результатов',
   combine: 'Объединение совпадений', render: 'Подготовка выдачи',
   text_vectors_scope: 'Проверка области текстового ANN', image_vectors_scope: 'Проверка области ANN изображений',
@@ -28,7 +35,7 @@ export default function SearchProgress({ status, onStop }: {
       value={known ? status!.completed : undefined} />
     {status && <div className="search-progress-measurements">
       {status.total != null && <span>{status.completed.toLocaleString(uiLocale())} / {status.total.toLocaleString(uiLocale())}
-        {status.unit === 'vectors' ? t(' сравнений') : status.unit === 'texts' ? t(' текстов') : t(' сообщений')}</span>}
+        {status.unit === 'vectors' ? t(' сравнений') : status.unit === 'texts' ? t(' текстов') : status.unit === 'chunks' ? t(' фрагментов') : status.unit === 'images' ? t(' изображений') : t(' сообщений')}</span>}
       {status.total == null && status.unit === 'native_queries' && <span>{t('Завершено вызовов ANN: {p0}', { p0: status.completed })}</span>}
       {status.total == null && status.unit === 'ids' && <span>{t('Проверено записей: {p0}', { p0: status.completed.toLocaleString(uiLocale()) })}</span>}
       <span>{t('Прошло {p0} с', { p0: Math.floor(status.elapsed_seconds) })}</span>
