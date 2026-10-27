@@ -9,6 +9,7 @@ import WorkspacePanel from './WorkspacePanel';
 import SourcePanel from './SourcePanel';
 import SettingsDialog from './SettingsDialog';
 import ChatVectorStorage from './ChatVectorStorage';
+import NoisePanel from './NoisePanel';
 
 type Status = ChatIndexStatus;
 
@@ -18,6 +19,7 @@ export default function ChatIndexDialog({ chat, onClose, onModels, onSources, on
   const revision = useRef(0);
   const mutations = useRef(0);
   const [pending, setPending] = useState(false);
+  const [noiseOpen, setNoiseOpen] = useState(false);
   const onStart = () => { revision.current++; mutations.current++; setPending(true); };
   const onEnd = () => { revision.current++; mutations.current--; setPending(mutations.current > 0); };
   useEffect(() => {
@@ -44,6 +46,7 @@ export default function ChatIndexDialog({ chat, onClose, onModels, onSources, on
     <IndexExclusions chatId={chat.id} status={status} pending={pending} onStart={onStart} onEnd={onEnd} onSaved={setStatus} />
     <TextIndexPanel onModels={onModels} onPerformance={onPerformance} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} status={status?.semantic ?? null}
       onChange={semantic => setStatus(value => value ? { ...value, semantic } : value)} />
+    {status && <NoisePanel key={JSON.stringify([chat.id, status.excluded_author_ids, status.chunking?.policy_id])} chatId={chat.id} currentPolicyId={status.chunking?.policy_id ?? ''} initiallyOpen={noiseOpen} onOpenChange={setNoiseOpen} pending={pending} onStart={onStart} onEnd={onEnd} />}
     <WorkspacePanel onModels={onModels} onPerformance={onPerformance} onResources={onResources} chatId={chat.id} pending={pending} onStart={onStart} onEnd={onEnd} media={status?.media ?? null}
       onMediaChange={media => setStatus(value => value ? { ...value, media } : value)} />
     <ChatVectorStorage chat={chat} pending={pending} onStart={onStart} onEnd={onEnd} />

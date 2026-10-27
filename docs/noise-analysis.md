@@ -3,11 +3,12 @@
 [Русский](noise-analysis.ru.md)
 
 The CPU analysis service now collects a bounded, private report for one chat.
-It **does not change** chunking, source messages, lexical search, existing
-policies or indexing checkpoints until an explicit apply action. The local API
-now supports exact-policy drafts, overrides and text-only apply/rebuild. A complete
-UI, real-token dry-run and calibration are still being implemented.
-**Automatic omission of new forms is disabled.** Doubtful forms stay.
+Source messages and keyword search are always preserved. Analysis leaves active
+rules and indexing checkpoints unchanged; explicit apply rebuilds only text.
+The local API, per-chat settings UI and standalone CLI share the draft, override
+and apply services. Real-token dry-run and calibration are still being implemented.
+**Automatic omission of new forms is disabled.** New ambiguous forms stay unless
+you explicitly choose an omit rule; previously selected manual rules are retained.
 
 ## Evidence and decisions
 
@@ -111,7 +112,7 @@ in each CPU phase, SQLite contention, report validation and migration from schem
 used in these tests, and synthetic tests do not validate a real omission gate.
 
 Remaining: labelled development/test calibration and a conservative gate,
-real-encoder token/padding dry-run and the UI.
+real-encoder token/padding dry-run and the validated automatic gate.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
 
@@ -173,3 +174,28 @@ names/IDs, author identities, source paths or forms. To intentionally inspect fo
 use `noise report --chat-id CHAT_ID --job-id JOB_ID --show-private`, with optional
 `--kind forms|families`, `--decision keep|review|omit`, `--offset` and `--limit`.
 `noise delete --chat-id CHAT_ID --job-id JOB_ID` removes a stopped report.
+
+## Chat settings
+
+Open a chat's indexing settings and expand **Semantic noise filter**. Run analysis
+with the current sender exclusions; limits are editable and the UI defaults to
+one million messages and 300 seconds. Progress shows measured phase/counts and
+elapsed time, with cancellation, without an invented completion estimate.
+
+Review paginated forms or families. Each form separates the analysis decision
+from the draft rule and any previously selected rule. An ambiguous new suggestion
+can therefore retain an earlier explicit omission. A new local override wins;
+choosing **No new override** restores the inherited/default rule. Captions,
+entities and meaningful replies retain per-occurrence protections.
+
+Optional edits are preserved across polling and pages. Save overrides, then
+preview the rules and explicitly apply/rebuild text. The preview belongs to one
+draft revision: refreshing a changed draft invalidates it, and Apply cannot submit
+a newer unreviewed revision. Preview totals include inherited rules. No repeated
+rebuild runs when effective rules are unchanged.
+
+Partial and older checksum-free reports are read-only. Source/exclusion changes
+hide old evidence and require a new analysis. Closing settings or changing chat,
+policy or sender scope cannot publish a late response into a newer view. The UI
+is available in Russian/English and both themes. Forms are shown literally and
+never passed through application-label translation.

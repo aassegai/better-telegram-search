@@ -328,6 +328,45 @@ def test_concurrent_apply_is_idempotent_and_busy_writer_is_safe_to_retry(
     assert sorted(result["already_applied"] for result in results) == [False, True]
 
 
+def test_report_explains_inherited_rules_separately_from_new_analysis_and_overrides(
+    db, importer, tmp_path, services
+):
+    chat, job_id, policy = prepared(importer, tmp_path, services)
+    policy.save_overrides(chat, job_id, 0, {"бял": "omit", "сука": "keep"})
+    policy.apply(chat, job_id, 1)
+    next_job = start_ready(services[0], chat)["id"]
+    assert policy.metadata(chat, next_job)["overrides"] == {}
+    raw = services[0].report(chat, next_job)
+    page = policy.explain_forms(chat, next_job, raw)
+    rows = {row["form"]: row for row in page["forms"]}
+    assert rows["бял"]["candidate"]["decision"] == "review"
+    assert rows["бял"]["inherited_decision"] == rows["бял"]["default_decision"] == "omit"
+    assert rows["сука"]["candidate"]["decision"] == "omit"
+    assert rows["сука"]["inherited_decision"] == rows["сука"]["default_decision"] == "keep"
+    assert all(row["default_origin"] == "inherited" for row in rows.values())
+    policy.save_overrides(chat, next_job, 0, {"бял": "keep"})
+    assert policy.explain_forms(chat, next_job, raw)["forms"] == page["forms"]
+    assert policy.metadata(chat, next_job)["overrides"] == {"бял": "keep"}
+
+
+def test_inherited_explanation_rechecks_source_scope_after_cpu_work(
+    db, importer, tmp_path, services, monkeypatch
+):
+    chat, job_id, policy = prepared(importer, tmp_path, services)
+    raw = services[0].report(chat, job_id)
+    original = policy._source_policy
+
+    def changed(fence):
+        selected = original(fence)
+        with db.connect() as conn:
+            conn.execute("UPDATE chats SET revision=revision+1 WHERE id=?", (chat,))
+        return selected
+
+    monkeypatch.setattr(policy, "_source_policy", changed)
+    with pytest.raises(NoiseDraftConflict):
+        policy.explain_forms(chat, job_id, raw)
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

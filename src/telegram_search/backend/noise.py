@@ -86,11 +86,14 @@ def analysis_forms(
     offset: Annotated[int, Query(ge=0, le=50000)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
-    return invoke(
-        lambda: request.app.state.noise_analyses.report(
+    def load():
+        state = request.app.state
+        page = state.noise_analyses.report(
             chat_id, job_id, decision=decision, offset=offset, limit=limit
         )
-    )
+        return state.noise_policies.explain_forms(chat_id, job_id, page)
+
+    return invoke(load)
 
 
 @router.get("/{job_id}/families")

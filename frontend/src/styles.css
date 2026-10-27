@@ -217,6 +217,24 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .batch-presets button { flex: 1; min-width: 36px; padding: 6px 8px; font-size: 12px; }
 .batch-presets button[aria-pressed="true"] { background: var(--selected-bg, #dfebd3); border-color: var(--accent, #92ae7f); font-weight: 650; }
 .index-card button.primary { background: var(--primary-bg, #2e6148); color: var(--on-primary, #fff); border-color: var(--primary-bg, #2e6148); }
+.noise-panel > details > summary { cursor: pointer; font-weight: 700; }
+.noise-panel label { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 12px 0; overflow-wrap: anywhere; }
+.noise-panel select, .noise-panel input { width: 100%; min-width: 0; }
+.noise-panel .job-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.noise-panel .job-actions > button { max-width: 100%; white-space: normal; }
+.noise-panel code, .noise-form bdi { overflow-wrap: anywhere; word-break: break-word; }
+.noise-panel code { display: block; font-size: 11px; margin: 8px 0; }
+.noise-job, .noise-draft, .noise-preview { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+.noise-report-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
+.noise-form { padding: 14px 0; border-top: 1px solid var(--line); min-width: 0; }
+.noise-form p { margin: 7px 0; }
+.noise-form-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.noise-form-heading > strong { font-size: 16px; min-width: 0; }
+.noise-form-heading > span { color: var(--text-secondary); font-size: 11px; }
+.noise-evidence { margin-top: 10px; }
+.noise-evidence summary, .noise-limits summary { cursor: pointer; color: var(--text-secondary); }
+.noise-evidence ul { padding-inline-start: 18px; }
+.noise-evidence li { overflow-wrap: anywhere; margin: 5px 0; }
 .index-exclusions summary { font-weight: 600; cursor: pointer; }
 .index-exclusions details > label { display: block; }
 .index-exclusions details > label input { width: 100%; }
@@ -225,7 +243,8 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .index-author-list input { flex: none; margin-top: 4px; }
 .index-author-list span { min-width: 0; overflow-wrap: anywhere; }
 .index-author-list strong, .index-author-list small { display: block; }
-.index-actions { gap: 8px; }
+.index-actions { gap: 8px; flex-wrap: wrap; }
+.index-actions > button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .index-advanced { margin-top: 16px; border-top: 1px solid var(--line, #e0e7d9); padding-top: 12px; }
 .index-advanced summary { cursor: pointer; color: var(--text-secondary, #6c805f); font-size: 12px; }
 .index-advanced label { display: block; margin: 12px 0; }

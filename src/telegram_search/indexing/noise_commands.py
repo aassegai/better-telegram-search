@@ -88,7 +88,8 @@ def _command(analyses, policies, args):
         page = {"offset": args.offset, "limit": args.limit}
         if args.kind == "forms":
             page["decision"] = args.decision
-        return analyses.report(chat, args.job_id, kind=args.kind, **page)
+        result = analyses.report(chat, args.job_id, kind=args.kind, **page)
+        return policies.explain_forms(chat, args.job_id, result) if args.kind == "forms" else result
     if action == "delete":
         analyses.delete(chat, args.job_id)
         return {"deleted": True}

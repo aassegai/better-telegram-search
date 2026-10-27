@@ -9,7 +9,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict
 
-from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION
+from telegram_search.search.chunking.classification import whole_word
+from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION, validate_evidence
 from telegram_search.security.paths import is_link_or_reparse
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -362,7 +363,7 @@ class NoiseReport:
             clause = " WHERE decision=?" if decision else ""
             params = (decision,) if decision else ()
             rows = conn.execute(
-                "SELECT form,whole_count,eligible_count,substr(payload,1,8193) AS payload,"
+                "SELECT form,whole_count,eligible_count,decision,substr(payload,1,8193) AS payload,"
                 "length(CAST(payload AS BLOB)) AS payload_bytes FROM forms"
                 + clause
                 + " ORDER BY whole_count DESC,form LIMIT ? OFFSET ?",
@@ -375,37 +376,53 @@ class NoiseReport:
                     not isinstance(payload, str) or row["payload_bytes"] > 8192
                 ):
                     raise UserError("Отчёт анализа несовместим или повреждён.")
-                if not isinstance(row["form"], str) or not 1 <= len(row["form"]) <= 64:
+                if (
+                    not isinstance(row["form"], str)
+                    or not 1 <= len(row["form"]) <= 64
+                    or whole_word(row["form"]) != row["form"]
+                    or type(row["whole_count"]) is not int
+                    or not 1 <= row["whole_count"] <= 1000000
+                    or type(row["eligible_count"]) is not int
+                    or not 0 <= row["eligible_count"] <= row["whole_count"]
+                ):
                     raise UserError("Отчёт анализа несовместим или повреждён.")
                 candidate = None
                 if payload is not None:
-                    candidate = json.loads(payload, parse_constant=self._invalid_constant)
-                    if (
-                        not isinstance(candidate, dict)
-                        or candidate.get("schema_version") != 1
-                        or candidate.get("decision") not in {"keep", "review", "omit"}
-                        or not isinstance(candidate.get("noise"), list)
-                        or not isinstance(candidate.get("useful"), list)
-                        or len(candidate["noise"]) > 16
-                        or len(candidate["useful"]) > 16
-                    ):
+                    candidate = validate_evidence(
+                        json.loads(payload, parse_constant=self._invalid_constant), row["form"]
+                    )
+                    if candidate["decision"] != row["decision"]:
                         raise UserError("Отчёт анализа несовместим или повреждён.")
+                days = conn.execute(
+                    "SELECT COUNT(*) FROM days WHERE form=?", (row["form"],)
+                ).fetchone()[0]
+                authors = conn.execute(
+                    "SELECT COUNT(*) FROM authors WHERE form=?", (row["form"],)
+                ).fetchone()[0]
+                protections = dict(
+                    conn.execute("SELECT kind,uses FROM protections WHERE form=?", (row["form"],))
+                )
+                if (
+                    not 1 <= days <= row["whole_count"]
+                    or not 1 <= authors <= row["whole_count"]
+                    or any(
+                        not isinstance(kind, str)
+                        or not 1 <= len(kind) <= 64
+                        or not kind.isascii()
+                        or type(uses) is not int
+                        or not 1 <= uses <= row["whole_count"]
+                        for kind, uses in protections.items()
+                    )
+                ):
+                    raise UserError("Отчёт анализа несовместим или повреждён.")
                 output.append(
                     {
                         "form": row["form"],
                         "whole_count": row["whole_count"],
                         "eligible_count": row["eligible_count"],
-                        "days": conn.execute(
-                            "SELECT COUNT(*) FROM days WHERE form=?", (row["form"],)
-                        ).fetchone()[0],
-                        "authors": conn.execute(
-                            "SELECT COUNT(*) FROM authors WHERE form=?", (row["form"],)
-                        ).fetchone()[0],
-                        "protections": dict(
-                            conn.execute(
-                                "SELECT kind,uses FROM protections WHERE form=?", (row["form"],)
-                            )
-                        ),
+                        "days": days,
+                        "authors": authors,
+                        "protections": protections,
                         "candidate": candidate,
                     }
                 )
@@ -416,9 +433,30 @@ class NoiseReport:
         with self.connect() as conn:
             self.verify(conn)
             rows = conn.execute(
-                "SELECT * FROM families ORDER BY observed_count DESC,seed LIMIT ? OFFSET ?",
+                "SELECT seed,observed_count,eligible_count,omit_count,review_count,keep_count "
+                "FROM families ORDER BY observed_count DESC,seed LIMIT ? OFFSET ?",
                 (limit + 1, offset),
             ).fetchall()
+            for row in rows[:limit]:
+                if (
+                    not isinstance(row["seed"], str)
+                    or not 1 <= len(row["seed"]) <= 64
+                    or whole_word(row["seed"]) != row["seed"]
+                    or any(
+                        type(row[key]) is not int or not 0 <= row[key] <= 1000000
+                        for key in (
+                            "observed_count",
+                            "eligible_count",
+                            "omit_count",
+                            "review_count",
+                            "keep_count",
+                        )
+                    )
+                    or row["eligible_count"] > row["observed_count"]
+                    or sum(row[key] for key in ("omit_count", "review_count", "keep_count"))
+                    != row["eligible_count"]
+                ):
+                    raise UserError("Отчёт анализа несовместим или повреждён.")
             return {
                 "families": [dict(row) for row in rows[:limit]],
                 "next_offset": offset + limit if len(rows) > limit else None,

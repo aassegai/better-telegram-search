@@ -407,11 +407,13 @@ class NoiseAnalysisService:
             if job is not None and job.started is not None:
                 progress["elapsed_seconds"] = round(time.monotonic() - job.started, 3)
             error = job.error if job else row["error"]
+            active = job is not None and not job.publish_failed
         stale = row["stale"]
         return {
             "id": job_id,
             "state": "stale" if stale else state,
             "stale": stale,
+            "active": active,
             "created_at": row["created_at"],
             "revision": fence_id(json.loads(row["fence_json"])),
             "progress": progress,

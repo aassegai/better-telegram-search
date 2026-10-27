@@ -441,3 +441,73 @@ def test_nonbusy_terminal_write_failure_does_not_spin_or_strand_later_jobs(
             assert status["state"] == "failed" and status["error"] == "result_save_failed"
             assert status["summary"] is None
         assert analysis.thread.is_alive() and not analysis.persistence_error
+
+
+@pytest.mark.parametrize(
+    ("sql", "kind"),
+    [
+        ("UPDATE forms SET whole_count=-1", "forms"),
+        ("UPDATE forms SET eligible_count=whole_count+1", "forms"),
+        ("UPDATE forms SET decision='omit'", "forms"),
+        ("DELETE FROM authors", "forms"),
+        ("INSERT INTO protections VALUES('бял','attachment',1000)", "forms"),
+        ("UPDATE families SET eligible_count=observed_count+1", "families"),
+    ],
+)
+def test_corrupt_report_counts_and_decision_disagreement_are_rejected(
+    db, importer, tmp_path, analysis, sql, kind
+):
+    chat_id = chat(importer, tmp_path)
+    job_id = start_ready(analysis, chat_id)["id"]
+    with sqlite3.connect(report_path(db.workspace, job_id)) as conn:
+        conn.execute(sql)
+    with pytest.raises(UserError, match="повреждён"):
+        analysis.report(chat_id, job_id, kind=kind)
+
+
+def test_stale_running_job_remains_cancellable_until_worker_publication(
+    db, importer, tmp_path, analysis, monkeypatch
+):
+    chat_id = chat(importer, tmp_path)
+    entered, release = threading.Event(), threading.Event()
+
+    def held(job):
+        entered.set()
+        assert release.wait(5)
+        analysis._checkpoint(job)
+
+    monkeypatch.setattr(analysis, "_analyze", held)
+    job_id = analysis.create(chat_id)["id"]
+    try:
+        assert entered.wait(5)
+        with db.connect() as conn:
+            conn.execute("UPDATE chats SET revision=revision+1 WHERE id=?", (chat_id,))
+        stale = analysis.status(chat_id, job_id)
+        assert stale["state"] == "stale" and stale["active"]
+        assert analysis.cancel(chat_id, job_id)["active"]
+    finally:
+        release.set()
+    assert not wait_terminal(analysis, chat_id, job_id)["active"]
+
+
+def test_family_projection_rejects_missing_columns_and_does_not_export_extra_columns(
+    db, importer, tmp_path, analysis
+):
+    chat_id = chat(importer, tmp_path)
+    job_id = start_ready(analysis, chat_id)["id"]
+    path = report_path(db.workspace, job_id)
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE families ADD COLUMN unexpected TEXT DEFAULT 'private extra'")
+    rows = analysis.report(chat_id, job_id, kind="families")["families"]
+    assert rows and set(rows[0]) == {
+        "seed",
+        "observed_count",
+        "eligible_count",
+        "omit_count",
+        "review_count",
+        "keep_count",
+    }
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE families DROP COLUMN omit_count")
+    with pytest.raises(UserError, match="повреждён"):
+        analysis.report(chat_id, job_id, kind="families")

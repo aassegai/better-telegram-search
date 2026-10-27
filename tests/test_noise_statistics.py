@@ -1,10 +1,11 @@
 import math
 from collections import Counter
+from copy import deepcopy
 
 import pytest
 
 from telegram_search.search.chunking.noise.candidates import CandidateGenerator
-from telegram_search.search.chunking.noise.contracts import AnalysisOptions
+from telegram_search.search.chunking.noise.contracts import AnalysisOptions, validate_evidence
 from telegram_search.search.chunking.noise.lexicon import load_lexicon
 from telegram_search.search.chunking.noise.scoring import evaluate
 from telegram_search.search.chunking.noise.statistics import MAX_TEXT_CHARS, collect_batch
@@ -151,3 +152,33 @@ def test_known_words_and_unknowns_keep_and_only_preapproved_eligible_seed_can_om
 def test_analysis_limits_are_strict(values):
     with pytest.raises(ValueError):
         AnalysisOptions(**values)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("unchanged",), None),
+        (("noise",), ["bad"]),
+        (("decision",), []),
+        (("schema_version",), True),
+        (("complete",), 0),
+        (("reason",), "\ud800"),
+        (("margin",), float("inf")),
+        (("known_word",), "false"),
+        (("primary_seed",), "<html>"),
+        (("unchanged", "form"), "другой"),
+        (("unchanged", "corpus_count"), True),
+        (("noise", 0, "operation"), []),
+    ],
+)
+def test_complete_persisted_evidence_schema_rejects_malformed_nested_payloads(path, value):
+    evidence = CandidateGenerator(useful_words=("был",)).analyze("бял")
+    original = evaluate(evidence, {"eligible_count": 1}, lambda _: 1)
+    assert validate_evidence(original, "бял") is original
+    malformed = deepcopy(original)
+    target = malformed
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    with pytest.raises(ValueError, match="persisted"):
+        validate_evidence(malformed, "бял")

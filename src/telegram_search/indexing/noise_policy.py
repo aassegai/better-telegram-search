@@ -5,7 +5,12 @@ import re
 import sqlite3
 import time
 
-from telegram_search.search.chunking.noise.compile import NoisePolicy, compile_policy, exact_forms
+from telegram_search.search.chunking.noise.compile import (
+    MAX_POLICY_BYTES,
+    NoisePolicy,
+    compile_policy,
+    exact_forms,
+)
 from telegram_search.search.chunking.policy import (
     APPROVED_FILLER,
     DEFAULT_POLICY,
@@ -70,6 +75,67 @@ class NoisePolicyService:
             "new_auto_omit_enabled": False,
         }
 
+    def _source_policy(self, fence):
+        if fence["policy_id"] == LEGACY_POLICY_ID:
+            return DEFAULT_POLICY
+        with self.db.connection_timeout(0.2), self.db.connect() as conn:
+            stored = conn.execute(
+                "SELECT policy_json FROM chunking_policies WHERE id=?", (fence["policy_id"],)
+            ).fetchone()
+        if stored is None:
+            raise UserError("Политика чанкинга не найдена.")
+        try:
+            if not isinstance(stored[0], str) or len(stored[0].encode()) > MAX_POLICY_BYTES:
+                raise ValueError()
+            policy = ChunkPolicy.from_json(stored[0])
+            if policy.identity != fence["policy_id"]:
+                raise ValueError()
+        except (ValueError, TypeError, KeyError, AttributeError, RecursionError, OverflowError):
+            raise UserError("Политика чанкинга повреждена.") from None
+        return policy
+
+    def explain_forms(self, chat_id, job_id, page):
+        """Annotate only this bounded page with immutable inherited defaults.
+
+        Draft overrides stay separate: a local unsaved edit must not silently
+        absorb another window's changes or a different draft revision.
+        """
+        if len(page.get("forms", [])) > 100:
+            raise UserError("Недопустимая страница отчёта.")
+        row = self.analyses.store.get(chat_id, job_id)
+        if row["stale"]:
+            raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")
+        policy = self._source_policy(json.loads(row["fence_json"]))
+        inherited_keep = frozenset(policy.keep) if isinstance(policy, NoisePolicy) else frozenset()
+        inherited_omit = frozenset(policy.omit) if isinstance(policy, NoisePolicy) else frozenset()
+        baseline = frozenset(
+            policy.base.filler if isinstance(policy, NoisePolicy) else policy.filler
+        )
+        forms = []
+        for item in page.get("forms", []):
+            form = item["form"]
+            inherited = (
+                "keep" if form in inherited_keep else "omit" if form in inherited_omit else None
+            )
+            default = inherited or (
+                "omit"
+                if form in baseline or (item["candidate"] or {}).get("decision") == "omit"
+                else "keep"
+            )
+            origin = "inherited" if inherited else "base" if form in baseline else "analysis"
+            forms.append(
+                {
+                    **item,
+                    "inherited_decision": inherited,
+                    "default_decision": default,
+                    "default_origin": origin,
+                }
+            )
+        fresh = self.analyses.store.get(chat_id, job_id)
+        if fresh["stale"] or fresh["fence_json"] != row["fence_json"]:
+            raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")
+        return {**page, "forms": forms}
+
     def _prepare(self, chat_id, job_id, revision, overrides=None):
         self._revision(revision)
         row = self.analyses.store.get(chat_id, job_id)
@@ -88,18 +154,7 @@ class NoisePolicyService:
         ):
             raise UserError("Нужен полный актуальный анализ. Запустите анализ заново.")
         fence = json.loads(row["fence_json"])
-        with self.db.connection_timeout(0.2), self.db.connect() as conn:
-            stored = conn.execute(
-                "SELECT policy_json FROM chunking_policies WHERE id=?", (fence["policy_id"],)
-            ).fetchone()
-        if fence["policy_id"] == LEGACY_POLICY_ID:
-            base = DEFAULT_POLICY
-        else:
-            if stored is None:
-                raise UserError("Политика чанкинга не найдена.")
-            base = ChunkPolicy.from_json(stored[0])
-            if base.identity != fence["policy_id"]:
-                raise UserError("Политика чанкинга повреждена.")
+        base = self._source_policy(fence)
         selected = self._overrides(row) if overrides is None else validate_overrides(overrides)
         report = NoiseReport(self.db, job_id, fence)
         try:
