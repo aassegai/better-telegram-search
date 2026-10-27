@@ -136,7 +136,8 @@ class NoisePolicyService:
             raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")
         return {**page, "forms": forms}
 
-    def _prepare(self, chat_id, job_id, revision, overrides=None):
+    def _prepare(self, chat_id, job_id, revision, overrides=None, *, check=lambda: None):
+        check()
         self._revision(revision)
         row = self.analyses.store.get(chat_id, job_id)
         if row["stale"]:
@@ -158,7 +159,7 @@ class NoisePolicyService:
         selected = self._overrides(row) if overrides is None else validate_overrides(overrides)
         report = NoiseReport(self.db, job_id, fence)
         try:
-            if report.digest() != summary["report_sha256"]:
+            if report.digest(check) != summary["report_sha256"]:
                 raise UserError("Отчёт анализа изменён. Запустите анализ заново.")
             with report.connect() as conn:
                 report.verify(conn)
@@ -175,7 +176,8 @@ class NoisePolicyService:
                 for form in selected:
                     if not conn.execute("SELECT 1 FROM forms WHERE form=?", (form,)).fetchone():
                         raise UserError("Форма не найдена в выбранном отчёте.")
-            if report.digest() != summary["report_sha256"]:
+            check()
+            if report.digest(check) != summary["report_sha256"]:
                 raise UserError("Отчёт анализа изменён. Запустите анализ заново.")
         except (OSError, ValueError, TypeError, RecursionError, sqlite3.Error) as exc:
             if isinstance(exc, UserError):

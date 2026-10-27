@@ -6,7 +6,8 @@ The CPU analysis service now collects a bounded, private report for one chat.
 Source messages and keyword search are always preserved. Analysis leaves active
 rules and indexing checkpoints unchanged; explicit apply rebuilds only text.
 The local API, per-chat settings UI and standalone CLI share the draft, override
-and apply services. Real-token dry-run and calibration are still being implemented.
+and apply services. Real-token dry-run is available in the standalone CLI;
+its background API/UI integration and calibration are still being implemented.
 **Automatic omission of new forms is disabled.** New ambiguous forms stay unless
 you explicitly choose an omit rule; previously selected manual rules are retained.
 
@@ -111,8 +112,8 @@ in each CPU phase, SQLite contention, report validation and migration from schem
 17. A frozen v2 policy JSON/hash protects existing checkpoints. No real archive is
 used in these tests, and synthetic tests do not validate a real omission gate.
 
-Remaining: labelled development/test calibration and a conservative gate,
-real-encoder token/padding dry-run and the validated automatic gate.
+Remaining: background API/UI for the real-token comparison, labelled
+development/test calibration and the validated conservative automatic gate.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
 
@@ -152,7 +153,8 @@ workflow does not validate a new automatic omission gate or claim GPU savings.
 
 Stop the application before using these commands. They acquire the same workspace
 writer lease, so a second process cannot recover a live application's jobs. The
-CLI uses the API's analysis/policy services without loading models or a web server.
+CLI uses the API's analysis/policy services without loading inference models or a
+web server. The explicit dry-run loads only an already downloaded tokenizer.
 
 ```sh
 uv run telegram-search --workspace ./workspace noise analyze --chat-id CHAT_ID
@@ -174,6 +176,55 @@ names/IDs, author identities, source paths or forms. To intentionally inspect fo
 use `noise report --chat-id CHAT_ID --job-id JOB_ID --show-private`, with optional
 `--kind forms|families`, `--decision keep|review|omit`, `--offset` and `--limit`.
 `noise delete --chat-id CHAT_ID --job-id JOB_ID` removes a stopped report.
+
+## Real-token comparison (standalone CLI)
+
+After saving overrides, compare the frozen proposal without applying it:
+
+```sh
+uv run telegram-search --workspace ./workspace noise dry-run --chat-id CHAT_ID --job-id JOB_ID --revision 1 --max-messages 100000 --time-limit-seconds 300
+```
+
+The command requires a full current analysis and the active text model's local
+tokenizer. It verifies both tokenizer files against the pinned model manifest,
+the active space identity and the installed tokenizer version. Missing or
+incompatible files cause a fixed error; nothing is downloaded, and no ONNX
+weights, inference sessions or GPU are loaded. As with the other standalone
+commands, stop the application first. Ctrl+C releases the workspace lease.
+
+Two streaming CPU passes use the actual historical/current and proposed chunk
+builders. Counts include prefixes, special tokens, author labels, borrowed
+context, overlap and long-message splitting. Ordinal batches flush at each UTC
+day. `batch_basis` explicitly fixes the configured batch size: runtime OOM backoff
+and future settings changes cannot be predicted offline. Token/padding reductions
+are **not** elapsed-time or GPU-speed estimates.
+
+`before` and `after` contain chunks, tokens, batches, padded slots, padding,
+distinct own messages and the worker's source-minus-own skipped count. Repeated
+overlap/split parts count once; borrowed context never becomes an own message.
+`noise_only_chunks` means all model parts are exact approved/proposed noise forms,
+without borrowed context; it does not mean that these vectors can safely be
+deleted. Classification counters are unavailable for legacy windows, as indicated
+by `classification_available`. Review and protected occurrences are descriptive,
+not an additional skipped total.
+
+`delta` is **after minus before**, plus removed/restored distinct own messages.
+A message cap compares the same chronological prefix in both passes, with
+`comparison_complete=true`, `complete=false`, `limits=["message_limit"]`.
+Time or input-length limits can stop a pass; then there is no delta. Oversized
+text/author/ID/metadata stops measurement instead of silently truncating input.
+Context can lie outside the measured prefix, as in normal indexing; sender
+exclusions still apply to every lookup.
+Any source, exclusions, draft, model or configured batch change rejects a completed
+comparison. Main DB reads use short keyset pages; CPU work holds no archive
+connection, lifecycle lock or write transaction. Distinct IDs use a separate
+unnamed temporary SQLite database capped at 128 MiB, with a bounded context cache.
+
+Output contains aggregates and hashes only, including elapsed and thread CPU
+seconds, sampled **whole-process** peak RSS and baseline. No raw message, author,
+chat ID or source path is printed. The immutable analysis report, active policy,
+indexing queues/checkpoints and original messages are unchanged. The command does
+not persist a comparison; background API/UI support is a separate remaining step.
 
 ## Chat settings
 

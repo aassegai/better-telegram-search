@@ -7,25 +7,37 @@ import time
 from filelock import FileLock
 
 from telegram_search.indexing.noise_analysis import NoiseAnalysisService
+from telegram_search.indexing.noise_dry_run import NoiseDryRun
 from telegram_search.indexing.noise_policy import NoisePolicyService
-from telegram_search.search.chunking.noise.contracts import AnalysisOptions
+from telegram_search.search.chunking.noise.contracts import AnalysisOptions, DryRunOptions
 from telegram_search.shared.errors import UserError
 
 
 def add_noise_parser(commands):
     noise = commands.add_parser("noise", help="Локальный анализ шума и точные правила диалога")
     actions = noise.add_subparsers(dest="noise_action", required=True)
-    for action in ("analyze", "list", "status", "report", "override", "preview", "apply", "delete"):
+    for action in (
+        "analyze",
+        "list",
+        "status",
+        "report",
+        "override",
+        "preview",
+        "dry-run",
+        "apply",
+        "delete",
+    ):
         parser = actions.add_parser(action)
         parser.add_argument("--chat-id", required=True)
         if action not in {"analyze", "list"}:
             parser.add_argument("--job-id", required=True)
-        if action in {"override", "preview", "apply"}:
+        if action in {"override", "preview", "dry-run", "apply"}:
             parser.add_argument("--revision", type=int, required=True)
-        if action == "analyze":
+        if action in {"analyze", "dry-run"}:
             parser.add_argument("--max-messages", type=int, default=100000)
-            parser.add_argument("--max-forms", type=int, default=50000)
             parser.add_argument("--time-limit-seconds", type=int, default=300)
+        if action == "analyze":
+            parser.add_argument("--max-forms", type=int, default=50000)
         if action == "report":
             parser.add_argument("--kind", choices=("forms", "families"), default="forms")
             parser.add_argument("--decision", choices=("keep", "review", "omit"))
@@ -113,6 +125,12 @@ def _command(analyses, policies, args):
         result = policies.preview(chat, args.job_id, args.revision)
         result.pop("overrides")
         return result
+    if action == "dry-run":
+        try:
+            options = DryRunOptions(args.max_messages, args.time_limit_seconds)
+        except ValueError:
+            raise UserError("Недопустимые лимиты сравнения чанкинга.") from None
+        return NoiseDryRun(policies).compare(chat, args.job_id, args.revision, options=options)
     if action == "apply":
         return policies.apply(chat, args.job_id, args.revision)
     raise UserError("Неизвестная операция анализа.")

@@ -9,6 +9,17 @@ ANALYSIS_VERSION = "bounded-chat-statistics-v1"
 
 
 @dataclass(frozen=True)
+class DryRunOptions:
+    max_messages: int = 100000
+    time_limit_seconds: int = 300
+
+    def __post_init__(self):
+        for value, maximum in ((self.max_messages, 1000000), (self.time_limit_seconds, 3600)):
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError("Invalid noise comparison limits")
+
+
+@dataclass(frozen=True)
 class AnalysisOptions:
     max_messages: int = 100000
     max_forms: int = 50000
