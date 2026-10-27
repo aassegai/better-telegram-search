@@ -643,3 +643,76 @@ def test_untrusted_failure_categories_cannot_enter_diagnostic_notes(tmp_path, ca
             worker.request("count_tokens", {"texts": ["public"]})
         assert "PRIVATE" not in str(error.value.__notes__)
         assert worker.process.poll() is not None
+
+
+def test_worker_imports_native_numpy_while_request_reader_waits(tmp_path):
+    np = pytest.importorskip("numpy")
+    import importlib.metadata
+
+    path, definition = package(tmp_path)
+    code = (path.parent / "adapter.py").read_text()
+    code = code.replace(
+        "    def validate(self, context):\n",
+        "    def validate(self, context):\n"
+        "        import numpy as np\n"
+        "        assert np.asarray([3,4], dtype=np.float32).sum() == 7\n",
+    )
+    data = code.encode()
+    (path.parent / "adapter.py").write_bytes(data)
+    definition["dependencies"] = {"numpy": importlib.metadata.version("numpy")}
+    definition["files"][0].update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+    path.write_text(json.dumps(definition), encoding="utf-8")
+    result = validate_adapter(
+        AdapterStore(tmp_path / "workspace"), path, sys.executable, timeout=10
+    )
+    assert result["state"] == "passed"
+    assert result["environment"]["dependencies"]["numpy"] == np.__version__
+
+
+@pytest.mark.parametrize("split", [1, 17, 65536])
+def test_worker_pipe_reader_keeps_split_and_combined_frames(split):
+    import os
+
+    from telegram_search.model_adapters.worker_runtime import request_lines
+
+    size = 127 if split == 1 else 70000
+    frames = [json.dumps({"text": "Тест 中文"}).encode() + b"\n", b'"' + b"x" * size + b'"\n']
+    payload = b"".join(frames)
+    read_fd, write_fd = os.pipe()
+    errors = []
+
+    def write():
+        try:
+            for start in range(0, len(payload), split):
+                view = memoryview(payload[start : start + split])
+                while view:
+                    view = view[os.write(write_fd, view) :]
+        except OSError as exc:
+            errors.append(exc)
+        finally:
+            os.close(write_fd)
+
+    writer = threading.Thread(target=write, daemon=True)
+    writer.start()
+    try:
+        with os.fdopen(read_fd, "rb") as stream:
+            assert list(request_lines(stream)) == frames
+    finally:
+        writer.join(timeout=5)
+    assert not writer.is_alive() and not errors
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native pipe boundary")
+def test_windows_pipe_reader_rejects_oversized_unterminated_frames(monkeypatch):
+    import os
+
+    from telegram_search.model_adapters import worker_runtime
+
+    monkeypatch.setattr(worker_runtime, "MAX_WIRE", 16)
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, b"x" * 17)
+    finally:
+        os.close(write_fd)
+    with os.fdopen(read_fd, "rb") as stream, pytest.raises(ValueError, match="request_size"):
+        list(worker_runtime.request_lines(stream))

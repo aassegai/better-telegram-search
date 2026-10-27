@@ -24,6 +24,72 @@ from pathlib import Path
 MAX_WIRE = 64 * 1024**2
 
 
+def request_lines(stream):
+    if os.name != "nt":
+        while raw := stream.readline(MAX_WIRE + 1):
+            yield raw
+        return
+
+    # A background CRT stdin read can deadlock a concurrent native extension
+    # import on Windows (including NumPy). Peek and consume only available pipe
+    # bytes through Win32, without holding the CRT descriptor's read lock.
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.PeekNamedPipe.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    kernel.PeekNamedPipe.restype = wintypes.BOOL
+    kernel.ReadFile.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        ctypes.c_void_p,
+    )
+    kernel.ReadFile.restype = wintypes.BOOL
+    handle = wintypes.HANDLE(msvcrt.get_osfhandle(stream.fileno()))
+    block = ctypes.create_string_buffer(65536)
+    pending = bytearray()
+    scanned = 0
+    while True:
+        available = wintypes.DWORD()
+        if not kernel.PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), None):
+            if ctypes.get_last_error() in {109, 232}:  # broken/closing pipe
+                return
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not available.value:
+            time.sleep(0.01)
+            continue
+        received = wintypes.DWORD()
+        if not kernel.ReadFile(
+            handle, block, min(available.value, len(block)), ctypes.byref(received), None
+        ):
+            if ctypes.get_last_error() in {109, 232}:
+                return
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not received.value:
+            return
+        pending.extend(block.raw[: received.value])
+        while (end := pending.find(b"\n", scanned)) >= 0:
+            if end + 1 > MAX_WIRE:
+                raise ValueError("request_size")
+            raw = bytes(pending[: end + 1])
+            del pending[: end + 1]
+            scanned = 0
+            yield raw
+        scanned = len(pending)
+        if len(pending) > MAX_WIRE:
+            raise ValueError("request_size")
+
+
 def run(root, expected_identity):
     wire = sys.stdout.buffer
     sys.stdout = sys.stderr
@@ -53,8 +119,7 @@ def run(root, expected_identity):
 
     def read():
         try:
-            while True:
-                raw = sys.stdin.buffer.readline(MAX_WIRE + 1)
+            for raw in request_lines(sys.stdin.buffer):
                 if not raw or len(raw) > MAX_WIRE or not raw.endswith(b"\n"):
                     break
                 item = json.loads(raw)
