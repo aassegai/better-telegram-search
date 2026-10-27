@@ -28,6 +28,17 @@ class Database:
         self.workspace = workspace.resolve()
         self.path = self.workspace / "data" / "app.sqlite"
         self._timeouts = threading.local()
+        self._interrupts = threading.local()
+
+    @contextmanager
+    def connection_cancellation(self, stop):
+        """Cancel every connection opened by this background diagnostic thread."""
+        previous = getattr(self._interrupts, "stop", None)
+        self._interrupts.stop = stop
+        try:
+            yield
+        finally:
+            self._interrupts.stop = previous
 
     @contextmanager
     def connection_timeout(self, seconds):
@@ -88,8 +99,15 @@ class Database:
         from telegram_search.search.execution import checkpoint, current_execution
 
         execution = current_execution()
-        if execution:
-            conn.set_progress_handler(lambda: int(execution.cancelled.is_set()), 1000)
+        stop = getattr(self._interrupts, "stop", None)
+        if execution or stop is not None:
+            conn.set_progress_handler(
+                lambda: int(
+                    bool(execution and execution.cancelled.is_set())
+                    or bool(stop is not None and stop.is_set())
+                ),
+                1000,
+            )
         try:
             with conn:
                 yield conn

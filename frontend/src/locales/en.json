@@ -1134,5 +1134,10 @@
   "Подсчитываем размер индексов. Очистка уже доступна.": "Calculating index sizes. Cleanup is already available.",
   "Подсчёт размера индексов задерживается. Очистка доступна без этого подсчёта; сведения можно обновить позже.": "Calculating index sizes is taking too long. Cleanup is available without this estimate; refresh the details later.",
   "Не удалось проверить состояние очистки. Обновите сведения, чтобы повторить запрос.": "Could not check cleanup status. Refresh the details to try again.",
-  "Размер индексов пока неизвестен. Очистка доступна; общие с другими диалогами векторы сохранятся.": "Index sizes are not available yet. Cleanup is available; vectors shared with other chats will be kept."
+  "Размер индексов пока неизвестен. Очистка доступна; общие с другими диалогами векторы сохранятся.": "Index sizes are not available yet. Cleanup is available; vectors shared with other chats will be kept.",
+  "Подробная диагностика ожидает завершения текущей операции.": "Detailed diagnostics are waiting for the current operation to finish.",
+  "Собираем подробную диагностику…": "Collecting detailed diagnostics…",
+  "Не удалось собрать подробную диагностику. Повторите позже.": "Could not collect detailed diagnostics. Try again later.",
+  "Диагностика ещё собирается. Обновите сведения позже.": "Diagnostics are still being collected. Refresh the details later.",
+  "Обновить диагностику": "Refresh diagnostics"
 }
