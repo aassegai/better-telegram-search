@@ -1,0 +1,31 @@
+{
+  "benchmark": "jina-ort-cpu-parity-v1",
+  "manifest_identity": "96ba6ad539a0cf06447c6ec3adca4cdace8903924408f0eac303e14c4aa263c8",
+  "input_sha256": "a8e78236820b00158540160816f02c375cad10cf10d753711cd31710f0667c0c",
+  "provider": "CPUExecutionProvider",
+  "runtimes": [
+    "1.30.0",
+    "1.23.2"
+  ],
+  "numpy": "2.5.3",
+  "tokenizers": "0.23.2",
+  "probes": 4,
+  "scores_per_probe": 4,
+  "max_abs_score_difference": 2.384185791015625e-07,
+  "per_probe_max_abs": [
+    2.384185791015625e-07,
+    5.960464477539063e-08,
+    1.1920928955078125e-07,
+    1.7881393432617188e-07
+  ],
+  "padding_max_abs": [
+    0.0,
+    0.0
+  ],
+  "long_truncation_reported_both": true,
+  "limitations": [
+    "Public authored smoke probes only, not independent relevance or GPU verification.",
+    "Separate uv environments share the same verified public ONNX/tokenizer bundle.",
+    "Secondary-runtime latency was measured alongside tests and is not used for speed comparison."
+  ]
+}

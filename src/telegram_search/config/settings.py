@@ -40,6 +40,8 @@ class Settings:
     search_result_limit: int = 20
     display_chunk_size: int = 10
     giga_rerank_enabled: bool = False
+    rerank_profile: str = "giga"
+    rerank_revision: int = 0
     ann_indexing_enabled: bool = False
     ann_build_threads: int = 2
     ann_memory_limit_mib: int = 1024
@@ -73,6 +75,11 @@ class Settings:
         settings = self
         if type(settings.giga_rerank_enabled) is not bool:
             raise UserError("Недопустимая настройка переранжирования.")
+        if type(settings.rerank_profile) is not str or settings.rerank_profile not in {
+            "giga",
+            "jina-v2",
+        }:
+            raise UserError("Неизвестная модель переранжирования.")
         if type(settings.ann_indexing_enabled) is not bool:
             raise UserError("Недопустимая настройка фонового индекса ANN.")
         for name in ("e5_device", "e5_search_device", "clip_device", "clip_search_device"):
@@ -107,6 +114,7 @@ class Settings:
             raise UserError("Недопустимый профиль устройства или версия настроек.")
         for name, lower, upper in (
             ("cpu_threads", 1, 32),
+            ("rerank_revision", 0, 2**63 - 1),
             ("gpu_device_id", 0, 15),
             ("gpu_memory_limit_mib", 512, 65536),
             ("gpu_index_load_percent", 10, 100),

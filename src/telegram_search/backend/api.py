@@ -173,7 +173,7 @@ def create_app(
             rerank = RerankService(db)
             app.state.rerank = rerank
             app.state.chat_indexing = ChatIndexing(db, semantic, media, importer.lifecycle_lock)
-            app.state.workspace = WorkspaceService(db, importer, semantic, media)
+            app.state.workspace = WorkspaceService(db, importer, semantic, media, rerank)
             maintenance = VectorMaintenance(db, importer.lifecycle_lock, semantic, media)
             app.state.vector_maintenance = maintenance
             telegram = SyncCoordinator(

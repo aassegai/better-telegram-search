@@ -12,8 +12,9 @@ from telegram_search.storage.generations import bump_revision, invalidate_segmen
 
 
 class WorkspaceService:
-    def __init__(self, db, importer, semantic, media):
+    def __init__(self, db, importer, semantic, media, rerank=None):
         self.db, self.importer, self.semantic, self.media = db, importer, semantic, media
+        self.rerank = rerank
         self.lock = importer.lifecycle_lock
         # Configuration writes serialize independently of lengthy archive/index work.
         # Operations that need both locks always acquire lifecycle before settings.
@@ -176,6 +177,21 @@ class WorkspaceService:
         }
 
     def update_settings(self, values):
+        if "rerank_profile" in values:
+            if set(values) - {"rerank_profile", "giga_rerank_enabled"}:
+                raise UserError("Сохраните модель переранжирования отдельно от ресурсов.")
+            guard = self.rerank.lock if self.rerank else nullcontext()
+            with guard, self.settings_lock:
+                if self.rerank and self.rerank.preparation and self.rerank.preparation.is_alive():
+                    raise UserError("Дождитесь завершения подготовки модели переранжирования.")
+                candidate = self._settings_candidate(values)
+                candidate.save(self.db.workspace)
+                self.db.settings = candidate
+                if self.rerank and self.rerank.encoder:
+                    self.rerank.encoder.unload()
+                    self.rerank.encoder = None
+                    self.rerank.encoder_settings = None
+                return asdict(candidate)
         display_keys = {"search_result_limit", "display_chunk_size", "giga_rerank_enabled"}
         ann_keys = {
             "ann_build_threads",
@@ -211,7 +227,7 @@ class WorkspaceService:
             raise UserError("Неизвестные или недоступные настройки.")
         if set(values) <= live_keys:
             with self.settings_lock:
-                candidate = replace(self.db.settings, **values)
+                candidate = self._settings_candidate(values)
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
                 configure_gpu_load(candidate.gpu_index_load_percent)
@@ -219,14 +235,14 @@ class WorkspaceService:
                 return asdict(candidate)
         if set(values) <= ann_keys | live_keys:
             with self.lock, self.settings_lock:
-                candidate = replace(self.db.settings, **values)
+                candidate = self._settings_candidate(values)
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
                 configure_gpu_load(candidate.gpu_index_load_percent)
                 self._notify_ann(values)
                 return asdict(candidate)
         with self.lock, self.settings_lock:
-            candidate = replace(self.db.settings, **values)
+            candidate = self._settings_candidate(values)
             candidate.validate()
             if (self.semantic.preparation and self.semantic.preparation.is_alive()) or (
                 self.media.preparation and self.media.preparation.is_alive()
@@ -269,6 +285,15 @@ class WorkspaceService:
             self._notify_ann(values)
         self.media.wake.set()
         return self.settings()
+
+    def _settings_candidate(self, values):
+        candidate = replace(self.db.settings, **values)
+        if any(
+            getattr(candidate, key) != getattr(self.db.settings, key)
+            for key in ("rerank_profile", "giga_rerank_enabled")
+        ):
+            candidate = replace(candidate, rerank_revision=self.db.settings.rerank_revision + 1)
+        return candidate
 
     def _notify_ann(self, values):
         ann = getattr(self.semantic, "ann_service", None)

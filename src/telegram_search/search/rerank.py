@@ -94,8 +94,12 @@ class SearchReranker:
         return np.stack([vectors[key] for key in keys])
 
     def apply(self, query, hits, kind, filters, *, exact=False):
+        from telegram_search.config.model_registry import rerank_spec
+
+        settings = self.db.settings
+        expected_identity = rerank_spec(settings.rerank_profile).identity
         metadata = {"kind": kind, "applied": False, "reason": "disabled", "candidates": 0}
-        if not self.db.settings.giga_rerank_enabled:
+        if not settings.giga_rerank_enabled:
             return hits, metadata
         if kind == "images" or exact:
             metadata["reason"] = "images_only" if kind == "images" else "exact_phrase"
@@ -103,7 +107,7 @@ class SearchReranker:
         if not hits:
             metadata["reason"] = "no_candidates"
             return hits, metadata
-        revision = SearchCache.revision(self.db)
+        revision = SearchCache.revision(self.db, settings=settings)
         selected = hits[: min(50, self.db.settings.retrieval_candidates)]
         documents = self._documents(selected, kind, filters)
         started = time.perf_counter()
@@ -111,19 +115,29 @@ class SearchReranker:
             try:
                 import numpy as np
 
+                if (
+                    self.service.spec.identity != expected_identity
+                    or SearchCache.revision(self.db) != revision
+                ):
+                    raise UserError("Архив изменился во время поиска. Повторите запрос.")
                 encoder = self.service.get_encoder()
                 # A reranker is optional: refuse a new session when it would exceed
                 # the shared application RAM budget, rather than disrupt base search.
                 self.service.check_memory(encoder)
                 self.service.mark_used()
-                prefix = self.service.spec.manifest["query_prefix"]
-                truncated = sum(encoder.tokenizer.count(text) > 512 for text in documents)
-                query_truncated = encoder.tokenizer.count(prefix + query) > 512
-                vector = self._vectors(encoder, [query], "query", revision)[0]
-                values = self._vectors(encoder, documents, "passage", revision)
-                scores = values.astype(np.float32) @ vector.astype(np.float32)
+                if hasattr(encoder, "score_pairs"):
+                    scores, truncated, query_truncated = self._pair_scores(
+                        encoder, query, documents, revision
+                    )
+                else:
+                    prefix = self.service.spec.manifest["query_prefix"]
+                    truncated = sum(encoder.tokenizer.count(text) > 512 for text in documents)
+                    query_truncated = encoder.tokenizer.count(prefix + query) > 512
+                    vector = self._vectors(encoder, [query], "query", revision)[0]
+                    values = self._vectors(encoder, documents, "passage", revision)
+                    scores = values.astype(np.float32) @ vector.astype(np.float32)
                 if not np.isfinite(scores).all():
-                    raise UserError("Giga вернула недопустимые оценки. Базовый порядок сохранён.")
+                    raise UserError("Модель переранжирования вернула недопустимые оценки.")
                 order = sorted(
                     range(len(selected)),
                     key=lambda i: (
@@ -138,6 +152,9 @@ class SearchReranker:
                     applied=True,
                     reason=None,
                     candidates=len(selected),
+                    model_id=self.service.spec.model_id,
+                    profile=self.service.spec.profile,
+                    manifest_id=self.service.spec.identity,
                     truncated_candidates=truncated,
                     query_truncated=query_truncated,
                     seconds=time.perf_counter() - started,
@@ -146,7 +163,7 @@ class SearchReranker:
                 metadata.update(
                     reason=str(exc)
                     if isinstance(exc, UserError)
-                    else "Giga недоступна. Базовый порядок сохранён.",
+                    else "Переранжирование недоступно. Базовый порядок сохранён.",
                     seconds=time.perf_counter() - started,
                 )
                 if self.service.encoder:
@@ -157,3 +174,53 @@ class SearchReranker:
             raise UserError("Архив изменился во время поиска. Повторите запрос.")
         self._documents(selected, kind, filters)
         return [*ranked, *hits[len(selected) :]], metadata
+
+    def _pair_scores(self, encoder, query, texts, revision):
+        import numpy as np
+
+        from telegram_search.inference.rerank_contract import validate_scores
+
+        query_hash = hashlib.sha256(query.encode()).hexdigest()
+        keys = [
+            (
+                self.service.spec.identity,
+                revision,
+                "pair:" + query_hash,
+                hashlib.sha256(text.encode()).hexdigest(),
+            )
+            for text in texts
+        ]
+        missing = list(dict.fromkeys(key for key in keys if key not in self.cache))
+        values = {key: self.cache[key] for key in keys if key in self.cache}
+        for key in values:
+            self.cache.move_to_end(key)
+        lookup = dict(zip(keys, texts, strict=True))
+        phase("rerank_passage", total=len(missing), unit="texts")
+        batch_size = min(self.db.settings.embedding_batch, 4)
+        for start in range(0, len(missing), batch_size):
+            checkpoint()
+            batch = missing[start : start + batch_size]
+            ids = [str(i) for i in range(len(batch))]
+            rows = validate_scores(
+                ids,
+                encoder.score_pairs(
+                    query,
+                    [
+                        {"candidate_id": key, "text": lookup[item]}
+                        for key, item in zip(ids, batch, strict=True)
+                    ],
+                ),
+            )
+            checkpoint()
+            for key, row in zip(batch, rows, strict=True):
+                values[key] = np.array(
+                    [row["score"], row["truncated"], row["query_truncated"]], dtype=np.float32
+                )
+                self._remember(key, values[key])
+            advance(len(batch))
+        result = [values[key] for key in keys]
+        return (
+            np.array([value[0] for value in result], dtype=np.float32),
+            sum(bool(value[1]) for value in result),
+            any(bool(value[2]) for value in result),
+        )

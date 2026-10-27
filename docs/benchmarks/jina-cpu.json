@@ -1,0 +1,90 @@
+{
+  "benchmark": "jina-pairwise-cpu-v1",
+  "corpus": "four public authored smoke queries; not independent relevance validation",
+  "model": "jinaai/jina-reranker-v2-base-multilingual",
+  "revision": "9cfeff2df7d40d1b78e75e5e9cebec92a99813c9",
+  "manifest_identity": "96ba6ad539a0cf06447c6ec3adca4cdace8903924408f0eac303e14c4aa263c8",
+  "license": "CC-BY-NC-4.0",
+  "model_bytes": 1131141915,
+  "runtime": {
+    "onnxruntime": "1.30.0",
+    "tokenizers": "0.23.2",
+    "numpy": "2.5.3"
+  },
+  "platform": {
+    "system": "Linux",
+    "machine": "x86_64"
+  },
+  "provider": "CPUExecutionProvider",
+  "threads": 4,
+  "batch": 4,
+  "first_call_seconds": 4.686,
+  "warm_four_pairs": {
+    "samples": 12,
+    "p50_ms": 113.081,
+    "p95_ms": 157.727
+  },
+  "sampled_process_peak_rss_bytes": 1950134272,
+  "probes": [
+    {
+      "probe": 0,
+      "scores": [
+        0.7043405175209045,
+        0.030896363779902458,
+        0.025466464459896088,
+        0.02872789278626442
+      ],
+      "relevant_rank": 1,
+      "single_vs_batch_max_abs": 0.0,
+      "truncated": 0
+    },
+    {
+      "probe": 1,
+      "scores": [
+        0.566760241985321,
+        0.03466375917196274,
+        0.03847501054406166,
+        0.03199756145477295
+      ],
+      "relevant_rank": 1,
+      "single_vs_batch_max_abs": 0.0,
+      "truncated": 0
+    },
+    {
+      "probe": 2,
+      "scores": [
+        0.6849402785301208,
+        0.03399961069226265,
+        0.028206855058670044,
+        0.02350754663348198
+      ],
+      "relevant_rank": 1,
+      "single_vs_batch_max_abs": 0.0,
+      "truncated": 0
+    },
+    {
+      "probe": 3,
+      "scores": [
+        0.4668467938899994,
+        0.03931645303964615,
+        0.03402012214064598,
+        0.028169741854071617
+      ],
+      "relevant_rank": 1,
+      "single_vs_batch_max_abs": 0.0,
+      "truncated": 0
+    }
+  ],
+  "max_padding_abs": 0.0,
+  "long_pair_bounded_and_truncation_reported": true,
+  "limitations": [
+    "Direct model scores, no search/SQLite/UI or SearchReranker score cache in timing.",
+    "First call includes session loading, pair tokenization and inference; file verification excluded.",
+    "Warm batch lengths are short public text, not a 1024-token throughput benchmark.",
+    "Sampled RSS is the whole process, including the long-pair probe, not isolated model allocations.",
+    "CPU only; GPU must pass the runtime precision probe and is not verified on this host.",
+    "Four obvious public smoke queries do not establish Telegram relevance or a quality threshold.",
+    "Long pairs use explicit truncation; no sliding-window aggregation is implemented."
+  ],
+  "input_sha256": "a8e78236820b00158540160816f02c375cad10cf10d753711cd31710f0667c0c"
+}

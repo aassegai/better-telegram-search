@@ -5,7 +5,12 @@ import time
 import uuid
 from contextlib import nullcontext
 
-from telegram_search.config.model_registry import ocr_spec, rerank_spec, visual_specs
+from telegram_search.config.model_registry import (
+    ocr_spec,
+    rerank_registry,
+    rerank_spec,
+    visual_specs,
+)
 from telegram_search.search.browse import BrowseService
 from telegram_search.search.cache import SearchCache
 from telegram_search.search.spec import SearchSpec
@@ -53,6 +58,17 @@ class SearchHistory:
         ).fetchone()
         ocr_version = conn.execute("SELECT version FROM ocr_queue_version WHERE id=1").fetchone()
         rerank = conn.execute("SELECT manifest_id,preparation_state FROM rerank_state").fetchone()
+        rerank_model = rerank_spec(settings.rerank_profile)
+        captured = {
+            branch["manifest_id"]
+            for branch in result.get("rerank_branches", [])
+            if branch.get("applied") and branch.get("manifest_id")
+        }
+        if captured:
+            matches = [value for value in rerank_registry().values() if value.identity in captured]
+            if len(captured) != 1 or len(matches) != 1:
+                raise UserError("Архив изменился во время поиска. Повторите запрос.")
+            rerank_model = matches[0]
         return {
             "text": {"space_id": text[0], "profile": text[1], "manifest": json.loads(text[2])}
             if text
@@ -76,9 +92,10 @@ class SearchHistory:
             if media[1]
             else None,
             "rerank": {
-                "manifest_id": rerank[0],
+                "manifest_id": rerank_model.identity if captured else rerank[0],
                 "state": rerank[1],
-                "manifest": rerank_spec().manifest,
+                "profile": rerank_model.profile,
+                "manifest": rerank_model.manifest,
                 "enabled": settings.giga_rerank_enabled,
                 "applied": bool(result.get("rerank_applied")),
             },

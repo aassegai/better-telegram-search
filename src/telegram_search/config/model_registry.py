@@ -61,9 +61,19 @@ def visual_specs(profile="clip") -> dict[str, ModelSpec]:
     raise UserError("Неизвестный профиль визуальной модели.")
 
 
-def rerank_spec() -> ModelSpec:
+def rerank_registry() -> dict[str, ModelSpec]:
     manifest = json.loads(files("telegram_search.config").joinpath("rerank_model.json").read_text())
-    return ModelSpec("giga", manifest)
+    jina = json.loads(
+        files("telegram_search.config").joinpath("jina_rerank_model.json").read_text()
+    )
+    return {"giga": ModelSpec("giga", manifest), "jina-v2": ModelSpec("jina-v2", jina)}
+
+
+def rerank_spec(profile="giga") -> ModelSpec:
+    try:
+        return rerank_registry()[profile]
+    except (KeyError, TypeError) as exc:
+        raise UserError("Неизвестная модель переранжирования.") from exc
 
 
 def ocr_spec() -> ModelSpec:

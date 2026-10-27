@@ -1,7 +1,8 @@
 # Text and visual models
 
 New preparations recommend BERTA FP16 for text/semantic OCR and SigLIP 2
-base/patch16/224 for images. Legacy E5 small/base and CLIP remain available.
+base/patch16/224 for images. Existing E5 small/base and CLIP indexes remain readable;
+they are not recommended choices for new preparations.
 Updating the application never switches models or rebuilds indexes automatically.
 
 | Model | Role | Dimensions | Preparation |
@@ -9,6 +10,7 @@ Updating the application never switches models or rebuilds indexes automatically
 | BERTA | Messages and semantic search of recognized OCR | 768 | Settings → Text model |
 | SigLIP 2 | Image description search, including Russian queries | 768 | Settings → Image model |
 | Giga | Optional text/OCR reranking | 1024 | Settings → Refine results |
+| Jina v2 | Optional English text/OCR pairwise reranking | One score per pair | Settings → Models → Result reranking |
 
 Switching text models requires explicit reindexing. BERTA gets a separate space;
 E5 vectors are never renamed or mixed with it. Message and semantic OCR vectors
@@ -42,7 +44,12 @@ model, content and workspace revision. Filters are checked before and after rank
 
 Search responses expose `rerank_applied`, `rerank_reason`, `rerank_branches`;
 branch metadata includes candidate count, elapsed time and truncation. The UI
-marks results reranked with Giga.
+marks results as reranked without attributing restored results to a live model setting.
+
+Jina v2 can be selected, prepared and enabled separately; it uses pairwise scores,
+not Giga embeddings. Model selection does not rebuild indexes. See
+[Jina instructions, license and CPU evidence](jina-reranking.md). Changing interface
+language only changes the recommendation.
 
 ## Runtime and device validation
 

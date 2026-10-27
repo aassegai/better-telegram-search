@@ -578,7 +578,7 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
         {semantic?.enabled === 1 && <p className="baseline-note">{t("Смысловой индекс: ")}{semantic.ready_segments} / {semantic.total_segments}{t(" сегментов")}{semantic.paused ? t(' · на паузе') : ''}</p>}
         {media && (media.ocr_enabled === 1 || media.images_enabled === 1) && <p className="baseline-note">{t("Фотографии: ")}{media.images_ready} / {media.total_photos} · OCR: {media.ocr_ready} / {media.total_photos}{t(" · OCR по смыслу: ")}{media.ocr_dense_ready}{media.paused ? t(' · медиа на паузе') : ''}</p>}
         </details>
-        {reranked && hits !== null && !busy && <p className="baseline-note" role="status">{t('Порядок текста и OCR уточнён Giga')}</p>}
+        {reranked && hits !== null && !busy && <p className="baseline-note" role="status">{t('Порядок результатов уточнён.')}</p>}
         {warnings.map(warning => <p className="warning" role="status" key={warning}>{t(warning)}</p>)}
 
         {hits === null ? <section className="welcome">

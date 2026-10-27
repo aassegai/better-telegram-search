@@ -19,9 +19,10 @@ class SearchCache:
         self.lock = threading.Lock()
 
     @staticmethod
-    def revision(db):
+    def revision(db, *, settings=None):
         from telegram_search.config.model_registry import rerank_spec, visual_specs
 
+        settings = settings or db.settings
         # Finished indexing may add matches without invalidating this ordered snapshot.
         # Archive edits, author exclusions, chat deletion and model/settings changes do.
         with db.connect() as conn:
@@ -52,7 +53,7 @@ class SearchCache:
         fingerprint = [
             epoch,
             {
-                name: getattr(db.settings, name)
+                name: getattr(settings, name)
                 for name in (
                     "search_backend",
                     "retrieval_candidates",
@@ -60,6 +61,8 @@ class SearchCache:
                     "lexical_weight",
                     "dense_weight",
                     "giga_rerank_enabled",
+                    "rerank_profile",
+                    "rerank_revision",
                     "ocr_engine",
                     "ocr_max_edge",
                     "ann_probes",
@@ -71,7 +74,7 @@ class SearchCache:
             rerank,
             getattr(db, "active_ocr_version", recognition[0] if recognition else None),
             visual,
-            rerank_spec().identity,
+            rerank_spec(settings.rerank_profile).identity,
             "giga-top50-rrf-v1",
         ]
         return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()

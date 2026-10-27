@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "bundle_version": 1,
+  "role": "rerank",
+  "adapter": "onnx-pairwise-v1",
+  "runtime": "onnxruntime",
+  "model_id": "jinaai/jina-reranker-v2-base-multilingual",
+  "revision": "9cfeff2df7d40d1b78e75e5e9cebec92a99813c9",
+  "tokenizer_revision": "9cfeff2df7d40d1b78e75e5e9cebec92a99813c9",
+  "dimension": 1,
+  "license": "CC-BY-NC-4.0",
+  "source": "https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual/tree/9cfeff2df7d40d1b78e75e5e9cebec92a99813c9",
+  "runtime_dtype": "float32",
+  "weight_dtype": "float32",
+  "allowed_inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "required_inputs": [
+    "input_ids",
+    "attention_mask"
+  ],
+  "input_dtype": "int64",
+  "output_name": "logits",
+  "output_dtype": "float32",
+  "max_length": 1024,
+  "pair_truncation": "only_second",
+  "score_activation": "sigmoid",
+  "preprocessing_version": "xlm-roberta-pair-query512-document-only-second1024-chars-v1",
+  "postprocessing_version": "scalar-logit-stable-sigmoid-fp32-v1",
+  "supported_languages": [
+    "en",
+    "ru"
+  ],
+  "verified_platforms": [],
+  "unverified_providers": [
+    "CUDAExecutionProvider",
+    "CoreMLExecutionProvider"
+  ],
+  "files": [
+    {
+      "name": "onnx/model.onnx",
+      "bytes": 1114040223,
+      "sha256": "0ef3f7978f7bc52360864d74edc1a0e03d159af770a7767c4d5943496e616012"
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 17082734,
+      "sha256": "3a56def25aa40facc030ea8b0b87f3688e4b3c39eb8b45d5702b3a1300fe2a20"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 1148,
+      "sha256": "4bf8eb7ce5367af6f7bcef4bef6fa5945c345ee5a7ecbe6464712a7d96f98015"
+    },
+    {
+      "name": "config.json",
+      "bytes": 1102,
+      "sha256": "af16fe07e9b623d5a47b42bde0daba1b6510344212c03363145c51a81e9e4572"
+    },
+    {
+      "name": "special_tokens_map.json",
+      "bytes": 964,
+      "sha256": "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835"
+    },
+    {
+      "name": "README.md",
+      "bytes": 15744,
+      "sha256": "e285d801c24ef9fc6acbdc835adc5069050ea9bc148a122c9e1307e7a8fef461"
+    }
+  ],
+  "query_max_tokens": 512,
+  "query_max_characters": 8192,
+  "document_max_characters": 32768
+}

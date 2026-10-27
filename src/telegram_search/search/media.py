@@ -260,7 +260,7 @@ class UnifiedSearch:
                 result["warnings"].append(metadata["reason"])
             if metadata.get("truncated_candidates") or metadata.get("query_truncated"):
                 result["warnings"].append(
-                    "Giga обработала первые 512 токенов части фрагментов или запроса."
+                    "Модель переранжирования обработала только начало части фрагментов или запроса."
                 )
             return hits
 
