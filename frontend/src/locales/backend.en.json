@@ -434,5 +434,7 @@
   "Дождитесь текущей проверки своей модели или отмените её.": "Wait for the current custom model check or cancel it.",
   "Пакет зарегистрированного адаптера недоступен или повреждён.": "A registered adapter package is unavailable or damaged.",
   "Не удалось проверить локальный пакет адаптера.": "Could not check the local adapter package.",
-  "GPU своей модели недоступен; режим Авто использует CPU.": "Custom GPU unavailable; Auto uses CPU."
+  "GPU своей модели недоступен; режим Авто использует CPU.": "Custom GPU unavailable; Auto uses CPU.",
+  "Недопустимый лимит символов для переранжирования.": "Invalid reranker character budget.",
+  "Зарегистрированная модель переранжирования недоступна. Выберите или зарегистрируйте модель.": "The registered reranker is unavailable. Select or register a model."
 }

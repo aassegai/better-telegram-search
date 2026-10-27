@@ -26,9 +26,16 @@ class RerankService:
 
     @property
     def spec(self):
-        return rerank_spec(self.db.settings.rerank_profile)
+        return rerank_spec(self.db.settings.rerank_profile, self.db.workspace)
 
     def _new_encoder(self, spec=None):
+        spec = spec or self.spec
+        if spec.manifest.get("unavailable"):
+            raise UserError("The registered reranker is unavailable. Select or register a model.")
+        if spec.manifest.get("runtime") == "python-adapter":
+            from telegram_search.model_adapters.reranker import AdapterReranker
+
+            return AdapterReranker(spec, self.db.workspace, self.db.settings, cancelled=self.stop)
         from telegram_search.inference.giga import GigaEncoder
         from telegram_search.inference.jina import JinaReranker
 
@@ -69,7 +76,10 @@ class RerankService:
 
     def status(self):
         settings = self.db.settings
-        spec = rerank_spec(settings.rerank_profile)
+        spec = self.spec
+        profiles = rerank_registry(self.db.workspace)
+        profiles.setdefault(spec.profile, spec)
+        custom = spec.manifest.get("runtime") == "python-adapter"
         encoder = self.encoder
         with self.db.connect() as conn:
             state = dict(conn.execute("SELECT * FROM rerank_state WHERE id=1").fetchone())
@@ -88,13 +98,17 @@ class RerankService:
                     "model_id": value.model_id,
                     "license": value.manifest.get("license"),
                     "download_bytes": value.download_bytes,
+                    "revision": value.revision,
+                    "available": not value.manifest.get("unavailable", False),
                 }
-                for value in rerank_registry().values()
+                for value in profiles.values()
             ],
             "license": spec.manifest.get("license"),
-            "source": spec.manifest.get("source"),
+            "source": "custom" if custom else spec.manifest.get("source"),
             "download_bytes": spec.download_bytes,
-            "path": str(BundleStore(self.db.workspace).path(spec)),
+            "path": str(self.db.workspace / "models" / "custom-adapters" / spec.profile[7:])
+            if custom
+            else str(BundleStore(self.db.workspace).path(spec)),
             "device": settings.model_device("e5", query=True),
             "backend": encoder.backend_info()
             if encoder and encoder.spec.identity == spec.identity
@@ -131,9 +145,10 @@ class RerankService:
                 )
 
         try:
-            BundleStore(self.db.workspace).prepare(
-                spec, offline=offline, repair=True, progress=progress
-            )
+            if spec.manifest.get("runtime") != "python-adapter":
+                BundleStore(self.db.workspace).prepare(
+                    spec, offline=offline, repair=True, progress=progress
+                )
             with self.db.connect() as conn:
                 conn.execute("UPDATE rerank_state SET preparation_state='preparing' WHERE id=1")
             with self.lock:
@@ -213,7 +228,11 @@ class RerankService:
         if encoder.session is not None or encoder.query_session is not None:
             return
         factor = 2 if encoder.execution.provider == CPU else 1
-        needed = encoder.spec.download_bytes * factor
+        needed = max(
+            encoder.spec.download_bytes * factor,
+            encoder.spec.manifest.get("adapter_package_bytes", 0) * factor,
+            64 * 1024**2 if encoder.spec.manifest.get("runtime") == "python-adapter" else 0,
+        )
         budget = self.db.settings.memory_limit_mib * 1024**2
         if (
             needed > psutil.virtual_memory().available

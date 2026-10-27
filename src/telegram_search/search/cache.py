@@ -74,7 +74,7 @@ class SearchCache:
             rerank,
             getattr(db, "active_ocr_version", recognition[0] if recognition else None),
             visual,
-            rerank_spec(settings.rerank_profile).identity,
+            rerank_spec(settings.rerank_profile, db.workspace).identity,
             "giga-top50-rrf-v1",
         ]
         return hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()

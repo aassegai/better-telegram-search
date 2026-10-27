@@ -58,14 +58,18 @@ class SearchHistory:
         ).fetchone()
         ocr_version = conn.execute("SELECT version FROM ocr_queue_version WHERE id=1").fetchone()
         rerank = conn.execute("SELECT manifest_id,preparation_state FROM rerank_state").fetchone()
-        rerank_model = rerank_spec(settings.rerank_profile)
+        rerank_model = rerank_spec(settings.rerank_profile, db.workspace)
         captured = {
             branch["manifest_id"]
             for branch in result.get("rerank_branches", [])
             if branch.get("applied") and branch.get("manifest_id")
         }
         if captured:
-            matches = [value for value in rerank_registry().values() if value.identity in captured]
+            matches = [
+                value
+                for value in rerank_registry(db.workspace).values()
+                if value.identity in captured
+            ]
             if len(captured) != 1 or len(matches) != 1:
                 raise UserError("Архив изменился во время поиска. Повторите запрос.")
             rerank_model = matches[0]

@@ -85,7 +85,7 @@ export default function CustomModelsPanel({ onSemantic }: { onSemantic: (value: 
     <label>{t('Роль адаптера')}<select aria-label={t('Роль адаптера')} value={role} disabled={active || op.busy} onChange={event => change(event.target.value, 'role')}>
       {roles.map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}
     </select></label>
-    {role !== 'text_embedding' && <p className="warning">{t('Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано только для текста.')}</p>}
+    {!['text_embedding', 'reranker'].includes(role) && <p className="warning">{t('Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано для текста и переранжирования.')}</p>}
     <label>{t('Путь к manifest адаптера')}<input aria-label={t('Путь к manifest адаптера')} value={manifest} disabled={active || op.busy} onChange={event => change(event.target.value, 'manifest')} /></label>
     <button type="button" className="secondary" disabled={!manifest.trim() || active || op.busy || !catalog} onClick={() => start('inspect')}>{t('Проверить manifest и файлы')}</button>
     <small>{t('Эта проверка не запускает код адаптера.')}</small>
@@ -100,7 +100,7 @@ export default function CustomModelsPanel({ onSemantic }: { onSemantic: (value: 
     </div>
     {job && <p role="status">{t(states[job.state] ?? 'Проверяем…')}{job.report && <> · {job.report.id}</>}</p>}
     {active && <progress aria-label={t('Проверка адаптера')} value={job?.progress?.total ? job.progress.completed : undefined} max={job?.progress?.total ?? undefined} />}
-    {job?.report?.registered && <p>{t(job.report.role === 'text_embedding' ? 'Модель добавлена. Выберите её в карточке текста; смена индекса требует подтверждения.' : 'Адаптер сохранён. Его роль пока не подключена к индексации и поиску.')}</p>}
+    {job?.report?.registered && <p>{t(job.report.role === 'text_embedding' ? 'Модель добавлена. Выберите её в карточке текста; смена индекса требует подтверждения.' : job.report.role === 'reranker' ? 'Модель добавлена. Выберите её в карточке переранжирования, подготовьте и включите.' : 'Адаптер сохранён. Его роль пока не подключена к индексации и поиску.')}</p>}
     {(error || op.error || job?.error) && <p className="error" role="alert">{t(error || op.error || job?.error || '')}</p>}
     {error && <button type="button" className="text-button" onClick={() => setReload(value => value + 1)}>{t('Повторить')}</button>}
     {catalog?.errors.map((value, i) => <p className="warning" key={i}>{t(value)}</p>)}

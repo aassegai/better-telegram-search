@@ -81,7 +81,7 @@ class SearchReranker:
         for key in vectors:
             self.cache.move_to_end(key)
         lookup = dict(zip(keys, texts, strict=True))
-        batch_size = min(self.db.settings.embedding_batch, 4)
+        batch_size = min(self.db.settings.embedding_batch, getattr(encoder, "max_batch", 4), 4)
         for start in range(0, len(missing), batch_size):
             checkpoint()
             batch = missing[start : start + batch_size]
@@ -97,7 +97,7 @@ class SearchReranker:
         from telegram_search.config.model_registry import rerank_spec
 
         settings = self.db.settings
-        expected_identity = rerank_spec(settings.rerank_profile).identity
+        expected_identity = rerank_spec(settings.rerank_profile, self.db.workspace).identity
         metadata = {"kind": kind, "applied": False, "reason": "disabled", "candidates": 0}
         if not settings.giga_rerank_enabled:
             return hits, metadata
@@ -196,7 +196,7 @@ class SearchReranker:
             self.cache.move_to_end(key)
         lookup = dict(zip(keys, texts, strict=True))
         phase("rerank_passage", total=len(missing), unit="texts")
-        batch_size = min(self.db.settings.embedding_batch, 4)
+        batch_size = min(self.db.settings.embedding_batch, getattr(encoder, "max_batch", 4), 4)
         for start in range(0, len(missing), batch_size):
             checkpoint()
             batch = missing[start : start + batch_size]

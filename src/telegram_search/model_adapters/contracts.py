@@ -197,7 +197,10 @@ def validate_result(manifest, operation, payload, result):
             invalid()
         ids = [c["candidate_id"] for c in payload["candidates"]]
         if not all(
-            isinstance(r, dict) and identifier(r.get("candidate_id")) and number(r.get("score"))
+            isinstance(r, dict)
+            and identifier(r.get("candidate_id"))
+            and number(r.get("score"))
+            and all(type(r[k]) is bool for k in ("truncated", "query_truncated") if k in r)
             for r in result
         ):
             invalid()
@@ -205,11 +208,21 @@ def validate_result(manifest, operation, payload, result):
             r["candidate_id"] for r in result
         } != set(ids):
             invalid()
-        by_id = {r["candidate_id"]: r["score"] for r in result}
+        by_id = {}
+        for row in result:
+            try:
+                score = struct.unpack("<f", struct.pack("<f", row["score"]))[0]
+            except (OverflowError, struct.error):
+                invalid()
+            if not number(score):
+                invalid()
+            by_id[row["candidate_id"]] = {
+                "candidate_id": row["candidate_id"],
+                "score": score,
+                **{k: row[k] for k in ("truncated", "query_truncated") if k in row},
+            }
         # Stable input order is the tie breaker, independent of adapter output order.
-        return sorted(
-            [{"candidate_id": cid, "score": by_id[cid]} for cid in ids], key=lambda r: -r["score"]
-        )
+        return sorted([by_id[cid] for cid in ids], key=lambda r: -r["score"])
     if operation == "recognize":
         if not isinstance(result, list) or len(result) != len(payload["images"]):
             invalid()

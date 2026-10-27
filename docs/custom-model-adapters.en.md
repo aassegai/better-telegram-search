@@ -12,8 +12,9 @@ sandbox**. Only run code and Python environments you trust.
 
 All five roles have manifest inspection, isolated execution, output validation,
 smoke tests and saved registrations: text embedding, image embedding, reranking,
-OCR and ASR. **Text adapters are connected to actual indexing and search.**
-The other four custom roles currently support validation only; their registrations
+OCR and ASR. **Text adapters are connected to indexing and search; rerankers
+are connected to candidate scoring.** The other three custom roles currently
+support validation only; their registrations
 do not replace a built-in model or start a background index. Speech recognition
 and those role bindings are still being implemented. A successful smoke test
 checks the protocol, not model quality.
@@ -28,6 +29,8 @@ In **Settings → Models → Add your own model**:
 4. For a text model, select it in the text card and prepare it. Replacing an existing
    text space requires the usual explicit reindex confirmation. Source messages,
    exclusions, recognized OCR and image vectors are preserved.
+5. For a reranker, select it in the reranking card, save, prepare, then enable it.
+   Registration alone never replaces the active model. No reindex is needed.
 
 Changing the manifest after inspection invalidates the validation request. The job
 can be cancelled during checks or inference; saving the final registration must
@@ -186,3 +189,28 @@ directly in its uv environment when more detail is required.
 CPU/GPU text use the same space only after same-input vector compatibility checks.
 Actual custom-GPU performance remains unverified; the included examples are CPU
 only. Application and external environments remain separate in standalone builds.
+
+## Custom reranking in search
+
+Registered rerankers appear alongside Giga and Jina. The optional stage scores up
+to 50 already-filtered text/OCR candidates per branch, before modality fusion.
+Image hits and exact-phrase searches keep their existing path. The batch is at
+most four, bounded further by the manifest `max_batch` and application batch limit.
+
+The application sends the raw query and candidate text without embedding prefixes.
+Optional `input_contract.query_max_characters` and `document_max_characters`
+default to 8192 and 32768. Bounds belong to the processing identity. The application
+clips at these character budgets and reports truncation; the adapter owns any
+further tokenizer truncation and may return boolean `truncated` and
+`query_truncated` per score. Scores must be finite and representable as float32;
+larger means more relevant. Return the original candidate IDs exactly once.
+Adapter output order cannot change ties: input order wins.
+
+Queries use the text-query device and shared compute queue. Explicit GPU activation
+requires the same public scores on CPU/GPU within absolute 0.005; Auto falls back to
+CPU when verification fails. This requires CPU support for the reference check.
+Hardware GPU execution still needs testing on a supported machine. Cancellation
+terminates the worker; idle sessions unload. Model failure preserves the base
+order and publishes a safe reason. Model/environment identities enter score caches
+and persisted search history. A missing package leaves base search and the model
+selector available, so a built-in model can be selected.

@@ -222,6 +222,14 @@ class AdapterManifest:
                     fail("Text prefixes must be explicit.")
         if data["role"] == "reranker" and outputs.get("higher_is_better") is not True:
             fail("Reranker scores must increase with relevance.")
+        if data["role"] == "reranker":
+            for key, default in (
+                ("query_max_characters", 8192),
+                ("document_max_characters", 32768),
+            ):
+                value = inputs.get(key, default)
+                if type(value) is not int or not 1 <= value <= 1024 * 1024:
+                    fail("Invalid reranker character budget.")
         if data["role"] == "ocr" and outputs.get("bbox") != "pixel-xyxy":
             fail("OCR regions use pixel xyxy coordinates.")
         if data["role"] in {"ocr", "asr"} and (

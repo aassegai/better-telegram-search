@@ -193,6 +193,11 @@ class WorkspaceService:
                 if self.rerank and self.rerank.preparation and self.rerank.preparation.is_alive():
                     raise UserError("Дождитесь завершения подготовки модели переранжирования.")
                 candidate = self._settings_candidate(values)
+                candidate.validate()
+                if candidate.rerank_profile.startswith("custom:"):
+                    from telegram_search.model_adapters.registry import custom_spec
+
+                    custom_spec(self.db.workspace, candidate.rerank_profile, role="reranker")
                 candidate.save(self.db.workspace)
                 self.db.settings = candidate
                 if self.rerank and self.rerank.encoder:

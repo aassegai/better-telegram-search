@@ -38,7 +38,7 @@ class AdapterJobs:
                     {
                         **manifest.summary(),
                         "profile": "custom:" + identity,
-                        "activation_supported": manifest.role == "text_embedding",
+                        "activation_supported": manifest.role in {"text_embedding", "reranker"},
                     }
                 )
             except (UserError, OSError, ValueError):

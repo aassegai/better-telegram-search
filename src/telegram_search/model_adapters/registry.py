@@ -12,6 +12,27 @@ def custom_spec(workspace, profile, *, role="text_embedding"):
     if manifest.role != role:
         raise UserError("The custom model has a different role.")
     data = manifest.data
+    if role == "reranker":
+        return ModelSpec(
+            profile,
+            {
+                "schema_version": 2,
+                "runtime": "python-adapter",
+                "adapter": "python-pairwise-v1",
+                "role": "reranker",
+                "model_id": "custom/" + data["id"],
+                "revision": data["revision"],
+                "adapter_identity": manifest.identity,
+                "adapter_manifest": data,
+                "adapter_environment": registration["environment"],
+                "adapter_package_bytes": sum(f["bytes"] for f in data["files"]),
+                "query_max_characters": data["input_contract"].get("query_max_characters", 8192),
+                "document_max_characters": data["input_contract"].get(
+                    "document_max_characters", 32768
+                ),
+                "files": [],
+            },
+        )
     if role != "text_embedding":
         raise UserError("This adapter role cannot be used as a text index.")
     return ModelSpec(
@@ -42,19 +63,23 @@ def custom_spec(workspace, profile, *, role="text_embedding"):
     )
 
 
-def custom_text_specs(workspace):
+def custom_specs(workspace, role):
     result = {}
     try:
         registrations = AdapterStore(workspace).registrations()
     except UserError:
         return result
     for identity, record in registrations.items():
-        if record["summary"].get("role") != "text_embedding":
+        if record["summary"].get("role") != role:
             continue
         profile = "custom:" + identity
         try:
-            result[profile] = custom_spec(workspace, profile)
+            result[profile] = custom_spec(workspace, profile, role=role)
         except (UserError, OSError, ValueError, KeyError):
             # A damaged local package must not hide working built-in models.
             continue
     return result
+
+
+def custom_text_specs(workspace):
+    return custom_specs(workspace, "text_embedding")

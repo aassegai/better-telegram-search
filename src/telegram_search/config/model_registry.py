@@ -70,15 +70,38 @@ def visual_specs(profile="clip") -> dict[str, ModelSpec]:
     raise UserError("Неизвестный профиль визуальной модели.")
 
 
-def rerank_registry() -> dict[str, ModelSpec]:
+def rerank_registry(workspace=None) -> dict[str, ModelSpec]:
     manifest = json.loads(files("telegram_search.config").joinpath("rerank_model.json").read_text())
     jina = json.loads(
         files("telegram_search.config").joinpath("jina_rerank_model.json").read_text()
     )
-    return {"giga": ModelSpec("giga", manifest), "jina-v2": ModelSpec("jina-v2", jina)}
+    result = {"giga": ModelSpec("giga", manifest), "jina-v2": ModelSpec("jina-v2", jina)}
+    if workspace is not None:
+        from telegram_search.model_adapters.registry import custom_specs
+
+        result.update(custom_specs(workspace, "reranker"))
+    return result
 
 
-def rerank_spec(profile="giga") -> ModelSpec:
+def rerank_spec(profile="giga", workspace=None) -> ModelSpec:
+    if workspace is not None and isinstance(profile, str) and profile.startswith("custom:"):
+        from telegram_search.model_adapters.registry import custom_spec
+
+        try:
+            return custom_spec(workspace, profile, role="reranker")
+        except (UserError, OSError, ValueError, KeyError):
+            # A damaged optional model must leave base search and model settings usable.
+            return ModelSpec(
+                profile,
+                {
+                    "runtime": "python-adapter",
+                    "role": "reranker",
+                    "model_id": profile,
+                    "revision": "unavailable",
+                    "unavailable": True,
+                    "files": [],
+                },
+            )
     try:
         return rerank_registry()[profile]
     except (KeyError, TypeError) as exc:

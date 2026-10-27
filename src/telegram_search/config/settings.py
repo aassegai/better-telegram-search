@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -75,10 +76,9 @@ class Settings:
         settings = self
         if type(settings.giga_rerank_enabled) is not bool:
             raise UserError("Недопустимая настройка переранжирования.")
-        if type(settings.rerank_profile) is not str or settings.rerank_profile not in {
-            "giga",
-            "jina-v2",
-        }:
+        if type(settings.rerank_profile) is not str or not re.fullmatch(
+            r"giga|jina-v2|custom:[0-9a-f]{64}", settings.rerank_profile
+        ):
             raise UserError("Неизвестная модель переранжирования.")
         if type(settings.ann_indexing_enabled) is not bool:
             raise UserError("Недопустимая настройка фонового индекса ANN.")

@@ -1152,5 +1152,11 @@
   "Локальный Python-адаптер": "Local Python adapter",
   "Источник: проверенный локальный адаптер": "Source: validated local adapter",
   "Адаптер сохранён. Его роль пока не подключена к индексации и поиску.": "Adapter saved. Its role is not connected to indexing or search yet.",
-  "Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано только для текста.": "This role supports checking and registration. Search integration is currently available only for text."
+  "Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано только для текста.": "This role supports checking and registration. Search integration is currently available only for text.",
+  "Пользовательское переранжирование": "Custom reranking",
+  "Подготовить адаптер": "Prepare adapter",
+  "Выбор модели не меняет индекс. Сохраните выбор, подготовьте адаптер и включите переранжирование.": "Choosing a model does not change the index. Save your choice, prepare the adapter, then enable reranking.",
+  "Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано для текста и переранжирования.": "This role supports validation and registration. Search integration is currently available for text embeddings and reranking.",
+  "Модель добавлена. Выберите её в карточке переранжирования, подготовьте и включите.": "Model added. Select it in the reranking card, prepare it, then enable it.",
+  "Недоступно": "Unavailable"
 }
