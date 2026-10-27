@@ -309,6 +309,9 @@ def test_busy_pause_publication_does_not_lose_the_first_failed_batch(
         return result
 
     monkeypatch.setattr(service, "_worker", lambda encoder: SimpleNamespace(run=run))
+    # Queue/pause behavior is exercised by the synthetic worker. Native vector
+    # cleanup is a separate integration test and is absent in the base CI env.
+    monkeypatch.setattr(service, "cleanup", lambda **_kwargs: None)
     service.start_background()
     assert failed.wait(3)
     writer = locker(db)

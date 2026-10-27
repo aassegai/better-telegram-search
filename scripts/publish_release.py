@@ -59,6 +59,8 @@ PUBLICATION_FILES = {
     "tests/test_gpu_cache.py",
     # Timestamp fixture fixes do not change the native application payload.
     "tests/test_telegram_sync.py",
+    # Synthetic queue fixtures must also run without the optional Lance runtime.
+    "tests/test_sqlite_contention.py",
 }
 
 
