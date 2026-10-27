@@ -1,0 +1,96 @@
+{
+  "benchmark": "ultrabert-ort-native-v1",
+  "model": "dmis-lab/UltraBERT-Embed-150M",
+  "revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+  "manifest_identity": "57290c2284b54cf9acfc97082b6fa9507a7472da26497a75ead5625be62bd17e",
+  "onnx_sha256": "41bf53e86d5ffa35ecf543532a7a60452dd850563e5cdca232bafc8d7879fddb",
+  "input_sha256": "47c811e6deeb0327f5403b2e10e458324bcb54ea29eee06cd04f41aaff7fab68",
+  "backend": {
+    "backend": "onnxruntime",
+    "version": "1.30.0",
+    "tokenizers_version": "0.23.2",
+    "dtype": "float32",
+    "provider": "CPUExecutionProvider",
+    "requested_device": "cpu",
+    "device": "cpu",
+    "gpu_device_id": 0,
+    "gpu_memory_limit_mib": 4096,
+    "warning": null,
+    "model_id": "dmis-lab/UltraBERT-Embed-150M",
+    "precision": "weights-fp16-fp32",
+    "weight_dtype": "float16",
+    "output_dtype": "float32",
+    "storage_dtype": "float32",
+    "fp32_islands": [
+      "all activations",
+      "RoPE",
+      "RMSNorm",
+      "Softmax",
+      "1D parameters"
+    ],
+    "cpu_execution": "Matrix weights use FP16 storage and are restored to FP32; activations, CLS pooling and normalization use FP32.",
+    "revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+    "embedding_space": "e1a55391bf679033e8abefa8e55a1397ceb846bb5acfe90ecd94c6bd1313eb7b",
+    "dimension": 768,
+    "loaded": true,
+    "query_execution": {
+      "requested_device": "cpu",
+      "provider": "CPUExecutionProvider",
+      "device": "cpu",
+      "gpu_device_id": 0,
+      "gpu_memory_limit_mib": 4096,
+      "warning": null
+    },
+    "query_loaded": true,
+    "threads": 4,
+    "index_batch_limit": null,
+    "index_timings": {
+      "encoder_wait_seconds": 7.841001206543297e-06,
+      "preprocess_seconds": 0.00024467000184813514,
+      "compute_wait_seconds": 2.738599869189784e-05,
+      "model_load_seconds": 2.3648000933462754e-05,
+      "inference_seconds": 0.026389501999801723,
+      "postprocess_seconds": 0.0002871770011552144,
+      "batch_size": 1,
+      "sequence_length": 6,
+      "prefetched": 0
+    }
+  },
+  "probes": [
+    {
+      "batch": 3,
+      "length": 23,
+      "max_abs": 0.00016527622938156128,
+      "min_cosine": 0.9999996423721313,
+      "token_ids_exact": true
+    },
+    {
+      "batch": 1,
+      "length": 24,
+      "max_abs": 0.00012443214654922485,
+      "min_cosine": 0.9999998807907104,
+      "token_ids_exact": true
+    },
+    {
+      "batch": 2,
+      "length": 262,
+      "max_abs": 0.0001356750726699829,
+      "min_cosine": 0.9999996423721313,
+      "token_ids_exact": true
+    },
+    {
+      "batch": 1,
+      "length": 512,
+      "max_abs": 0.00015454832464456558,
+      "min_cosine": 0.9999995231628418,
+      "token_ids_exact": true
+    }
+  ],
+  "runtime_query_and_passage_valid": true,
+  "limitations": [
+    "Four public exporter/native-reference probes, not independent relevance evaluation.",
+    "CPU only; CUDA/CoreML remain unverified.",
+    "Model capacity is 32768 tokens; application query cap 512 and document chunks 480.",
+    "Probe tokenization explicitly truncates to match native export references; production text inputs reject overflow."
+  ]
+}

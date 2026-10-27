@@ -50,6 +50,7 @@ def platforms(request):
 PUBLICATION_FILES = {
     "README.md",
     "README.en.md",
+    "README.ru.md",
     "docs/portable-builds.en.md",
     "docs/portable-builds.md",
     "scripts/publish_release.py",

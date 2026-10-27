@@ -1,0 +1,118 @@
+{
+  "corpus": "public synthetic manual gold; not private archive relevance",
+  "profile": "ultrabert",
+  "language": "en",
+  "fixture_sha256": "bd0a3921ddfbeeb0f7f0c288c75edeb1b69750bda8ed02760500504b2b4667fa",
+  "embedding_space_id": "e1a55391bf679033e8abefa8e55a1397ceb846bb5acfe90ecd94c6bd1313eb7b",
+  "queries": 56,
+  "ranked_queries": 54,
+  "empty_scopes": 2,
+  "messages": 144,
+  "chats": 3,
+  "chunks": {
+    "chunks": 52,
+    "tokens": 3276,
+    "max_tokens": 468
+  },
+  "indexing": {
+    "chunks": 52,
+    "seconds": 10.082587214998057
+  },
+  "first_segment_cold_seconds": 3.182,
+  "query_during_indexing": {
+    "p50_ms": 154.34,
+    "p95_ms": 295.17
+  },
+  "retrieval": {
+    "words": {
+      "recall_at_10": 0.037,
+      "ndcg_at_10": 0.037,
+      "p50_ms": 2.15,
+      "p95_ms": 3.99,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    },
+    "meaning": {
+      "recall_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "p50_ms": 67.92,
+      "p95_ms": 85.14,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    },
+    "hybrid": {
+      "recall_at_10": 1.0,
+      "ndcg_at_10": 1.0,
+      "p50_ms": 27.77,
+      "p95_ms": 31.63,
+      "empty_scope_checks": [
+        0,
+        0
+      ]
+    }
+  },
+  "peak_process_rss_bytes": 1446985728,
+  "runtime": {
+    "backend": "onnxruntime",
+    "version": "1.30.0",
+    "tokenizers_version": "0.23.2",
+    "dtype": "float32",
+    "provider": "CPUExecutionProvider",
+    "requested_device": "cpu",
+    "device": "cpu",
+    "gpu_device_id": 0,
+    "gpu_memory_limit_mib": 4096,
+    "warning": null,
+    "model_id": "dmis-lab/UltraBERT-Embed-150M",
+    "precision": "weights-fp16-fp32",
+    "weight_dtype": "float16",
+    "output_dtype": "float32",
+    "storage_dtype": "float32",
+    "fp32_islands": [
+      "all activations",
+      "RoPE",
+      "RMSNorm",
+      "Softmax",
+      "1D parameters"
+    ],
+    "cpu_execution": "Matrix weights use FP16 storage and are restored to FP32; activations, CLS pooling and normalization use FP32.",
+    "revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+    "embedding_space": "e1a55391bf679033e8abefa8e55a1397ceb846bb5acfe90ecd94c6bd1313eb7b",
+    "dimension": 768,
+    "loaded": true,
+    "query_execution": {
+      "requested_device": "cpu",
+      "provider": "CPUExecutionProvider",
+      "device": "cpu",
+      "gpu_device_id": 0,
+      "gpu_memory_limit_mib": 4096,
+      "warning": null
+    },
+    "query_loaded": true,
+    "threads": 4,
+    "index_batch_limit": null,
+    "index_timings": {
+      "encoder_wait_seconds": 8.976003300631419e-06,
+      "preprocess_seconds": 0.0004338369981269352,
+      "compute_wait_seconds": 1.0995998309226707e-05,
+      "model_load_seconds": 3.5264001780888066e-05,
+      "inference_seconds": 0.02973084399854997,
+      "postprocess_seconds": 0.00032432100124424323,
+      "batch_size": 1,
+      "sequence_length": 19,
+      "prefetched": 1,
+      "publish_seconds": 0.03716759300004924,
+      "batch_seconds": 0.07177932299964596
+    }
+  },
+  "notes": [
+    "Exact LanceDB, no ANN; candidates=100, RRF k=60, equal weights.",
+    "Words uses message BM25; hybrid branches both use chunks.",
+    "Gold judges matched messages; the split-tail query also requires its range.",
+    "Synthetic query repetitions may hit the bounded query cache."
+  ]
+}

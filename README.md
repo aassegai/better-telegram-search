@@ -1,86 +1,83 @@
 # Better Telegram Search
 
-[English](README.en.md) · Русский
+English · [Русский](README.ru.md)
 
-Приложение для поиска в архиве переписок Telegram Desktop. Помогает найти сообщение
-по словам или смыслу, фотографию по описанию и текст на изображении, а затем
-посмотреть соседние сообщения. Есть фильтры по диалогам, авторам и датам.
+Search your Telegram archive by words, meaning, image descriptions, or text inside
+pictures. Open a result with its surrounding conversation to find the message you
+remember, even when you cannot recall its exact wording.
 
-Приложение работает локально на CPU или GPU. Переписка не отправляется во внешние сервисы;
-смысловой поиск и поиск фотографий используют ONNX Runtime.
+The app runs locally and opens in your browser. Models process messages on your
+computer through ONNX Runtime; conversation contents are not sent to an external
+AI service.
 
-В настройках индексации каждого диалога можно исключить авторов (например, ботов): их сообщения, картинки и OCR не попадут в поиск. Кнопка «Показать ещё» загружает следующие результаты из кэша первых 100 совпадений без повторного запуска моделей.
+## What you can do
 
-В 0.6.0 для новых индексов доступны **BERTA** и **SigLIP 2**, а **Giga** — как
-необязательное переранжирование текста и OCR, выключенное по умолчанию. Существующие
-E5/CLIP-индексы продолжают работать. Смена модели или правил фрагментов требует
-явного подтверждения переиндексации; сообщения и готовое распознавание OCR сохраняются.
-
-[Правила текстовых фрагментов](docs/chunking.md) · [Модели и переиндексация](docs/model-migration.md).
+- Combine text, image and OCR search with chat, sender, date and forwarded-source filters.
+- Browse messages using filters and an empty query, without preparing a model.
+- Inspect matching fragments, open conversation context and enlarge images in the page.
+- Keep separate search tabs, restore the last ten searches and star favorites.
+- Exclude selected senders from a chat's indexes and preview text noise-filter rules.
+- Receive new messages and photos from selected chats through an optional Telegram connection.
 
 ## Quickstart
 
-### Готовая сборка
+1. Download your OS and architecture from [GitHub Releases](https://github.com/aassegai/better-telegram-search/releases/latest).
+   Choose a standard CPU package, or a full `-gpu` package for NVIDIA on Windows/Linux x64.
+2. Extract the **entire archive**, then launch the application:
 
-Скачайте архив для своей ОС и архитектуры из
-[GitHub Releases](https://github.com/aassegai/better-telegram-search/releases)
-и полностью распакуйте его. Для запуска Python и Node.js не нужны.
+   | Platform | Launch |
+   | --- | --- |
+   | Windows x64 | `BetterTelegramSearch/telegram-search.exe` |
+   | Linux x64 / ARM64 | `BetterTelegramSearch/telegram-search` |
+   | macOS Intel / Apple Silicon | `Better Telegram Search.app` |
 
-| Платформа | Что запустить |
-| --- | --- |
-| Windows x64 | `BetterTelegramSearch/telegram-search.exe` |
-| Linux x64 / ARM64 | `BetterTelegramSearch/telegram-search` |
-| macOS Intel / Apple Silicon | `Better Telegram Search.app` |
+   Python and Node.js are included or unnecessary for these packages. Your browser
+   opens at `http://127.0.0.1:8765`. Use **RU / EN** and the theme button at the top.
+3. In Telegram Desktop, export one chat as **JSON**, including photos if needed.
+   Choose **Import messages**, enter the path to `result.json`, check the export and
+   apply the changes. The optional export folder is the **parent folder containing
+   `result.json`**. Keep this folder: imported photos remain there.
+4. Enter a query and click **Search**. Keyword search is available after import.
+   To browse without a query, set filters and click **Show messages**.
+5. For meaning, image or OCR search, open **Settings → Models**, choose and prepare
+   the relevant model. Then open the chat's **⋯** menu to view indexing progress or
+   resume a paused stage. Initial model preparation downloads files; subsequent
+   searches work offline.
 
-Браузер откроется автоматически. Адрес приложения: `http://127.0.0.1:8765`.
-[Требования к ОС и обновление сборки](docs/portable-builds.md).
-Слайдер **RU / EN** вверху переключает язык всего интерфейса. Выбор сохраняется
-в этом браузере; переписка и поисковый запрос остаются на исходном языке.
-Кнопка ☾ / ☀ рядом переключает светлую и тёмную тему. При первом запуске
-используется тема системы, затем сохраняется ваш выбор.
+You can also start from **Sources · Telegram**, sign in and bind a selected Telegram
+chat to a local archive. Follow the overlap check before confirming the binding.
+See [Telegram connection](docs/telegram-sync.en.md) for API credentials, session
+storage and synchronization limits.
 
-Фильтр **«От кого переслано»** позволяет искать авторов и каналы по имени
-и выбирать несколько источников чекбоксами. Он работает вместе с остальными
-фильтрами для текста, картинок и OCR; переиндексация не нужна.
+## Searching and indexing
 
-Для NVIDIA на Windows/Linux x64 выберите архив с суффиксом `-gpu`. Torch и отдельная
-установка CUDA не нужны; нужен совместимый драйвер NVIDIA. В настройках выберите
-для текстовой и визуальной модели отдельно **«Устройство для индексации → GPU»**,
-**«Устройство для поиска → CPU»**.
-Нажмите **«Применить устройство»**, затем продолжите индексацию.
-Оба устройства используют один индекс: готовые чанки и прогресс сохраняются.
-После паузы или окончания индексации GPU-сессии выгружаются.
-В macOS доступен CoreML, если модель проходит проверку совместимости с CPU.
+**Keywords and meaning** combines keyword and semantic search. Select **Keywords**
+for significant query words or **Exact phrase** for a literal phrase. Ordinary
+keyword search skips common Russian/English stop words and preserves negations.
+OCR keyword search also supports substrings and small typos. Choose any combination
+of **Text**, **Images** and **OCR** under **Search in**.
 
-Для OCR на GPU выберите **«Настройки → OCR → PaddleOCR»**, устройство **GPU**,
-примените выбор и подготовьте модель (около 10 МиБ). PaddleOCR поддерживает русский
-и английский и использует общий кэш распознавания на CPU/GPU. При переходе с
-Tesseract распознавание выполняется заново: это другая модель; прежний кэш сохраняется.
-Чтобы продолжить старую очередь без повторного распознавания, оставьте **Tesseract · CPU**.
-Для одновременной обработки выберите **CPU + GPU** в устройстве распознавания:
-два процесса берут разные изображения из общей очереди. Пауза OCR останавливает оба;
-готовое распознавание PaddleOCR сохраняется при смене устройства. Нужны хотя бы два
-CPU-потока в общих ресурсах. В каждом блоке модели указан путь загрузки её файлов.
+Result settings control results per page and messages per displayed fragment;
+**Show more** pages through the saved result. **Open context** shows neighboring
+messages. Search history and yellow-star favorites restore parameters and saved
+results; independent tabs keep their own filters and results. **Stop** cancels the
+current search; the next search starts from the beginning.
 
-Начиная с 0.3.0 обновления доступны в **«Настройки → Обновления приложения»**:
-проверьте, скачайте сборку и нажмите **«Обновить и перезапустить»**.
-С 0.3.1 GPU-библиотеки кэшируются по хэшу: следующие обновления скачивают
-только изменившиеся файлы. Переход с 0.3.0 ещё использует полный пакет.
-Первый переход с 0.2.0 выполните вручную: приостановите текст и медиа, полностью
-закройте старую версию и запустите актуальную версию с тем же workspace. Выберите GPU для
-индексации и продолжите: готовую часть CPU-индекса перестраивать не нужно.
+For new text indexes, BERTA is recommended for Russian and UltraBERT for English;
+SigLIP 2 handles image search. Optional Giga/Jina reranking refines text/OCR results.
+Changing UI language does not switch a model. Changing the text or image model
+requires explicit reindexing; source messages and recognized OCR are preserved.
+Existing legacy indexes remain usable. See [models and migration](docs/model-migration.en.md).
 
-В **настройках диалога → Очистка индексов** можно отдельно очистить его текстовые,
-визуальные и OCR-векторы. Выбранный индекс останется на паузе. Индексы других
-диалогов и общие с ними векторы сохраняются, как и переписка, модели и распознанный
-текст OCR. Для восстановления продолжите индексацию этого диалога. В **«Общие ресурсы индексации»**
-собраны настройки CPU, RAM, памяти на CUDA-модель и целевой нагрузки GPU. Нагрузку можно
-менять во время работы; перед изменением памяти приостановите индексацию.
+Choose indexing/query devices, memory limits, batches and chat overrides under
+**Settings → Performance**. Index on GPU and search on CPU using the same index;
+changing devices preserves completed work. NVIDIA needs a compatible driver and a
+GPU package, without a separate Torch installation. See [GPU and updates](docs/gpu-and-updates.en.md).
 
-### Запуск из исходников
+## Run from source
 
-Нужны Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) и Node.js 22+.
-uv подготовит Python 3.12 и отдельное окружение `.venv`.
+Install Git, [uv](https://docs.astral.sh/uv/getting-started/installation/) and Node.js 22+.
+uv creates a separate `.venv` and installs Python 3.12 when needed.
 
 ```sh
 git clone https://github.com/aassegai/better-telegram-search.git
@@ -91,69 +88,15 @@ npm run build --prefix frontend
 uv run --no-sync telegram-search run
 ```
 
-Для следующих запусков достаточно последней команды. Рабочие данные хранятся
-в `workspace/`; в готовой сборке — в пользовательском каталоге приложения.
+Use the last command for subsequent launches. Source runs store data in `workspace/`;
+standalone packages use your OS application-data directory. Source GPU environments
+and package requirements are covered in the guides below.
 
-Для NVIDIA используйте отдельное окружение вместо CPU-extra:
+## Guides
 
-```sh
-UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv sync --locked --python 3.12 --extra gpu --extra ocr --extra telegram
-UV_PROJECT_ENVIRONMENT=workspace/gpu-env uv run --no-sync telegram-search run
-```
-
-В PowerShell задайте `$env:UV_PROJECT_ENVIRONMENT = 'workspace/gpu-env'`, затем
-выполните команды без префикса переменной. [Подробнее об устройствах](docs/gpu-and-updates.md).
-
-### Первый поиск
-
-1. Экспортируйте переписку в Telegram Desktop в формате **JSON**. Включите фотографии,
-   если хотите искать по изображениям и распознавать текст на них.
-2. Нажмите **«Импортировать выгрузку»**, укажите путь к `result.json`, затем
-   **«Проверить экспорт»** и **«Применить изменения»**. Папка выгрузки — родительская
-   папка, содержащая `result.json`; обычно её можно не указывать.
-3. Введите запрос и нажмите **«Найти»**. Поиск **«По словам»** доступен сразу после
-   импорта; кнопка **«Открыть контекст»** показывает соседние сообщения.
-4. В **«Настройки»** подготовьте **BERTA** для смыслового поиска, **SigLIP 2** для
-   фотографий или **OCR** для текста на них. Затем откройте меню **⋯** рядом с
-   диалогом и нажмите **«Продолжить индексацию»**, **«Продолжить OCR»** или
-   **«Продолжить смысловой OCR»** для нужного этапа.
-5. В меню диалога настраиваются батчи текста, изображений и OCR, видны прогресс и
-   оценка оставшегося времени для всей очереди. На GPU можно увеличить батч;
-   при нехватке памяти приложение повторяет обработку меньшими порциями.
-   Для OCR отдельно задаются число изображений и число текстовых областей в батче.
-   Распознавание OCR и его смысловой индекс можно приостанавливать независимо от индекса изображений.
-   В **«Источники»** этого же меню
-   проверяются вложения и указывается новая папка, если выгрузка перемещена.
-6. **«Слова и смысл»** — базовый режим. Пока смысловой индекс не готов, доступен
-   поиск по словам. В блоке **«Искать в»** выбирайте любые сочетания текста,
-   изображений и OCR. Для точной фразы включите соответствующий флажок.
-
-Поиск по словам пропускает частые служебные слова русского и английского
-(«и», «в», «это», `the`, `and`, `is`), в том числе в OCR и режиме «Слова и смысл».
-Отрицания сохраняются. Если запрос состоит только из стоп-слов, совпадений по словам
-не будет; для буквального поиска таких слов включите **«Точная фраза»**.
-В OCR поиск по словам использует BM25 и также находит части слов и небольшие
-опечатки. Точные совпадения идут выше неточных; все значимые слова запроса должны
-совпасть. **«Точная фраза»** отключает допуск опечаток и частей слов.
-
-### Новые сообщения из Telegram
-
-В **«Источники · Telegram»** подключите аккаунт по номеру телефона, коду и,
-при необходимости, паролю двухэтапной проверки. Выберите облачный диалог и
-локальную выгрузку, проверьте перекрытие истории и подтвердите привязку. Можно
-создать новый диалог, указав начальную дату загрузки. В меню **⋯** диалога доступны
-пауза, обновление сейчас, повтор ошибок, загрузка фотографий и политика удалений.
-Синхронизация работает, пока приложение запущено. После обрыва сети и обычного
-перезапуска новые сообщения догружаются автоматически. Поиск работает и без подключения.
-
-Если сборка показывает, что Telegram не настроен, раскройте **«Настройка подключения
-Telegram»** и сохраните собственные API ID и API Hash. Вход станет доступен сразу.
-Подробности — в [настройке Telegram](docs/telegram-sync.md).
-Там же описаны приватная сессия, ограничения догрузки и отличие отключения от выхода.
-
-Подготовка BERTA/SigLIP 2/PaddleOCR скачивает модели; после неё поиск работает без сети.
-Оставшееся время показывается диапазоном по недавним батчам; [как считается оценка](docs/indexing-estimates.md).
-В блоке **«Выдача поиска»** настраиваются количество результатов и число сообщений
-в одном фрагменте. Сохраняйте папку экспорта: приложение использует исходные фотографии.
-
-Если индексация остановилась, см. [диагностику ожидания SQLite и восстановление](docs/sqlite-indexing-recovery.md).
+- [Standalone packages, data locations and updates](docs/portable-builds.en.md)
+- [Telegram connection](docs/telegram-sync.en.md)
+- [Models and reindexing](docs/model-migration.en.md) · [UltraBERT](docs/ultrabert.md) · [Jina](docs/jina-reranking.md)
+- [Text chunks](docs/chunking.en.md) · [Noise analysis](docs/noise-analysis.md) · [Search filters](docs/query-filters.md)
+- [Indexing estimates](docs/indexing-estimates.en.md) · [SQLite diagnostics](docs/sqlite-indexing-recovery.md)
+- [Architecture](docs/architecture.md) · [Release notes](https://github.com/aassegai/better-telegram-search/releases)

@@ -73,7 +73,10 @@ def publication(tmp_path, monkeypatch):
                 ),
             )
         if action == "create":
-            assert "--prerelease" in command and command[3] == "model-bundles-v1"
+            assert "--prerelease" in command and command[3] in (
+                "model-bundles-v1",
+                "model-bundles-v2",
+            )
             release["exists"] = True
         elif action == "upload":
             path = Path(command[4])
@@ -149,3 +152,73 @@ def test_incomplete_checks_and_corrupt_models_block_publication(publication, dam
     with pytest.raises(RuntimeError):
         publisher.publish(artifacts)
     assert calls == []
+
+
+@pytest.fixture
+def ultrabert_publication(publication):
+    artifacts, specs, reports, remote, calls = publication
+    root = Path(publisher.__file__).parents[2]
+    (root / ".github/model-bundles/v2.json").write_text(
+        json.dumps({"tag": "model-bundles-v2", "models": ["ultrabert"]})
+    )
+    spec = {**specs["berta"], "precision": "weights-fp16-fp32"}
+    (root / "src/telegram_search/config/models.json").write_text(json.dumps({"ultrabert": spec}))
+    report = {
+        **reports["berta"],
+        "model": "ultrabert",
+        "precision": "weights-fp16-fp32",
+        "publication_ready": True,
+        "remote_python_executed": False,
+        "pooling": "cls-l2-fp32",
+        "compressed_matrices": 169,
+        "torch": "2.8.0+cpu",
+        "transformers": "5.21.0",
+        "probes": [{**p, "native_wrapper_max_abs": 0.0} for p in reports["berta"]["probes"]],
+    }
+    (artifacts / "berta-fp16.onnx").rename(artifacts / "ultrabert-fp16.onnx")
+    (artifacts / "ultrabert-validation.json").write_text(json.dumps(report))
+    return artifacts, report, remote, calls
+
+
+def test_ultrabert_publishes_v2_and_never_replaces_assets(ultrabert_publication):
+    artifacts, _, remote, calls = ultrabert_publication
+    publisher.publish(artifacts, bundle="v2")
+    assert set(remote) == {"ultrabert-fp16.onnx", "ultrabert-validation.json"}
+    assert next(c for c in calls if c[2] == "create")[3] == "model-bundles-v2"
+    publisher.publish(artifacts, bundle="v2")
+    assert sum(c[2] == "upload" for c in calls) == 2
+    remote["ultrabert-fp16.onnx"] = b"another graph"
+    with pytest.raises(RuntimeError, match="existing model asset differs"):
+        publisher.publish(artifacts, bundle="v2")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("publication_ready", False),
+        ("publication_ready", 1),
+        ("remote_python_executed", True),
+        ("remote_python_executed", 0),
+        ("pooling", "mean"),
+        ("compressed_matrices", 168),
+        ("torch", "2.8.0+cu128"),
+        ("transformers", "4.57.6"),
+    ],
+)
+def test_ultrabert_unreviewed_recipe_blocks_publication(ultrabert_publication, field, value):
+    artifacts, report, _, calls = ultrabert_publication
+    report[field] = value
+    (artifacts / "ultrabert-validation.json").write_text(json.dumps(report))
+    with pytest.raises(RuntimeError, match="publication contract"):
+        publisher.publish(artifacts, bundle="v2")
+    assert not calls
+
+
+@pytest.mark.parametrize("value", [None, True, float("nan"), float("inf"), -1, 0.0001])
+def test_ultrabert_native_wrapper_parity_required(ultrabert_publication, value):
+    artifacts, report, _, calls = ultrabert_publication
+    report["probes"][0]["native_wrapper_max_abs"] = value
+    (artifacts / "ultrabert-validation.json").write_text(json.dumps(report))
+    with pytest.raises(RuntimeError, match="native wrapper parity"):
+        publisher.publish(artifacts, bundle="v2")
+    assert not calls

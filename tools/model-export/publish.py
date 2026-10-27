@@ -1,11 +1,12 @@
 """Publish only checksum-verified outputs from the CPU export jobs."""
 
+import argparse
 import hashlib
 import json
 import math
 import os
+import stat
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -53,6 +54,30 @@ def validate_report(report, key, spec):
         probe["length"] == 512 for probe in report["probes"]
     ):
         raise RuntimeError("Variable batch and maximum length probes are required")
+    if key == "ultrabert":
+        if (
+            report.get("publication_ready") is not True
+            or report.get("remote_python_executed") is not False
+            or report.get("pooling") != "cls-l2-fp32"
+            or type(report.get("compressed_matrices")) is not int
+            or report["compressed_matrices"] != 169
+            or report.get("torch") != "2.8.0+cpu"
+            or report.get("transformers") != "5.21.0"
+        ):
+            raise RuntimeError("UltraBERT publication contract mismatch")
+        for probe in report["probes"]:
+            value = probe.get("native_wrapper_max_abs")
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or not 0 <= value <= 1e-6
+            ):
+                raise RuntimeError("UltraBERT native wrapper parity failed")
+
+
+def regular_file(path):
+    info = path.lstat()
+    return stat.S_ISREG(info.st_mode) and not bool(getattr(info, "st_file_attributes", 0) & 0x400)
 
 
 def verify(artifacts, specs):
@@ -61,12 +86,14 @@ def verify(artifacts, specs):
         path = artifacts / f"{key}-fp16.onnx"
         expected = spec["files"][0]
         if (
-            path.is_symlink()
+            not regular_file(path)
             or path.stat().st_size != expected["bytes"]
             or checksum(path) != expected["sha256"]
         ):
             raise RuntimeError("Model asset checksum mismatch")
         report_path = artifacts / f"{key}-validation.json"
+        if not regular_file(report_path):
+            raise RuntimeError("Model report must be a regular file")
         report = json.loads(report_path.read_text())
         validate_report(report, key, spec)
         verified.extend([path, report_path])
@@ -77,17 +104,24 @@ def gh(*args, **kwargs):
     return subprocess.run(["gh", *args], check=True, **kwargs)
 
 
-def publish(artifacts):
+def publish(artifacts, *, bundle="v1"):
     repo = Path(__file__).resolve().parents[2]
-    request = json.loads((repo / ".github/model-bundles/v1.json").read_text())
+    approved = {"v1": ["berta", "giga"], "v2": ["ultrabert"]}
+    if bundle not in approved:
+        raise RuntimeError("Unrecognized model bundle version")
+    request = json.loads((repo / f".github/model-bundles/{bundle}.json").read_text())
     tag = request["tag"]
-    if tag != "model-bundles-v1" or request["models"] != ["berta", "giga"]:
+    if tag != f"model-bundles-{bundle}" or request["models"] != approved[bundle]:
         raise RuntimeError("Unrecognized model publication request")
     config = repo / "src/telegram_search/config"
-    specs = {
-        "berta": json.loads((config / "models.json").read_text())["berta"],
-        "giga": json.loads((config / "rerank_model.json").read_text()),
-    }
+    text = json.loads((config / "models.json").read_text())
+    if bundle == "v1":
+        specs = {
+            "berta": text["berta"],
+            "giga": json.loads((config / "rerank_model.json").read_text()),
+        }
+    else:
+        specs = {"ultrabert": text["ultrabert"]}
     verified = verify(artifacts, specs)
     existing = subprocess.run(
         ["gh", "release", "view", tag, "--json", "assets,isPrerelease"],
@@ -101,11 +135,18 @@ def publish(artifacts):
             tag,
             "--prerelease",
             "--title",
-            "ONNX model bundles v1",
+            f"ONNX model bundles {bundle}",
             "--target",
             os.environ["GITHUB_SHA"],
             "--notes-file",
-            str(repo / "tools/model-export/RELEASE_NOTES.md"),
+            str(
+                repo
+                / (
+                    "tools/model-export/RELEASE_NOTES.md"
+                    if bundle == "v1"
+                    else "tools/ultrabert-export/RELEASE_NOTES.md"
+                )
+            ),
         )
         names = set()
     else:
@@ -125,4 +166,8 @@ def publish(artifacts):
 
 
 if __name__ == "__main__":
-    publish(Path(sys.argv[1]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("artifacts", type=Path)
+    parser.add_argument("--bundle", choices=("v1", "v2"), default="v1")
+    args = parser.parse_args()
+    publish(args.artifacts, bundle=args.bundle)

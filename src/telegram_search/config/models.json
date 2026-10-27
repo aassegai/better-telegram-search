@@ -222,5 +222,118 @@
         "sha256": "54e1fdef1ece46de98f443262766f42e550f2a4d5dd3e32e0ca1c98d8e9ea425"
       }
     ]
+  },
+  "ultrabert": {
+    "schema_version": 2,
+    "bundle_version": 2,
+    "runtime": "onnxruntime",
+    "runtime_dtype": "float32",
+    "precision": "weights-fp16-fp32",
+    "weight_dtype": "float16",
+    "storage_dtype": "float32",
+    "pooling_dtype": "float32",
+    "normalization": "l2",
+    "opset": 17,
+    "validated_runtime_versions": [
+      "1.23.2",
+      "1.30.0"
+    ],
+    "verified_platforms": [
+      "Linux x86_64 / CPUExecutionProvider / ONNX Runtime 1.30.0"
+    ],
+    "unverified_providers": [
+      "CUDAExecutionProvider",
+      "CoreMLExecutionProvider"
+    ],
+    "cpu_execution": "Matrix weights use FP16 storage and are restored to FP32; activations, CLS pooling and normalization use FP32.",
+    "device_tolerance": {
+      "max_abs": 0.0001,
+      "min_cosine": 0.99999
+    },
+    "role": "text",
+    "allowed_inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "required_inputs": [
+      "input_ids",
+      "attention_mask"
+    ],
+    "output_name": "last_hidden_state",
+    "input_dtype": "int64",
+    "output_dtype": "float32",
+    "pooling": "cls",
+    "padding_side": "right",
+    "bos_token_id": 0,
+    "pad_token_id": 0,
+    "max_length": 32768,
+    "query_max_tokens": 512,
+    "chunk_max_tokens": 480,
+    "postprocessing_version": "cls-l2-fp32-v1",
+    "preprocessing_version": "ultrabert-query-instruction-rightpad-v1",
+    "license": "Apache-2.0",
+    "model_id": "dmis-lab/UltraBERT-Embed-150M",
+    "revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+    "tokenizer_revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+    "dimension": 768,
+    "query_prefix": "Instruct: Given a question, retrieve passages that answer the question\nQuery: ",
+    "passage_prefix": "",
+    "fp32_islands": [
+      "all activations",
+      "RoPE",
+      "RMSNorm",
+      "Softmax",
+      "1D parameters"
+    ],
+    "export_recipe": "tools/ultrabert-export/export.py",
+    "source": "https://huggingface.co/dmis-lab/UltraBERT-Embed-150M/tree/b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+    "files": [
+      {
+        "name": "onnx/model.onnx",
+        "bytes": 302640746,
+        "sha256": "41bf53e86d5ffa35ecf543532a7a60452dd850563e5cdca232bafc8d7879fddb",
+        "url": "https://github.com/aassegai/better-telegram-search/releases/download/model-bundles-v2/ultrabert-fp16.onnx"
+      },
+      {
+        "name": "config.json",
+        "bytes": 1734,
+        "sha256": "4ff3a6cde7f81bca25f687371c809d8109076d71ac9c4882888ba36935a3cbd1"
+      },
+      {
+        "name": "tokenizer.json",
+        "bytes": 3523570,
+        "sha256": "cec6e1c25c319d4de7d15e94cc69e95c68d75fee2e20c86c1bdac23b2db4d624"
+      },
+      {
+        "name": "tokenizer_config.json",
+        "bytes": 844,
+        "sha256": "3752ebf4874dca142ab86b273d7c167b5c77aefa444f5ca7ab598592202af97f"
+      },
+      {
+        "name": "modules.json",
+        "bytes": 277,
+        "sha256": "e4068aab8a95663636c4c28044a95eafdb6492387397ec8283d8f8b31078d645"
+      },
+      {
+        "name": "1_Pooling/config.json",
+        "bytes": 89,
+        "sha256": "b7703fedc62cbe2d1e4fd47338d5ba9ee5b2107d49fc42e85ae848484fdd08bc"
+      },
+      {
+        "name": "config_sentence_transformers.json",
+        "bytes": 364,
+        "sha256": "1cde78bdb171eaca67f333808a2117a307d43b4e49b28c0706a50980e9606787"
+      },
+      {
+        "name": "sentence_bert_config.json",
+        "bytes": 241,
+        "sha256": "3084164002c0bca01b0259c5327123803fce32e660a57feb93184ffead186fc8"
+      },
+      {
+        "name": "README.md",
+        "bytes": 221555,
+        "sha256": "9f4d4e2d8e0e18c4c52c73b18a28f8a5cfde16499b1f77aeefa74b4f529ea268"
+      }
+    ]
   }
 }

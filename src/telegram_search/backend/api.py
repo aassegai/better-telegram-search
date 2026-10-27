@@ -74,7 +74,7 @@ class ConflictResolution(BaseModel):
 
 
 class ModelRequest(BaseModel):
-    profile: Literal["small", "base", "berta"] | None = None
+    profile: Literal["small", "base", "berta", "ultrabert"] | None = None
     reindex: bool = False
     offline: bool = False
     repair: bool = False

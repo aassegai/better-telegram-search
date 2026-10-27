@@ -44,7 +44,7 @@ def main() -> None:
         "--no-progress", action="store_true", help="Не показывать прогресс в терминале"
     )
     prepare = commands.add_parser("prepare-model")
-    prepare.add_argument("--profile", choices=["small", "base", "berta"])
+    prepare.add_argument("--profile", choices=["small", "base", "berta", "ultrabert"])
     prepare.add_argument("--reindex", action="store_true")
     prepare.add_argument("--offline", action="store_true")
     prepare.add_argument("--repair", action="store_true")

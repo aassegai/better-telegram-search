@@ -1126,5 +1126,8 @@
   "Английский": "English",
   "Сейчас подготавливается модель: {p0}.": "The model being prepared is {p0}.",
   "Не удалось проверить ONNX-переранжирование.": "ONNX reranking could not be verified.",
-  "Модель переранжирования обработала только начало части фрагментов или запроса.": "The reranking model processed only the beginning of some passages or the query."
+  "Модель переранжирования обработала только начало части фрагментов или запроса.": "The reranking model processed only the beginning of some passages or the query.",
+  "Для английского текста рекомендуется UltraBERT; язык интерфейса не меняет выбранную модель.": "UltraBERT is recommended for English text; changing the interface language does not change the selected model.",
+  "Для русского текста рекомендуется BERTA; язык интерфейса не меняет выбранную модель.": "BERTA is recommended for Russian text; changing the interface language does not change the selected model.",
+  "Неподдерживаемая обработка выхода текстовой модели.": "The text model output processing is unsupported."
 }

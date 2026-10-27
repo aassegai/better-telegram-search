@@ -1,6 +1,7 @@
 """Public synthetic gold evaluation; model weights are read from an ignored workspace."""
 
 import argparse
+import hashlib
 import json
 import math
 import statistics
@@ -32,9 +33,16 @@ def latency(values):
 
 def run(args):
     root = Path(__file__).resolve().parents[1]
-    topics = json.loads((root / "tests/fixtures/synthetic/relevance.json").read_text())
-    long_text = topics[23][0] * 30 + " Последнее напоминание: коды лежат в отдельном сейфе."
-    tail_start = long_text.index("коды лежат в отдельном сейфе")
+    english = args.language == "en"
+    fixture = (
+        root / "tests/fixtures/synthetic" / ("relevance.en.json" if english else "relevance.json")
+    )
+    topics = json.loads(fixture.read_text())
+    tail_query = (
+        "backup codes are in a separate safe" if english else "коды лежат в отдельном сейфе"
+    )
+    long_text = topics[23][0] * 30 + " " + tail_query + "."
+    tail_start = long_text.index(tail_query)
     spec = model_spec(args.profile)
     bundle = BundleStore(args.workspace).verify(spec)
     process = psutil.Process()
@@ -69,7 +77,13 @@ def run(args):
                     if topic == 23:
                         text = long_text
                     for offset, body in enumerate(
-                        (text, "Это наш план, всё согласовано.", "Хорошо, подтверждаю.")
+                        (
+                            text,
+                            "That's our agreed plan."
+                            if english
+                            else "Это наш план, всё согласовано.",
+                            "All right, confirmed." if english else "Хорошо, подтверждаю.",
+                        )
                     ):
                         messages.append(
                             {
@@ -131,12 +145,12 @@ def run(args):
                     )
                 )
             cases += [
-                ("восстановление входа", Filters(), gold[23]),
-                ("коды лежат в отдельном сейфе", Filters(), gold[23]),
+                ("account recovery" if english else "восстановление входа", Filters(), gold[23]),
+                (tail_query, Filters(), gold[23]),
             ]
             empty_cases = [
-                ("поезд", Filters(author_ids=["absent"])),
-                ("встреча", Filters(date_from=1900000000)),
+                ("train" if english else "поезд", Filters(author_ids=["absent"])),
+                ("meeting" if english else "встреча", Filters(date_from=1900000000)),
             ]
             assert len(cases) + len(empty_cases) == 56
 
@@ -166,7 +180,7 @@ def run(args):
                             for part in hit.get(
                                 "matched_parts", [{"message_id": hit["message_id"]}]
                             )
-                            if query != "коды лежат в отдельном сейфе"
+                            if query != tail_query
                             or part.get("char_end", len(long_text)) > tail_start
                         }
                         fresh = matches - seen
@@ -186,6 +200,7 @@ def run(args):
                         len(search.search(q, f, mode=mode)["results"]) for q, f in empty_cases
                     ],
                 }
+                assert results[mode]["empty_scope_checks"] == [0, 0]
             with database.connect() as conn:
                 stats = dict(
                     conn.execute(
@@ -202,6 +217,8 @@ def run(args):
             report = {
                 "corpus": "public synthetic manual gold; not private archive relevance",
                 "profile": args.profile,
+                "language": args.language,
+                "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
                 "embedding_space_id": encoder.space_id,
                 "queries": 56,
                 "ranked_queries": len(cases),
@@ -235,6 +252,9 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, default=Path("workspace"))
-    parser.add_argument("--profile", choices=["small", "base", "berta"], default="small")
+    parser.add_argument(
+        "--profile", choices=["small", "base", "berta", "ultrabert"], default="small"
+    )
+    parser.add_argument("--language", choices=["ru", "en"], default="ru")
     parser.add_argument("--output", type=Path, required=True)
     run(parser.parse_args())

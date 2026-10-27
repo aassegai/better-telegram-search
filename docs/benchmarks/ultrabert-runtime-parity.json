@@ -1,0 +1,85 @@
+{
+  "benchmark": "ultrabert-ort-cpu-parity-v1",
+  "manifest_identity": "57290c2284b54cf9acfc97082b6fa9507a7472da26497a75ead5625be62bd17e",
+  "graph_sha256": "41bf53e86d5ffa35ecf543532a7a60452dd850563e5cdca232bafc8d7879fddb",
+  "provider": "CPUExecutionProvider",
+  "runtimes": [
+    "1.23.2",
+    "1.30.0"
+  ],
+  "probes": 4,
+  "per_probe_max_abs": [
+    4.917383193969727e-07,
+    2.3096799850463867e-07,
+    4.3213367462158203e-07,
+    4.023313522338867e-07
+  ],
+  "max_abs_vector_difference": 4.917383193969727e-07,
+  "native_reference_checks": [
+    {
+      "runtime": "1.23.2",
+      "provider": "CPUExecutionProvider",
+      "probes": [
+        {
+          "batch": 3,
+          "length": 23,
+          "max_abs_native": 0.00016502290964126587,
+          "min_cosine_native": 0.9999997615814209
+        },
+        {
+          "batch": 1,
+          "length": 24,
+          "max_abs_native": 0.00012420117855072021,
+          "min_cosine_native": 0.9999998807907104
+        },
+        {
+          "batch": 2,
+          "length": 262,
+          "max_abs_native": 0.000135764479637146,
+          "min_cosine_native": 0.9999996423721313
+        },
+        {
+          "batch": 1,
+          "length": 512,
+          "max_abs_native": 0.0001545920968055725,
+          "min_cosine_native": 0.9999995231628418
+        }
+      ]
+    },
+    {
+      "runtime": "1.30.0",
+      "provider": "CPUExecutionProvider",
+      "probes": [
+        {
+          "batch": 3,
+          "length": 23,
+          "max_abs_native": 0.00016527622938156128,
+          "min_cosine_native": 0.9999996423721313
+        },
+        {
+          "batch": 1,
+          "length": 24,
+          "max_abs_native": 0.00012443214654922485,
+          "min_cosine_native": 0.9999998807907104
+        },
+        {
+          "batch": 2,
+          "length": 262,
+          "max_abs_native": 0.0001356750726699829,
+          "min_cosine_native": 0.9999996423721313
+        },
+        {
+          "batch": 1,
+          "length": 512,
+          "max_abs_native": 0.00015454832464456558,
+          "min_cosine_native": 0.9999995231628418
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Four public probes, not independent relevance evaluation.",
+    "CPU only; CUDA/CoreML remain unverified.",
+    "Same pinned graph in separate environments."
+  ]
+}

@@ -1,6 +1,7 @@
 # Text and visual models
 
-New preparations recommend BERTA FP16 for text/semantic OCR and SigLIP 2
+New preparations recommend BERTA FP16 for Russian text/semantic OCR,
+[UltraBERT](ultrabert.md) for English text and SigLIP 2
 base/patch16/224 for images. Existing E5 small/base and CLIP indexes remain readable;
 they are not recommended choices for new preparations.
 Updating the application never switches models or rebuilds indexes automatically.
@@ -8,6 +9,7 @@ Updating the application never switches models or rebuilds indexes automatically
 | Model | Role | Dimensions | Preparation |
 | --- | --- | --- | --- |
 | BERTA | Messages and semantic search of recognized OCR | 768 | Settings → Text model |
+| UltraBERT | English messages and semantic OCR search | 768 | Settings → Models → Text model |
 | SigLIP 2 | Image description search, including Russian queries | 768 | Settings → Image model |
 | Giga | Optional text/OCR reranking | 1024 | Settings → Refine results |
 | Jina v2 | Optional English text/OCR pairwise reranking | One score per pair | Settings → Models → Result reranking |

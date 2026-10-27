@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { getLanguage, t } from './i18n';
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import type { SemanticStatus } from './types';
@@ -52,8 +52,10 @@ export default function SemanticPanel({ status, onChange, onPerformance }: {
     </>}>
     <label>{t('Модель')}<select aria-label={t('Модель смыслового поиска')} value={profile} disabled={disabled} onChange={event => { chosen.current = true; setProfile(event.target.value); setReindex(false); }}>
       {status.profile && ['small', 'base'].includes(status.profile) && <option value={status.profile} disabled>{status.profile === 'small' ? 'E5 small · legacy' : 'E5 base · legacy'}</option>}
-      {status.profiles.filter(item => !['small', 'base'].includes(item.profile)).map(item => <option value={item.profile} key={item.profile}>{item.profile === 'berta' ? 'BERTA' : item.model_id}</option>)}
+      {status.profiles.filter(item => !['small', 'base'].includes(item.profile)).map(item => <option value={item.profile} key={item.profile}>{item.profile === 'berta' ? 'BERTA' : item.profile === 'ultrabert' ? 'UltraBERT-Embed-150M' : item.model_id}</option>)}
     </select></label>
+    <small>{getLanguage() === 'en' ? t('Для английского текста рекомендуется UltraBERT; язык интерфейса не меняет выбранную модель.')
+      : t('Для русского текста рекомендуется BERTA; язык интерфейса не меняет выбранную модель.')}</small>
     {status.profile && ['small', 'base'].includes(status.profile) && <p className="warning">{t('Существующий индекс использует прежнюю модель. Его можно продолжать; переход на другую модель требует перестройки.')}</p>}
     {!status.runtime_installed && <p className="warning">{t('Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu.')}</p>}
     <label>{t('Источник модели')}<select aria-label={t('Источник текстовой модели')} value={source} disabled={disabled} onChange={event => setSource(event.target.value)}>

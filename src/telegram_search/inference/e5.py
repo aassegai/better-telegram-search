@@ -32,6 +32,25 @@ def masked_mean_normalize(hidden: np.ndarray, attention_mask: np.ndarray) -> np.
     return np.ascontiguousarray(mean / norm, dtype=np.float32)
 
 
+def cls_normalize(hidden: np.ndarray, attention_mask: np.ndarray) -> np.ndarray:
+    """First-token pooling for right-padded models with an explicit CLS/BOS token.
+
+    Token ID zero can be both BOS and padding; validity follows the mask, not IDs.
+    """
+    if (
+        hidden.ndim != 3
+        or hidden.shape[:2] != attention_mask.shape
+        or not hidden.shape[1]
+        or not np.all(attention_mask[:, 0] == 1)
+    ):
+        raise UserError("Форма выхода модели не соответствует attention mask.")
+    values = hidden[:, 0].astype(np.float32, copy=False)
+    norms = np.linalg.norm(values, axis=1, keepdims=True)
+    if not np.isfinite(values).all() or not np.isfinite(norms).all() or np.any(norms <= 0):
+        raise UserError("Модель вернула недопустимый embedding.")
+    return np.ascontiguousarray(values / norms, dtype=np.float32)
+
+
 class E5Encoder:
     """Manifest-driven text inference; the legacy name preserves public integrations."""
 
@@ -159,8 +178,8 @@ class E5Encoder:
             output = [self.spec.manifest["output_name"]]
             try:
                 check_vectors(
-                    masked_mean_normalize(reference.run(output, feed)[0], inputs["attention_mask"]),
-                    masked_mean_normalize(candidate.run(output, feed)[0], inputs["attention_mask"]),
+                    self._pool(reference.run(output, feed)[0], inputs["attention_mask"]),
+                    self._pool(candidate.run(output, feed)[0], inputs["attention_mask"]),
                     **self.spec.manifest.get("device_tolerance", {}),
                 )
             except UserError:
@@ -175,9 +194,21 @@ class E5Encoder:
             raise UserError("Недопустимый батч модели.")
         started = time.perf_counter()
         prefix = self.spec.manifest[f"{purpose}_prefix"]
-        limit = self.spec.manifest["chunk_max_tokens"] if purpose == "passage" else 512
+        limit = (
+            self.spec.manifest["chunk_max_tokens"]
+            if purpose == "passage"
+            else self.spec.manifest.get("query_max_tokens", 512)
+        )
         inputs = self.tokenizer.batch([prefix + text for text in texts], limit)
         return (inputs, len(texts), purpose, time.perf_counter() - started, self)
+
+    def _pool(self, hidden, mask):
+        method = self.spec.manifest["pooling"]
+        if method == "masked-mean":
+            return masked_mean_normalize(hidden, mask)
+        if method == "cls":
+            return cls_normalize(hidden, mask)
+        raise UserError("Неподдерживаемая обработка выхода текстовой модели.")
 
     def encode_text(self, texts, purpose, *, interactive=False, _prepared=None) -> np.ndarray:
         # Wait for GPU cooldown before taking the model's encoding slot, so a
@@ -254,7 +285,7 @@ class E5Encoder:
                 raise
             except Exception as exc:
                 raise UserError("Ошибка ONNX-инференса. Уменьшите batch или выберите CPU.") from exc
-            embeddings = masked_mean_normalize(hidden, inputs["attention_mask"])
+            embeddings = self._pool(hidden, inputs["attention_mask"])
             if embeddings.shape != (len(texts), self.spec.dimension):
                 raise UserError("Размерность embeddings не соответствует закреплённой модели.")
             if purpose == "passage":

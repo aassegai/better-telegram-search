@@ -107,7 +107,13 @@ def test_registry_is_pinned_and_covers_required_artifacts():
         assert all(
             len(item["sha256"]) == 64 and item["bytes"] > 0 for item in spec.manifest["files"]
         )
-        assert spec.manifest["precision"] == ("mixed-fp16" if spec.profile == "berta" else "fp32")
+        expected_precision = {
+            "berta": "mixed-fp16",
+            "ultrabert": "weights-fp16-fp32",
+            "small": "fp32",
+            "base": "fp32",
+        }
+        assert spec.manifest["precision"] == expected_precision[spec.profile]
 
 
 def test_bundle_publication_is_atomic_and_hashes_are_checked(tmp_path, monkeypatch):

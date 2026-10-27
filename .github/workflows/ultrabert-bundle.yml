@@ -1,0 +1,65 @@
+name: Verified UltraBERT ONNX bundle
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/model-bundles/v2.json'
+permissions:
+  contents: read
+concurrency:
+  group: model-bundles-v2
+  cancel-in-progress: false
+jobs:
+  export:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: tools/ultrabert-export/uv.lock
+      - name: Check output ownership, pinned sources and weight compression
+        run: uv run --project tools/ultrabert-export --locked pytest --noconftest -q tests/test_ultrabert_export.py
+      - name: Reproduce pinned graph and verify native CPU parity
+        env:
+          CUDA_VISIBLE_DEVICES: ''
+          PYTHONHASHSEED: '42'
+        run: >-
+          uv run --project tools/ultrabert-export --locked python tools/ultrabert-export/export.py
+          --source "$RUNNER_TEMP/ultrabert-source"
+          --output "$RUNNER_TEMP/ultrabert-output"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultrabert-model
+          path: |
+            ${{ runner.temp }}/ultrabert-output/ultrabert-fp16.onnx
+            ${{ runner.temp }}/ultrabert-output/ultrabert-validation.json
+          if-no-files-found: error
+          retention-days: 3
+  publish:
+    needs: export
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultrabert-model
+          path: prepared-models
+      - name: Verify and publish immutable model assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/model-export/publish.py prepared-models --bundle v2

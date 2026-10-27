@@ -1,0 +1,61 @@
+{
+  "model_id": "dmis-lab/UltraBERT-Embed-150M",
+  "revision": "b06b36724c5417a1ec1b7863dd4fa542b74e4899",
+  "files": [
+    {
+      "name": "modeling_ultrabert.py",
+      "bytes": 30581,
+      "sha256": "bfca1bd08af72cd170e58b5a048c67b52bc9d06a2a42847c7a387751f527f333"
+    },
+    {
+      "name": "configuration_ultrabert.py",
+      "bytes": 2209,
+      "sha256": "823d10bda19f5164da4f79f8f9c01e5ebd7a75569abce78c0a26b7674fc78cd9"
+    },
+    {
+      "name": "config.json",
+      "bytes": 1734,
+      "sha256": "4ff3a6cde7f81bca25f687371c809d8109076d71ac9c4882888ba36935a3cbd1"
+    },
+    {
+      "name": "tokenizer.json",
+      "bytes": 3523570,
+      "sha256": "cec6e1c25c319d4de7d15e94cc69e95c68d75fee2e20c86c1bdac23b2db4d624"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "bytes": 844,
+      "sha256": "3752ebf4874dca142ab86b273d7c167b5c77aefa444f5ca7ab598592202af97f"
+    },
+    {
+      "name": "modules.json",
+      "bytes": 277,
+      "sha256": "e4068aab8a95663636c4c28044a95eafdb6492387397ec8283d8f8b31078d645"
+    },
+    {
+      "name": "1_Pooling/config.json",
+      "bytes": 89,
+      "sha256": "b7703fedc62cbe2d1e4fd47338d5ba9ee5b2107d49fc42e85ae848484fdd08bc"
+    },
+    {
+      "name": "config_sentence_transformers.json",
+      "bytes": 364,
+      "sha256": "1cde78bdb171eaca67f333808a2117a307d43b4e49b28c0706a50980e9606787"
+    },
+    {
+      "name": "sentence_bert_config.json",
+      "bytes": 241,
+      "sha256": "3084164002c0bca01b0259c5327123803fce32e660a57feb93184ffead186fc8"
+    },
+    {
+      "name": "README.md",
+      "bytes": 221555,
+      "sha256": "9f4d4e2d8e0e18c4c52c73b18a28f8a5cfde16499b1f77aeefa74b4f529ea268"
+    },
+    {
+      "name": "model.safetensors",
+      "bytes": 604153320,
+      "sha256": "da8be29564b69e4f90fc8f2683e1f369c3d3575e75f7fe798643e28de02e2b9c"
+    }
+  ]
+}
