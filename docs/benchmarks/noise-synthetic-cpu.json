@@ -1,0 +1,406 @@
+{
+  "version": "noise-cpu-synthetic-v1",
+  "dataset": "generated_synthetic_only",
+  "python": "3.12.3",
+  "os": "Linux",
+  "architecture": "x86_64",
+  "logical_cpus": 16,
+  "sqlite": "3.45.1",
+  "cases": [
+    {
+      "messages": 10000,
+      "requested_forms": 32,
+      "first": {
+        "wall_seconds": 1.99,
+        "thread_cpu_seconds": 1.477,
+        "sampled_process_peak_rss_mib": 99.3,
+        "process_rss_mib_at_completion": 98.8,
+        "messages_scanned": 10000,
+        "whole_messages": 8754,
+        "unique_forms": 32,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 32
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 14,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 126976,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "warm": {
+        "wall_seconds": 2.038,
+        "thread_cpu_seconds": 1.514,
+        "sampled_process_peak_rss_mib": 106.1,
+        "process_rss_mib_at_completion": 106.7,
+        "messages_scanned": 10000,
+        "whole_messages": 8754,
+        "unique_forms": 32,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 32
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 14,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 126976,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "counters_identical": true,
+      "seed_count": 30,
+      "lexicon_records": 39532,
+      "lexicon_sha256": "a296a46493fbfbb2475742f3abbb7bd05ca1743d059f293acf34b0761a3ed602",
+      "seed_index_postings": 177,
+      "useful_index_postings": 359130,
+      "candidate_pool_cap_per_index": 256,
+      "adversarial_inputs": [
+        {
+          "kind": "million_character_word",
+          "input_characters": 1000000,
+          "calls": 1000,
+          "wall_seconds": 0.002196,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "long_repeated_block",
+          "input_characters": 200000,
+          "calls": 1000,
+          "wall_seconds": 0.002164,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "technical_url",
+          "input_characters": 10024,
+          "calls": 1000,
+          "wall_seconds": 0.001972,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        }
+      ]
+    },
+    {
+      "messages": 100000,
+      "requested_forms": 32,
+      "first": {
+        "wall_seconds": 10.755,
+        "thread_cpu_seconds": 7.052,
+        "sampled_process_peak_rss_mib": 100.7,
+        "process_rss_mib_at_completion": 98.8,
+        "messages_scanned": 100000,
+        "whole_messages": 87504,
+        "unique_forms": 32,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 32
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 14,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 126976,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "warm": {
+        "wall_seconds": 10.991,
+        "thread_cpu_seconds": 7.156,
+        "sampled_process_peak_rss_mib": 104.0,
+        "process_rss_mib_at_completion": 106.8,
+        "messages_scanned": 100000,
+        "whole_messages": 87504,
+        "unique_forms": 32,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 32
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 14,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 126976,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "counters_identical": true,
+      "seed_count": 30,
+      "lexicon_records": 39532,
+      "lexicon_sha256": "a296a46493fbfbb2475742f3abbb7bd05ca1743d059f293acf34b0761a3ed602",
+      "seed_index_postings": 177,
+      "useful_index_postings": 359130,
+      "candidate_pool_cap_per_index": 256,
+      "adversarial_inputs": [
+        {
+          "kind": "million_character_word",
+          "input_characters": 1000000,
+          "calls": 1000,
+          "wall_seconds": 0.003115,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "long_repeated_block",
+          "input_characters": 200000,
+          "calls": 1000,
+          "wall_seconds": 0.002314,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "technical_url",
+          "input_characters": 10024,
+          "calls": 1000,
+          "wall_seconds": 0.002084,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        }
+      ]
+    },
+    {
+      "messages": 100000,
+      "requested_forms": 10000,
+      "first": {
+        "wall_seconds": 15.045,
+        "thread_cpu_seconds": 10.004,
+        "sampled_process_peak_rss_mib": 100.6,
+        "process_rss_mib_at_completion": 102.5,
+        "messages_scanned": 100000,
+        "whole_messages": 88750,
+        "unique_forms": 10000,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 10000
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 9982,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 9695232,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "warm": {
+        "wall_seconds": 15.058,
+        "thread_cpu_seconds": 10.15,
+        "sampled_process_peak_rss_mib": 108.5,
+        "process_rss_mib_at_completion": 108.5,
+        "messages_scanned": 100000,
+        "whole_messages": 88750,
+        "unique_forms": 10000,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 10000
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 9982,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 9695232,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "counters_identical": true,
+      "seed_count": 30,
+      "lexicon_records": 39532,
+      "lexicon_sha256": "a296a46493fbfbb2475742f3abbb7bd05ca1743d059f293acf34b0761a3ed602",
+      "seed_index_postings": 177,
+      "useful_index_postings": 359130,
+      "candidate_pool_cap_per_index": 256,
+      "adversarial_inputs": [
+        {
+          "kind": "million_character_word",
+          "input_characters": 1000000,
+          "calls": 1000,
+          "wall_seconds": 0.002955,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "long_repeated_block",
+          "input_characters": 200000,
+          "calls": 1000,
+          "wall_seconds": 0.004605,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "technical_url",
+          "input_characters": 10024,
+          "calls": 1000,
+          "wall_seconds": 0.00325,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        }
+      ]
+    },
+    {
+      "messages": 100000,
+      "requested_forms": 50000,
+      "first": {
+        "wall_seconds": 26.421,
+        "thread_cpu_seconds": 18.721,
+        "sampled_process_peak_rss_mib": 102.2,
+        "process_rss_mib_at_completion": 103.2,
+        "messages_scanned": 100000,
+        "whole_messages": 93750,
+        "unique_forms": 50000,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 50000
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 49982,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 41512960,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "warm": {
+        "wall_seconds": 26.853,
+        "thread_cpu_seconds": 18.756,
+        "sampled_process_peak_rss_mib": 109.0,
+        "process_rss_mib_at_completion": 109.0,
+        "messages_scanned": 100000,
+        "whole_messages": 93750,
+        "unique_forms": 50000,
+        "examined_candidates": 435,
+        "index_postings_read": 595,
+        "stored_hypotheses": {
+          "noise": 37,
+          "useful": 214,
+          "unchanged": 50000
+        },
+        "source_complete": true,
+        "evidence_complete": false,
+        "limits": [
+          "candidate_limit"
+        ],
+        "decisions": {
+          "keep": 49982,
+          "review": 5,
+          "omit": 13
+        },
+        "report_bytes": 41512960,
+        "analysis_version": "bounded-chat-statistics-v1",
+        "score_version": "unit-error-weights-log1p-v2-uncalibrated"
+      },
+      "counters_identical": true,
+      "seed_count": 30,
+      "lexicon_records": 39532,
+      "lexicon_sha256": "a296a46493fbfbb2475742f3abbb7bd05ca1743d059f293acf34b0761a3ed602",
+      "seed_index_postings": 177,
+      "useful_index_postings": 359130,
+      "candidate_pool_cap_per_index": 256,
+      "adversarial_inputs": [
+        {
+          "kind": "million_character_word",
+          "input_characters": 1000000,
+          "calls": 1000,
+          "wall_seconds": 0.002443,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "long_repeated_block",
+          "input_characters": 200000,
+          "calls": 1000,
+          "wall_seconds": 0.002665,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        },
+        {
+          "kind": "technical_url",
+          "input_characters": 10024,
+          "calls": 1000,
+          "wall_seconds": 0.003226,
+          "candidate_comparisons": 0,
+          "incomplete_calls": 1000
+        }
+      ]
+    }
+  ],
+  "cold_definition": "First analysis in a fresh subprocess after import. OS caches are not cleared; indexes are rebuilt in both runs.",
+  "limitations": [
+    "No private data, models, GPU or embedding inference.",
+    "Synthetic workload and sampled whole-process RSS; not an isolated allocator peak.",
+    "This measures analysis cost, not retrieval quality or GPU/indexing speedup.",
+    "New automatic omissions remain disabled; this is not gate validation."
+  ],
+  "dense_candidate_bucket": {
+    "dataset": "512 generated forms sharing one deletion signature",
+    "calls": 1000,
+    "wall_seconds": 0.664093,
+    "maximum_candidates_examined_per_call": 256,
+    "incomplete_calls": 1000,
+    "candidate_pool_cap_per_index": 256
+  }
+}

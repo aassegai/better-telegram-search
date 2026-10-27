@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic",
+  "label_source": "synthetic",
+  "partition_by": ["family", "scope", "period"],
+  "scopes": [
+    {"id": "synthetic-development", "frequencies": {
+      "сука": {"whole": 10, "eligible": 8, "phrase": 3},
+      "бял": {"whole": 3, "eligible": 3, "phrase": 0},
+      "бля": {"whole": 100, "eligible": 90, "phrase": 10},
+      "был": {"whole": 50, "eligible": 50, "phrase": 5},
+      "для": {"whole": 20, "eligible": 20, "phrase": 30},
+      "да": {"whole": 20, "eligible": 20, "phrase": 10}
+    }},
+    {"id": "synthetic-test", "frequencies": {
+      "хаха": {"whole": 10, "eligible": 10, "phrase": 0},
+      "хаааха": {"whole": 2, "eligible": 2, "phrase": 0},
+      "мама": {"whole": 8, "eligible": 8, "phrase": 2},
+      "ии": {"whole": 1, "eligible": 0, "phrase": 0},
+      "класс": {"whole": 10, "eligible": 10, "phrase": 1},
+      "ахаха": {"whole": 4, "eligible": 2, "phrase": 0},
+      "алла": {"whole": 1, "eligible": 0, "phrase": 0}
+    }}
+  ],
+  "cases": [
+    {"id": "dev-seed", "scope": "synthetic-development", "family": "swear-s", "period": "2025-Q1", "split": "development", "text": "сука", "label": "noise", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "dev-caption", "scope": "synthetic-development", "family": "swear-s", "period": "2025-Q1", "split": "development", "text": "сука", "label": "keep", "has_attachment": true, "protected": false, "parent_text": ""},
+    {"id": "dev-question", "scope": "synthetic-development", "family": "swear-s", "period": "2025-Q1", "split": "development", "text": "сука", "label": "keep", "has_attachment": false, "protected": false, "parent_text": "Ты в порядке?"},
+    {"id": "dev-ambiguous", "scope": "synthetic-development", "family": "swear-b", "period": "2025-Q1", "split": "development", "text": "бял", "label": "uncertain", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "dev-negative", "scope": "synthetic-development", "family": "swear-b", "period": "2025-Q1", "split": "development", "text": "для", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "dev-phrase", "scope": "synthetic-development", "family": "swear-s", "period": "2025-Q1", "split": "development", "text": "Это полезная фраза со словом сука.", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "dev-short", "scope": "synthetic-development", "family": "support-yes", "period": "2025-Q1", "split": "development", "text": "да", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-seed", "scope": "synthetic-test", "family": "laugh-ru", "period": "2025-Q2", "split": "test", "text": "хаха", "label": "noise", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-lengthening", "scope": "synthetic-test", "family": "laugh-ru", "period": "2025-Q2", "split": "test", "text": "хаааха", "label": "noise", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-word", "scope": "synthetic-test", "family": "term-mama", "period": "2025-Q2", "split": "test", "text": "мама", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-acronym", "scope": "synthetic-test", "family": "term-ai", "period": "2025-Q2", "split": "test", "text": "ИИ", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-double", "scope": "synthetic-test", "family": "term-class", "period": "2025-Q2", "split": "test", "text": "класс", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-url", "scope": "synthetic-test", "family": "technical-url", "period": "2025-Q2", "split": "test", "text": "https://example.invalid/lol", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""},
+    {"id": "test-code", "scope": "synthetic-test", "family": "laugh-ru", "period": "2025-Q2", "split": "test", "text": "ахаха", "label": "keep", "has_attachment": false, "protected": true, "parent_text": ""},
+    {"id": "test-name", "scope": "synthetic-test", "family": "name-alla", "period": "2025-Q2", "split": "test", "text": "Алла", "label": "keep", "has_attachment": false, "protected": false, "parent_text": ""}
+  ],
+  "retrieval": {
+    "source_before": "1111111111111111111111111111111111111111111111111111111111111111",
+    "source_after": "1111111111111111111111111111111111111111111111111111111111111111",
+    "space_before": "2222222222222222222222222222222222222222222222222222222222222222",
+    "space_after": "2222222222222222222222222222222222222222222222222222222222222222",
+    "filters_before": "3333333333333333333333333333333333333333333333333333333333333333",
+    "filters_after": "3333333333333333333333333333333333333333333333333333333333333333",
+    "policy_before": "4444444444444444444444444444444444444444444444444444444444444444",
+    "policy_after": "5555555555555555555555555555555555555555555555555555555555555555",
+    "queries": [
+      {"id": "synthetic-dev-query", "family": "swear-b", "split": "development", "relevance": {"doc-a": 3, "doc-b": 0, "doc-c": 1}, "before": ["doc-b", "doc-a", "doc-c"], "after": ["doc-a", "doc-c", "doc-b"]},
+      {"id": "synthetic-test-query", "family": "laugh-ru", "split": "test", "relevance": {"doc-d": 2, "doc-e": 0, "doc-f": 1}, "before": ["doc-e", "doc-f", "doc-d"], "after": ["doc-d", "doc-f", "doc-e"]}
+    ]
+  }
+}

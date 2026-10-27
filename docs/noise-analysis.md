@@ -2,6 +2,8 @@
 
 [Русский](noise-analysis.ru.md)
 
+[Reproducible CPU benchmark and offline evaluation](noise-evaluation.md)
+
 The CPU analysis service now collects a bounded, private report for one chat.
 Source messages and keyword search are always preserved. Analysis leaves active
 rules and indexing checkpoints unchanged; explicit apply rebuilds only text.
