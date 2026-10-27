@@ -6,7 +6,7 @@ The CPU analysis service now collects a bounded, private report for one chat.
 It **does not change** chunking, source messages, lexical search, existing
 policies or indexing checkpoints until an explicit apply action. The local API
 now supports exact-policy drafts, overrides and text-only apply/rebuild. A complete
-UI and CLI, real-token dry-run and calibration are still being implemented.
+UI, real-token dry-run and calibration are still being implemented.
 **Automatic omission of new forms is disabled.** Doubtful forms stay.
 
 ## Evidence and decisions
@@ -111,7 +111,7 @@ in each CPU phase, SQLite contention, report validation and migration from schem
 used in these tests, and synthetic tests do not validate a real omission gate.
 
 Remaining: labelled development/test calibration and a conservative gate,
-real-encoder token/padding dry-run and shared UI/CLI.
+real-encoder token/padding dry-run and the UI.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
 
@@ -146,3 +146,30 @@ query snapshots, regardless of changed statistics. Re-applying the same applied
 draft is a no-op even after a later import. No per-form confirmation is mandatory;
 review forms stay automatically, while manual overrides are optional. This API
 workflow does not validate a new automatic omission gate or claim GPU savings.
+
+## Standalone CLI
+
+Stop the application before using these commands. They acquire the same workspace
+writer lease, so a second process cannot recover a live application's jobs. The
+CLI uses the API's analysis/policy services without loading models or a web server.
+
+```sh
+uv run telegram-search --workspace ./workspace noise analyze --chat-id CHAT_ID
+uv run telegram-search --workspace ./workspace noise list --chat-id CHAT_ID
+uv run telegram-search --workspace ./workspace noise status --chat-id CHAT_ID --job-id JOB_ID
+uv run telegram-search --workspace ./workspace noise override --chat-id CHAT_ID --job-id JOB_ID --revision 0 --keep FORM
+uv run telegram-search --workspace ./workspace noise preview --chat-id CHAT_ID --job-id JOB_ID --revision 1
+uv run telegram-search --workspace ./workspace noise apply --chat-id CHAT_ID --job-id JOB_ID --revision 1
+```
+
+`analyze` waits for completion; Ctrl+C cancels and joins its worker before releasing
+the lease. Analysis limits have the same names/defaults as the API. A partial
+report is useful for review but cannot be applied. A failed/stale analysis exits
+with code 1. `override` supports repeated `--keep`, `--omit`, and `--clear` options;
+keep wins if the same form is passed to both keep and omit.
+
+Default JSON output contains aggregates, revisions and opaque job IDs, never chat
+names/IDs, author identities, source paths or forms. To intentionally inspect forms,
+use `noise report --chat-id CHAT_ID --job-id JOB_ID --show-private`, with optional
+`--kind forms|families`, `--decision keep|review|omit`, `--offset` and `--limit`.
+`noise delete --chat-id CHAT_ID --job-id JOB_ID` removes a stopped report.

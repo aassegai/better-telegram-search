@@ -5,7 +5,7 @@
 CPU-сервис собирает ограниченный приватный отчёт по выбранному диалогу.
 До явного применения он **не меняет** чанкинг, исходные сообщения, поиск по словам,
 политики и checkpoint. Локальный API уже поддерживает проект точных правил,
-переопределения и применение с перестроением только текста. UI, CLI, dry-run по
+переопределения и применение с перестроением только текста. UI, dry-run по
 реальным токенам и калибровка ещё в работе.
 **Автоматическое исключение новых форм выключено.** Сомнительное сохраняется.
 
@@ -107,7 +107,7 @@ JSON/hash v2. Реальные архивы тестами не читаются
 на реальной переписке.
 
 Остаются: разметка development/test и консервативный гейт, dry-run с реальными
-токенами/паддингом и общий UI/CLI.
+токенами/паддингом и UI.
 OCR и визуальные индексы этим фильтром не обрабатываются. До измерений нет
 утверждений об ускорении или улучшении качества выдачи.
 
@@ -142,3 +142,29 @@ lifecycle lock. Применение повторно проверяет рев�
 в том числе после последующего импорта. Обязательной ручной проверки каждой формы
 нет: спорные сохраняются, overrides доступны по желанию. Этот API-сценарий не
 валидирует новый автоматический отсев и не означает измеренную экономию GPU.
+
+## Отдельный CLI
+
+Перед командами остановите приложение. CLI получает общую writer lease workspace,
+чтобы второй процесс не восстанавливал задания работающего приложения. Он
+использует те же сервисы, что API, без загрузки моделей и запуска web server.
+
+```sh
+uv run telegram-search --workspace ./workspace noise analyze --chat-id CHAT_ID
+uv run telegram-search --workspace ./workspace noise list --chat-id CHAT_ID
+uv run telegram-search --workspace ./workspace noise status --chat-id CHAT_ID --job-id JOB_ID
+uv run telegram-search --workspace ./workspace noise override --chat-id CHAT_ID --job-id JOB_ID --revision 0 --keep FORM
+uv run telegram-search --workspace ./workspace noise preview --chat-id CHAT_ID --job-id JOB_ID --revision 1
+uv run telegram-search --workspace ./workspace noise apply --chat-id CHAT_ID --job-id JOB_ID --revision 1
+```
+
+`analyze` ждёт завершения; Ctrl+C отменяет работу и дожидается потока до освобождения
+lease. Лимиты совпадают с API. Неполный отчёт доступен для просмотра, но не применения.
+При failed/stale код выхода — 1. `override` принимает несколько `--keep`, `--omit`
+и `--clear`; если форма передана и в keep, и в omit, побеждает keep.
+
+Обычный JSON содержит агрегаты, ревизии и непрозрачные ID заданий, без имён/ID
+диалогов, авторов, путей и форм. Для намеренного просмотра форм:
+`noise report --chat-id CHAT_ID --job-id JOB_ID --show-private`; доступны
+`--kind forms|families`, `--decision keep|review|omit`, `--offset`, `--limit`.
+`noise delete --chat-id CHAT_ID --job-id JOB_ID` удаляет остановленный отчёт.

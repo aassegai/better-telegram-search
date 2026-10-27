@@ -11,6 +11,7 @@ from filelock import FileLock, Timeout
 from telegram_search.config.browser import open_browser
 from telegram_search.config.diagnostics import doctor
 from telegram_search.config.runtime import default_workspace
+from telegram_search.indexing.noise_commands import add_noise_parser, noise_command
 from telegram_search.ingestion.importer import ImportService
 from telegram_search.ingestion.progress import TerminalProgress
 from telegram_search.shared.errors import UserError
@@ -21,6 +22,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Локальный поиск по Telegram Desktop (ONNX)")
     parser.add_argument("--workspace", type=Path, default=default_workspace())
     commands = parser.add_subparsers(dest="command", required=True)
+    add_noise_parser(commands)
     for name in ("setup", "doctor", "rebuild", "compact"):
         commands.add_parser(name)
     run = commands.add_parser("run")
@@ -131,6 +133,11 @@ def main() -> None:
             finally:
                 progress.close()
                 importer.shutdown()
+        elif args.command == "noise":
+            result = noise_command(db, args)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            if args.noise_action == "analyze" and result["state"] not in {"ready", "limited"}:
+                sys.exit(1)
         elif args.command == "doctor":
             print(json.dumps(doctor(db), ensure_ascii=False, indent=2))
         elif args.command == "rebuild":
