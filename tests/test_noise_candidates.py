@@ -32,7 +32,9 @@ def vocabulary(max_length):
 
 def test_previous_policy_json_and_identity_remain_byte_compatible():
     value = (
-        (Path(__file__).parent / "fixtures/synthetic/chunking-v2-policy.json").read_text().strip()
+        (Path(__file__).parent / "fixtures/synthetic/chunking-v2-policy.json")
+        .read_text(encoding="utf-8")
+        .strip()
     )
     restored = ChunkPolicy.from_json(value)
     expected = "03a84672c6f17ddc9cceb4aafdc442ce145777d867e69d606c7e1a8db2f73735"

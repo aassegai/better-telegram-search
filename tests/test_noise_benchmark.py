@@ -23,7 +23,7 @@ def benchmark():
 def test_generated_source_covers_vocabulary_without_private_input(tmp_path, benchmark):
     source = tmp_path / "result.json"
     benchmark.write_source(source, 1000, 73)
-    data = json.loads(source.read_text())
+    data = json.loads(source.read_text(encoding="utf-8"))
     assert len(data["messages"]) == 1000
     forms = {whole_word(row["text"]) for row in data["messages"]} - {None}
     assert len(forms) == 73 and all(len(form) <= 64 for form in forms)
@@ -63,7 +63,7 @@ def test_benchmark_cannot_overwrite_unowned_or_external_output(tmp_path, benchma
         with pytest.raises(SystemExit) as result:
             benchmark.main()
         assert result.value.code == 1
-    assert private.read_text() == '{"synthetic-user-data":true}'
+    assert private.read_text(encoding="utf-8") == '{"synthetic-user-data":true}'
     monkeypatch.setattr(sys, "argv", ["benchmark_noise.py", "--output", str(public)])
     benchmark.main()
-    assert json.loads(public.read_text())["version"] == benchmark.VERSION
+    assert json.loads(public.read_text(encoding="utf-8"))["version"] == benchmark.VERSION

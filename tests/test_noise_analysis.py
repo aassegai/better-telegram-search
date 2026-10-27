@@ -2,6 +2,7 @@ import json
 import sqlite3
 import threading
 import time
+from contextlib import closing
 
 import pytest
 from conftest import export, load, message
@@ -242,7 +243,7 @@ def test_report_identity_payload_and_links_are_validated(db, importer, tmp_path,
     status = start_ready(analysis, chat_id)
     job_id = status["id"]
     path = report_path(db.workspace, job_id)
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute(
             "UPDATE forms SET payload=?",
             (
@@ -259,7 +260,7 @@ def test_report_identity_payload_and_links_are_validated(db, importer, tmp_path,
         )
     with pytest.raises(UserError, match="повреждён"):
         analysis.report(chat_id, job_id)
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn, conn:
         conn.execute("UPDATE forms SET payload=?", ("x" * 20000,))
     with pytest.raises(UserError, match="повреждён"):
         analysis.report(chat_id, job_id)

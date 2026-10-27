@@ -20,7 +20,9 @@ def script():
 
 
 def topics():
-    return json.loads((ROOT / "tests/fixtures/synthetic/relevance.json").read_text())
+    return json.loads(
+        (ROOT / "tests/fixtures/synthetic/relevance.json").read_text(encoding="utf-8")
+    )
 
 
 def test_generated_corpus_unique_and_deterministic():
@@ -133,7 +135,7 @@ def test_native_worker_exercises_filters_and_unindexed_tail(tmp_path, kind):
     np.savez(tmp_path / "embeddings.npz", vectors=vectors, queries=queries)
     (tmp_path / "rows.json").write_text(json.dumps(rows))
     module.worker(tmp_path, kind, dict(threads=2, partitions=4, probes=[4], ef=128, refine=4))
-    report = json.loads((tmp_path / f"{kind}.json").read_text())
+    report = json.loads((tmp_path / f"{kind}.json").read_text(encoding="utf-8"))
     assert report["native_index_bytes"] > 0 and report["build_seconds"] > 0
     assert report["fresh_unindexed_rows"] == report["fresh_changes"]["known_fresh_top10_hits"] == 4
     for scope in report["scopes"]["4"].values():

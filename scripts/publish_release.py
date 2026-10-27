@@ -61,6 +61,12 @@ PUBLICATION_FILES = {
     "tests/test_telegram_sync.py",
     # Synthetic queue fixtures must also run without the optional Lance runtime.
     "tests/test_sqlite_contention.py",
+    # Windows fixture encoding/handle fixes and the standalone benchmark only.
+    "tests/test_ann_benchmark.py",
+    "tests/test_noise_benchmark.py",
+    "tests/test_noise_candidates.py",
+    "tests/test_noise_analysis.py",
+    "scripts/benchmark_ann_embeddings.py",
 }
 
 
