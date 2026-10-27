@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import psutil
 
+from telegram_search.indexing.cpu_publication import publish_result
 from telegram_search.search.chunking.noise.candidates import CandidateGenerator
 from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION, AnalysisOptions
 from telegram_search.search.chunking.noise.coverage import application_ready, coverage
@@ -48,6 +49,8 @@ class NoiseAnalysisService:
         self.jobs = {}
         self.thread = None
         self.persistence_error = False
+        self.comparison_active = lambda _job_id: False
+        self.comparison_ids = lambda: ()
         self.store.recover()
 
     def create(self, chat_id, options=None):
@@ -57,8 +60,12 @@ class NoiseAnalysisService:
                 raise UserError("Анализатор останавливается.")
             if self.persistence_error:
                 raise UserError("Не удалось сохранить анализ. Перезапустите приложение.")
+            if len(self.jobs) >= 8:
+                raise UserError("В очереди уже 8 анализов. Дождитесь завершения.")
             try:
-                job_id, fence = self.store.create(chat_id, options, active_ids=self.jobs)
+                job_id, fence = self.store.create(
+                    chat_id, options, active_ids=(*self.jobs, *self.comparison_ids())
+                )
             except sqlite3.Error as exc:
                 if database_busy(exc):
                     raise UserError(
@@ -172,9 +179,10 @@ class NoiseAnalysisService:
             return [
                 dict(row)
                 for row in conn.execute(
-                    "SELECT m.message_id,m.timestamp,m.author_id,m.has_photo,"
+                    "SELECT m.message_id,m.timestamp,substr(m.author_id,1,1025) AS author_id,"
+                    "m.has_photo,"
                     "substr(m.text,1,?) AS text,"
-                    "length(m.raw_json)>? AS metadata_limited,"
+                    "(length(m.raw_json)>? OR length(m.author_id)>1024) AS metadata_limited,"
                     "strftime('%Y-%m-%d',m.timestamp,'unixepoch') AS day,"
                     "CASE WHEN length(m.raw_json)>? THEN 1 ELSE "
                     "EXISTS(SELECT 1 FROM media_refs r WHERE r.chat_id=m.chat_id "
@@ -326,64 +334,17 @@ class NoiseAnalysisService:
                     ),
                 )
         job.progress["elapsed_seconds"] = round(time.monotonic() - job.started, 3)
-        attempted_failure = False
-        while True:
-            try:
-                with self.lock:
-                    # Cancellation and terminal publication have one order. A
-                    # cancelled job cannot be left durably 'cancelling' without
-                    # a worker, or publish a ready report after accepted stop.
-                    if job.cancelled.is_set() or self.stop.is_set():
-                        job.state, job.error = "cancelled", None
-                    with self.db.connection_timeout(0.2), self.db.connect() as conn:
-                        conn.execute("BEGIN IMMEDIATE")
-                        if (
-                            job.state in {"ready", "limited"}
-                            and source_fence(conn, job.chat_id) != job.fence
-                        ):
-                            job.state, job.error = "stale", "source_changed"
-                        conn.execute(
-                            "UPDATE noise_analyses SET state=?,progress_json=?,summary_json=?,"
-                            "error=? WHERE id=?",
-                            (
-                                job.state,
-                                json.dumps(job.progress),
-                                json.dumps(job.summary),
-                                job.error,
-                                job.id,
-                            ),
-                        )
-                    self.jobs.pop(job.id, None)
-                break
-            except KeyError:
-                break
-            except sqlite3.Error as exc:
-                if database_busy(exc):
-                    if self.stop.wait(0.1):
-                        break  # Restart recovery marks durable work interrupted.
-                    continue
-                if not attempted_failure:
-                    # One guarded attempt to record a fixed failure, never a
-                    # second unprotected write from an exception handler.
-                    attempted_failure = True
-                    job.state, job.error, job.summary = "failed", "result_save_failed", None
-                    continue
-                with self.lock:
-                    # A permanent writer failure cannot be repaired by spinning
-                    # or letting later jobs accumulate behind an endless retry.
-                    self.persistence_error = True
-                    self.queue.clear()
-                    for owned in self.jobs.values():
-                        owned.state, owned.error, owned.summary = (
-                            "failed",
-                            "result_save_failed",
-                            None,
-                        )
-                        owned.publish_failed = True
-                        owned.progress["phase"] = "failed"
-                return
-        with self.lock:
-            self.jobs.pop(job.id, None)
+
+        def write(conn):
+            if job.state in {"ready", "limited"} and source_fence(conn, job.chat_id) != job.fence:
+                job.state, job.error = "stale", "source_changed"
+            conn.execute(
+                "UPDATE noise_analyses SET state=?,progress_json=?,summary_json=?,error=? "
+                "WHERE id=?",
+                (job.state, json.dumps(job.progress), json.dumps(job.summary), job.error, job.id),
+            )
+
+        publish_result(self, job, write)
 
     def _loop(self):
         while not self.stop.is_set() and not self.persistence_error:
@@ -457,6 +418,9 @@ class NoiseAnalysisService:
 
     def delete(self, chat_id, job_id):
         with self.lock:
+            self.store.get(chat_id, job_id)
+            if self.comparison_active(job_id):
+                raise UserError("Сначала остановите сравнение чанкинга.")
             if job_id in self.jobs:
                 if self.persistence_error:
                     raise UserError("Не удалось сохранить анализ. Перезапустите приложение.")

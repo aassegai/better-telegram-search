@@ -6,8 +6,8 @@ The CPU analysis service now collects a bounded, private report for one chat.
 Source messages and keyword search are always preserved. Analysis leaves active
 rules and indexing checkpoints unchanged; explicit apply rebuilds only text.
 The local API, per-chat settings UI and standalone CLI share the draft, override
-and apply services. Real-token dry-run is available in the standalone CLI;
-its background API/UI integration and calibration are still being implemented.
+and apply services. Real-token dry-run is available in the standalone CLI and
+as a cancellable background job in chat settings. Calibration remains pending.
 **Automatic omission of new forms is disabled.** New ambiguous forms stay unless
 you explicitly choose an omit rule; previously selected manual rules are retained.
 
@@ -55,6 +55,10 @@ application's Host/Origin/local-session guards. Mutations require
 | `PATCH /{id}/draft` | Replace overrides with `{ "revision": 0, "overrides": { "бял": "keep" } }` |
 | `POST /{id}/preview` | Explicit policy preview with `{ "revision": 1 }` |
 | `POST /{id}/apply` | Explicit text rebuild with `{ "revision": 1 }` |
+| `POST /{id}/dry-runs` | `202`, CPU comparison with draft revision and optional message/time limits |
+| `GET /{id}/dry-runs` | Latest comparison or `null`; no scan/model preparation |
+| `GET /{id}/dry-runs/{comparison_id}` | Scoped state, progress and measured result |
+| `POST /{id}/dry-runs/{comparison_id}/cancel` | Cooperative cancellation, including stale work and vector maintenance |
 
 Defaults: `max_messages=100000`, `max_forms=50000`, `time_limit_seconds=300`.
 Allowed maxima: one million messages, 50,000 forms in each whole/phrase vocabulary,
@@ -113,8 +117,8 @@ in each CPU phase, SQLite contention, report validation and migration from schem
 17. A frozen v2 policy JSON/hash protects existing checkpoints. No real archive is
 used in these tests, and synthetic tests do not validate a real omission gate.
 
-Remaining: background API/UI for the real-token comparison, labelled
-development/test calibration and the validated conservative automatic gate.
+Remaining: labelled development/test calibration, CPU corpus benchmarks and the
+validated conservative automatic gate.
 OCR and visual indexes remain outside this text filter. No performance or
 retrieval-quality improvement is claimed before measurement.
 
@@ -243,7 +247,41 @@ Output contains aggregates and hashes only, including elapsed and thread CPU
 seconds, sampled **whole-process** peak RSS and baseline. No raw message, author,
 chat ID or source path is printed. The immutable analysis report, active policy,
 indexing queues/checkpoints and original messages are unchanged. The command does
-not persist a comparison; background API/UI support is a separate remaining step.
+not persist a comparison. The application's background API/UI stores one latest
+result per analysis, separately from its immutable report.
+
+## Background comparison in chat settings
+
+After saving overrides, use **Compare chunks and tokens** in the noise panel.
+Limits default to 100,000 source messages and 300 seconds; they are independent
+of analysis limits. The first pass has indeterminate progress with measured
+message counts. The second pass can use the first pass's source count. No ETA is
+invented. Cancellation leaves the index and current rules unchanged.
+
+The result compares chunks, tokens and distinct own messages; measurement details
+include padding, skipped/protected counts, CPU time and process RSS. Limited
+prefixes and unfinished passes are explicitly marked. A delta is shown only for
+a completed, source-verified comparison, including a clearly labelled limited
+prefix. Save new overrides before rerunning; comparisons do not apply rules.
+
+Schema 20 adds a separate `noise_dry_runs` table. At most one latest comparison
+is retained per saved analysis (at most eight). A replacement removes only the
+previous stopped comparison. One CPU comparison worker owns at most eight tasks;
+the analysis worker has the same independent owner limit. Limits hold even if
+chat deletion cascades metadata away. Active comparisons protect parent report
+deletion and orphan pruning until they release it. Status reads hold no lifecycle
+lock or private report/tokenizer file. Temporary status errors retain a known
+task's Cancel action and keep parent deletion protected.
+
+Admission captures the parent analysis, draft revision, source fence, active
+embedding space and configured batch size. The worker verifies these before and
+after local tokenizer loading and before publishing in a short transaction.
+Changed scopes hide old results; stale active work remains cancellable. Startup
+marks abandoned jobs interrupted instead of restarting the comparison. The shared
+terminal publisher handles SQLite BUSY without losing the worker, and makes only
+one guarded failure-write attempt after a permanent error. If persistence still
+fails, admission stops and restart is required; no result is exposed as durable.
+No ONNX weights, GPU sessions or downloads are started by this comparison.
 
 ## Chat settings
 

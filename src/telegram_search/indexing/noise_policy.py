@@ -18,15 +18,12 @@ from telegram_search.search.chunking.policy import (
     LEGACY_POLICY_ID,
     ChunkPolicy,
 )
+from telegram_search.shared.errors import NoiseDraftConflict as NoiseDraftConflict
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 from telegram_search.storage.chunking import chat_policy
 from telegram_search.storage.generations import bump_revision
 from telegram_search.storage.noise import NoiseReport, source_fence
-
-
-class NoiseDraftConflict(UserError):
-    pass
 
 
 def validate_overrides(values):

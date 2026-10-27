@@ -28,6 +28,10 @@ from telegram_search.shared.text import serialize
 from telegram_search.storage.noise import NoiseReport
 
 
+class TokenizerUnavailable(UserError):
+    pass
+
+
 @dataclass(frozen=True)
 class TokenContract:
     tokenizer: object
@@ -68,7 +72,9 @@ def local_token_contract(db, chat_id, check=lambda: None):
             (chat_id,),
         ).fetchone()
     if row is None:
-        raise UserError("Для dry-run нужен локальный токенизатор активной текстовой модели.")
+        raise TokenizerUnavailable(
+            "Для dry-run нужен локальный токенизатор активной текстовой модели."
+        )
     check()
     try:
         spec = model_spec(row["profile"])
@@ -115,7 +121,7 @@ def local_token_contract(db, chat_id, check=lambda: None):
             tokenizer_version,
         )
     except (ImportError, OSError, ValueError, TypeError, KeyError, RecursionError):
-        raise UserError(
+        raise TokenizerUnavailable(
             "Локальный токенизатор отсутствует или повреждён. Подготовьте текстовую модель."
         ) from None
 
@@ -134,6 +140,7 @@ class NoiseDryRun:
         contract=None,
         cancelled=lambda: False,
         progress=lambda value: None,
+        admission_check=lambda: None,
     ):
         options = options or DryRunOptions()
         began, cpu_began = time.monotonic(), time.thread_time()
@@ -168,8 +175,10 @@ class NoiseDryRun:
         owned = source = None
         try:
             row, proposed, _ = self.policies._prepare(chat_id, job_id, revision, check=check)
+            admission_check()
             fence = json.loads(row["fence_json"])
             contract = contract or local_token_contract(self.db, chat_id, check)
+            admission_check()
             before = self.policies._source_policy(fence)
             report = NoiseReport(self.db, job_id, fence)
             with report.connect() as conn:
@@ -241,6 +250,9 @@ class NoiseDryRun:
                                 {
                                     "phase": "before" if side == 0 else "after",
                                     "scanned_messages": source.scanned,
+                                    "total_messages": results[0]["source_messages"]
+                                    if side
+                                    else None,
                                     "elapsed_seconds": round(time.monotonic() - began, 3),
                                 }
                             )
@@ -282,6 +294,7 @@ class NoiseDryRun:
                     limits.add("message_limit")
             check()
             measured_difference = owned.differences()
+            admission_check()
             with self.db.connection_timeout(0.2), self.db.connect() as conn:
                 conn.execute("BEGIN")
                 guard(conn)

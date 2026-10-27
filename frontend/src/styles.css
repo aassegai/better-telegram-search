@@ -225,6 +225,10 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .noise-panel code, .noise-form bdi { overflow-wrap: anywhere; word-break: break-word; }
 .noise-panel code { display: block; font-size: 11px; margin: 8px 0; }
 .noise-job, .noise-draft, .noise-preview { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+.noise-comparison { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; min-width: 0; }
+.noise-comparison table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; margin: 12px 0; }
+.noise-comparison td, .noise-comparison th { overflow-wrap: anywhere; padding: 5px 3px; text-align: right; border-bottom: 1px solid var(--line); }
+.noise-comparison th:first-child { width: 50%; text-align: left; }
 .noise-report-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
 .noise-form { padding: 14px 0; border-top: 1px solid var(--line); min-width: 0; }
 .noise-form p { margin: 7px 0; }

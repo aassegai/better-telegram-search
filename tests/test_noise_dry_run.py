@@ -22,8 +22,7 @@ from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
 
 
-@pytest.fixture
-def tokenizer_bundle(tmp_path):
+def make_tokenizer(tmp_path):
     tokenizers = pytest.importorskip("tokenizers")
     from tokenizers import models, pre_tokenizers, processors
 
@@ -70,6 +69,11 @@ def tokenizer_bundle(tmp_path):
     tokenizer.save(str(bundle / "tokenizer.json"))
     (bundle / "tokenizer_config.json").write_text('{"pad_token":"[PAD]"}')
     return bundle, ModelTokenizer(bundle)
+
+
+@pytest.fixture
+def tokenizer_bundle(tmp_path):
+    return make_tokenizer(tmp_path)
 
 
 @pytest.fixture

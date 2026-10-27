@@ -315,6 +315,7 @@ def test_migration_preserves_legacy_pause_and_completed_recognition(db, importer
         for name in ("chunk_context_owners", "chunk_context_intervals"):
             conn.execute(f'DROP VIEW "{name}"')
         for name in (
+            "noise_dry_runs",
             "noise_analyses",
             "segment_context_dependencies",
             "segment_context_ranges",

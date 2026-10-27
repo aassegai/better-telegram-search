@@ -1,4 +1,4 @@
-"""Scoped local-session APIs for CPU-only noise analysis; no policy application."""
+"""Scoped local-session APIs for analysis, exact rules and CPU comparisons."""
 
 import sqlite3
 from typing import Annotated, Literal
@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from telegram_search.indexing.noise_policy import NoiseDraftConflict
-from telegram_search.search.chunking.noise.contracts import AnalysisOptions
+from telegram_search.search.chunking.noise.contracts import AnalysisOptions, DryRunOptions
 from telegram_search.storage.contention import database_busy
 
 router = APIRouter(prefix="/api/chats/{chat_id}/noise-analyses", tags=["indexing"])
@@ -31,6 +31,11 @@ class DraftOverrides(DraftRevision):
     overrides: dict[Annotated[str, Field(min_length=1, max_length=64)], Literal["keep", "omit"]] = (
         Field(max_length=1000)
     )
+
+
+class StartNoiseComparison(DraftRevision):
+    max_messages: int = Field(default=100000, strict=True, ge=1, le=1000000)
+    time_limit_seconds: int = Field(default=300, strict=True, ge=1, le=3600)
 
 
 def invoke(action):
@@ -133,3 +138,34 @@ def preview_draft(chat_id: ChatId, job_id: JobId, body: DraftRevision, request: 
 @router.post("/{job_id}/apply")
 def apply_draft(chat_id: ChatId, job_id: JobId, body: DraftRevision, request: Request):
     return invoke(lambda: request.app.state.noise_policies.apply(chat_id, job_id, body.revision))
+
+
+@router.post("/{job_id}/dry-runs", status_code=202)
+def start_comparison(chat_id: ChatId, job_id: JobId, body: StartNoiseComparison, request: Request):
+    return invoke(
+        lambda: request.app.state.noise_comparisons.create(
+            chat_id,
+            job_id,
+            body.revision,
+            DryRunOptions(body.max_messages, body.time_limit_seconds),
+        )
+    )
+
+
+@router.get("/{job_id}/dry-runs")
+def latest_comparison(chat_id: ChatId, job_id: JobId, request: Request):
+    return invoke(lambda: request.app.state.noise_comparisons.latest(chat_id, job_id))
+
+
+@router.get("/{job_id}/dry-runs/{comparison_id}")
+def comparison_status(chat_id: ChatId, job_id: JobId, comparison_id: JobId, request: Request):
+    return invoke(
+        lambda: request.app.state.noise_comparisons.status(chat_id, job_id, comparison_id)
+    )
+
+
+@router.post("/{job_id}/dry-runs/{comparison_id}/cancel")
+def cancel_comparison(chat_id: ChatId, job_id: JobId, comparison_id: JobId, request: Request):
+    return invoke(
+        lambda: request.app.state.noise_comparisons.cancel(chat_id, job_id, comparison_id)
+    )

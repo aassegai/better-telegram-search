@@ -3,6 +3,7 @@ import { api } from './api';
 import { t, uiLocale } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
 import NoiseReport from './NoiseReport';
+import NoiseComparison from './NoiseComparison';
 import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview } from './noiseTypes';
 
 const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Неполный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
@@ -24,6 +25,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const [draft, setDraft] = useState<NoiseDraft | null>(null);
   const [overrides, setOverrides] = useState<Record<string, NoiseDecision>>({});
   const [dirty, setDirty] = useState(false);
+  const [comparisonProtected, setComparisonProtected] = useState(false);
   const [page, setPage] = useState<NoisePage | null>(null);
   const [view, setView] = useState<View>('forms');
   const [decision, setDecision] = useState('review');
@@ -223,7 +225,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
         {job.state === 'ready' && noiseApplicable(job.summary) && job.summary?.evidence_complete === false && <p className="baseline-note">{t('Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')}</p>}
         {job.state === 'limited' && <p className="baseline-note">{t('Неполный отчёт можно просматривать, но нельзя применить. Увеличьте лимиты и запустите новый анализ.')}</p>}
         {job.state === 'ready' && (!hasDigest || !noiseApplicable(job.summary)) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
-        <div className="job-actions"><button type="button" disabled={busy || !canReview} onClick={() => loadReport(view, decision, 0)}>{t('Просмотреть отчёт')}</button><button type="button" disabled={busy || active || dirty} onClick={remove}>{t('Удалить отчёт')}</button></div>
+        <div className="job-actions"><button type="button" disabled={busy || !canReview} onClick={() => loadReport(view, decision, 0)}>{t('Просмотреть отчёт')}</button><button type="button" disabled={busy || active || comparisonProtected || dirty} onClick={remove}>{t('Удалить отчёт')}</button></div>
         <p className="baseline-note">{t('Удаление отчёта не меняет уже выбранные правила и индексы.')}</p>
       </div>}
       {page && <>
@@ -246,6 +248,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
         <details><summary>{t('ID политики')}</summary><code>{preview.policy_id}</code></details>
         <button type="button" className="primary" disabled={busy || !canApply || preview.revision !== draft?.revision} onClick={apply}>{t('Применить правила и перестроить текст')}</button>
       </div>}
+      {open && selected && draft && <NoiseComparison key={`${selected}:${draft.revision}`} base={`${base}/${selected}`} revision={draft.revision} canStart={canApply} parentBusy={busy} onProtectionChange={setComparisonProtected} />}
       {applied && <p role="status">{t('Эти правила выбраны для диалога.')}</p>}
       {notice && <p role="status">{t(notice)}</p>}
       {op.busy && <p role="status">{t('Выполняем операцию…')}</p>}

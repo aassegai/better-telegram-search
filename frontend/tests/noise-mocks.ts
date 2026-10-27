@@ -2,6 +2,14 @@ import type { Page } from '@playwright/test';
 import type { NoiseJob } from '../src/noiseTypes';
 
 export const noiseJobId = 'a'.repeat(32);
+export function readyComparison() {
+  return { id: 'd'.repeat(32), state: 'ready', active: false, stale: false, error: null as string | null,
+    progress: { phase: 'after', scanned_messages: 55, total_messages: 55, elapsed_seconds: 2 },
+    summary: { complete: true, comparison_complete: true, source_verified: true, limits: [] as string[],
+      before: { chunks: 5, tokens: 500, own_messages: 55, source_messages: 55, skipped_messages: 0, padded_token_slots: 700, protected_noise_messages: 2 },
+      after: { chunks: 4, tokens: 450, own_messages: 54, source_messages: 55, skipped_messages: 1, padded_token_slots: 600, protected_noise_messages: 2 },
+      delta: { chunks: -1, tokens: -50 }, cpu_seconds: 1, elapsed_seconds: 2, process_peak_rss_bytes: 80 * 1024 ** 2, batch_size: 16 } };
+}
 export function readyNoiseJob(coverage: Partial<Pick<NonNullable<NoiseJob['summary']>, 'coverage_version' | 'source_complete' | 'evidence_complete' | 'policy_applicable' | 'limited_evidence_forms' | 'new_auto_omit_enabled'>> = {}) {
   return { id: noiseJobId, state: 'ready', stale: false, active: false, created_at: 1750000000,
     error: null as string | null, progress: { phase: 'candidates', completed: 51, total: 51, elapsed_seconds: 2,
@@ -22,6 +30,8 @@ export async function mockNoise(page: Page, initial = false) {
     revision: 0, overrides: {} as Record<string, string>, applied: false, autoFinish: true,
     writes: [] as { path: string; method: string; body: Record<string, unknown> | null }[],
     formsGate: null as Promise<void> | null, formsStarted: 0, statusCalls: 0,
+    comparison: null as ReturnType<typeof readyComparison> | null, comparisonCalls: 0,
+    comparisonGate: null as Promise<void> | null,
     forms: [form('бял', 'review'), form('сука', 'omit'),
       ...Array.from({ length: 48 }, (_, index) => form(`synthetic${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + index % 26)}`)), form('constructor')] };
   await page.route('**/api/chats/*/noise-analyses**', async route => {
@@ -38,6 +48,20 @@ export async function mockNoise(page: Page, initial = false) {
       overrides: control.job?.stale ? {} : control.overrides, overrides_available: !control.job?.stale,
       stale: !!control.job?.stale, state: control.job?.state, current_policy_id: control.applied ? 'c'.repeat(64) : 'base',
       applied_policy_id: control.applied ? 'c'.repeat(64) : null, applied_draft_revision: control.applied ? control.revision : null });
+    if (suffix === `/${noiseJobId}/dry-runs` && method === 'GET') {
+      control.comparisonCalls++;
+      const value = control.comparison;
+      if (control.comparisonGate) await control.comparisonGate;
+      return send({ comparison: value });
+    }
+    if (suffix === `/${noiseJobId}/dry-runs` && method === 'POST') {
+      control.comparison = { ...readyComparison(), state: 'running', active: true, summary: null! };
+      return send(control.comparison, 202);
+    }
+    if (suffix.includes('/dry-runs/') && suffix.endsWith('/cancel')) {
+      if (control.comparison) control.comparison = { ...control.comparison, state: 'cancelled', active: false, summary: null! };
+      return send(control.comparison);
+    }
     if (!suffix && method === 'GET') return send({ analyses: control.job ? [control.job] : [] });
     if (!suffix && method === 'POST') {
       control.job = { ...readyNoiseJob(), state: 'running', active: true, summary: null! };

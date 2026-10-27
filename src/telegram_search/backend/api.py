@@ -32,6 +32,7 @@ from telegram_search.indexing.ann import AnnIndexService
 from telegram_search.indexing.chats import ChatIndexing
 from telegram_search.indexing.media import MediaService
 from telegram_search.indexing.noise_analysis import NoiseAnalysisService
+from telegram_search.indexing.noise_comparisons import NoiseComparisons
 from telegram_search.indexing.noise_policy import NoisePolicyService
 from telegram_search.indexing.rerank import RerankService
 from telegram_search.indexing.service import SemanticService
@@ -141,7 +142,7 @@ def create_app(
         importer = semantic = media = updates = telegram = rerank = maintenance = search_jobs = (
             ann_indexes
         ) = None
-        noise_analyses = None
+        noise_analyses = noise_comparisons = None
         verification_stop = threading.Event()
         verification_thread = None
         try:
@@ -159,6 +160,8 @@ def create_app(
             app.state.noise_policies = NoisePolicyService(
                 db, noise_analyses, importer.lifecycle_lock, semantic
             )
+            noise_comparisons = NoiseComparisons(app.state.noise_policies)
+            app.state.noise_comparisons = noise_comparisons
             media = MediaService(
                 db, importer.lifecycle_lock, semantic, start_background=not hold_background
             )
@@ -236,6 +239,8 @@ def create_app(
                 await telegram.close()
             if search_jobs:
                 search_jobs.close()
+            if noise_comparisons:
+                noise_comparisons.close()
             if noise_analyses:
                 noise_analyses.close()
             if ann_indexes:
@@ -298,7 +303,9 @@ def create_app(
                 request.method == "POST" and request.url.path == "/api/ann-indexes/cancel"
             )
             cancelling_noise = request.method == "POST" and re.fullmatch(
-                r"/api/chats/[^/]+/noise-analyses/[a-f0-9]{32}/cancel", request.url.path
+                r"/api/chats/[^/]+/noise-analyses/[a-f0-9]{32}"
+                r"(?:/dry-runs/[a-f0-9]{32})?/cancel",
+                request.url.path,
             )
             if (
                 maintenance
