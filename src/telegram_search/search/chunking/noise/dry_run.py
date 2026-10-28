@@ -3,7 +3,7 @@
 import sqlite3
 from dataclasses import dataclass
 
-from telegram_search.search.chunking.classification import whole_word
+from telegram_search.search.chunking.noise.messages import message_form
 
 DRY_RUN_VERSION = "real-episode-token-batches-v1"
 
@@ -45,7 +45,7 @@ class ChunkMetrics:
             message = lookup(part.message_id)
             if (
                 message is None
-                or whole_word(message.text[part.start : part.end]) not in noise_forms
+                or message_form(message.text[part.start : part.end]) not in noise_forms
             ):
                 noise_only = False
                 break

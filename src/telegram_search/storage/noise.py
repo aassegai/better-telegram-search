@@ -9,8 +9,8 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict
 
-from telegram_search.search.chunking.classification import whole_word
 from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION, validate_evidence
+from telegram_search.search.chunking.noise.messages import is_message_form, valid_form
 from telegram_search.security.paths import is_link_or_reparse
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import serialize
@@ -191,12 +191,16 @@ CREATE TABLE forms(form TEXT PRIMARY KEY,whole_count INTEGER NOT NULL DEFAULT 0,
  eligible_count INTEGER NOT NULL DEFAULT 0,decision TEXT,payload TEXT);
 CREATE TABLE protections(form TEXT,kind TEXT,uses INTEGER NOT NULL,PRIMARY KEY(form,kind));
 CREATE TABLE days(form TEXT,day TEXT,PRIMARY KEY(form,day));
+CREATE TABLE eligible_days(form TEXT,day TEXT,PRIMARY KEY(form,day));
 CREATE TABLE authors(form TEXT,author_key TEXT,PRIMARY KEY(form,author_key));
 CREATE TABLE phrases(form TEXT PRIMARY KEY,uses INTEGER NOT NULL);
+CREATE TABLE signals(form TEXT,kind TEXT,uses INTEGER NOT NULL,PRIMARY KEY(form,kind));
 CREATE INDEX form_frequency ON forms(whole_count DESC,form);
 CREATE TABLE families(seed TEXT PRIMARY KEY,observed_count INTEGER NOT NULL,
  eligible_count INTEGER NOT NULL,omit_count INTEGER NOT NULL,review_count INTEGER NOT NULL,
  keep_count INTEGER NOT NULL);
+CREATE TABLE family_members(form TEXT PRIMARY KEY,seed TEXT NOT NULL);
+CREATE INDEX family_members_seed ON family_members(seed,form);
 """
 
 
@@ -277,6 +281,10 @@ class NoiseReport:
                 )
                 self.forms_count += int(not exists)
                 conn.execute("INSERT OR IGNORE INTO days VALUES(?,?)", (item.form, item.day))
+                if item.eligible:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO eligible_days VALUES(?,?)", (item.form, item.day)
+                    )
                 conn.execute(
                     "INSERT OR IGNORE INTO authors VALUES(?,?)", (item.form, item.author_key)
                 )
@@ -284,6 +292,11 @@ class NoiseReport:
                     "INSERT INTO protections VALUES(?,?,1) ON CONFLICT(form,kind) "
                     "DO UPDATE SET uses=uses+1",
                     [(item.form, kind) for kind in item.protections],
+                )
+                conn.executemany(
+                    "INSERT INTO signals VALUES(?,?,1) ON CONFLICT(form,kind) "
+                    "DO UPDATE SET uses=uses+1",
+                    [(item.form, kind) for kind in item.signals],
                 )
             for form, count in batch.phrases.items():
                 exists = conn.execute("SELECT 1 FROM phrases WHERE form=?", (form,)).fetchone()
@@ -304,7 +317,12 @@ class NoiseReport:
             return [
                 dict(row)
                 for row in conn.execute(
-                    "SELECT form,whole_count,eligible_count FROM forms WHERE form>? "
+                    "SELECT f.form,f.whole_count,f.eligible_count,"
+                    "(SELECT COUNT(*) FROM days d WHERE d.form=f.form) AS days,"
+                    "(SELECT COUNT(*) FROM eligible_days d WHERE d.form=f.form) AS eligible_days,"
+                    "(SELECT COUNT(*) FROM authors a WHERE a.form=f.form) AS authors,"
+                    "COALESCE((SELECT uses FROM signals s WHERE s.form=f.form "
+                    "AND s.kind='bot_command'),0) AS bot_commands FROM forms f WHERE f.form>? "
                     "ORDER BY form LIMIT ?",
                     (after, limit),
                 )
@@ -338,6 +356,9 @@ class NoiseReport:
                 )
                 seed = payload["primary_seed"]
                 if seed is not None:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO family_members VALUES(?,?)", (count["form"], seed)
+                    )
                     values = (
                         seed,
                         count["whole_count"],
@@ -357,14 +378,29 @@ class NoiseReport:
                     )
         return limited
 
-    def page(self, *, decision=None, offset=0, limit=50):
+    def page(self, *, decision=None, family=None, offset=0, limit=50):
         self._validate_page(offset, limit)
         if decision not in {None, "keep", "review", "omit"}:
             raise UserError("Неизвестное решение фильтра.")
+        if family is not None and not valid_form(family):
+            raise UserError("Недопустимое семейство сообщений.")
         with self.connect() as conn:
             self.verify(conn)
-            clause = " WHERE (decision=? OR (?='review' AND decision IS NULL))" if decision else ""
-            params = (decision, decision) if decision else ()
+            clauses, params = [], []
+            if decision:
+                clauses.append("(decision=? OR (?='review' AND decision IS NULL))")
+                params.extend((decision, decision))
+            if family is not None:
+                modern = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='family_members'"
+                ).fetchone()
+                if modern:
+                    clauses.append("form IN (SELECT form FROM family_members WHERE seed=?)")
+                else:
+                    # Old bounded reports have payloads but no membership index.
+                    clauses.append("json_extract(payload,'$.primary_seed')=?")
+                params.append(family)
+            clause = " WHERE " + " AND ".join(clauses) if clauses else ""
             rows = conn.execute(
                 "SELECT form,whole_count,eligible_count,decision,substr(payload,1,8193) AS payload,"
                 "length(CAST(payload AS BLOB)) AS payload_bytes FROM forms"
@@ -381,8 +417,7 @@ class NoiseReport:
                     raise UserError("Отчёт анализа несовместим или повреждён.")
                 if (
                     not isinstance(row["form"], str)
-                    or not 1 <= len(row["form"]) <= 64
-                    or whole_word(row["form"]) != row["form"]
+                    or not valid_form(row["form"])
                     or type(row["whole_count"]) is not int
                     or not 1 <= row["whole_count"] <= 1000000
                     or type(row["eligible_count"]) is not int
@@ -421,6 +456,7 @@ class NoiseReport:
                 output.append(
                     {
                         "form": row["form"],
+                        "form_kind": "message" if is_message_form(row["form"]) else "word",
                         "whole_count": row["whole_count"],
                         "eligible_count": row["eligible_count"],
                         "days": days,
@@ -443,8 +479,7 @@ class NoiseReport:
             for row in rows[:limit]:
                 if (
                     not isinstance(row["seed"], str)
-                    or not 1 <= len(row["seed"]) <= 64
-                    or whole_word(row["seed"]) != row["seed"]
+                    or not valid_form(row["seed"])
                     or any(
                         type(row[key]) is not int or not 0 <= row[key] <= 1000000
                         for key in (

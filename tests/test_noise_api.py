@@ -61,6 +61,51 @@ def test_noise_routes_require_local_session_validate_and_keep_job_scope(client, 
     assert client.get(f"{route}/{job_id}").status_code == 404
 
 
+def test_family_members_are_scoped_paginated_and_choose_individual_exact_rules(client, tmp_path):
+    from test_noise_analysis import start_ready
+
+    state = client.app.state
+    chat = load(
+        state.importer,
+        export(
+            tmp_path / "family",
+            [
+                message(1, "покормить жабу"),
+                message(2, "покорить жабу"),
+                message(3, "другая команда"),
+            ],
+        ),
+    )["chat_id"]
+    job_id = start_ready(state.noise_analyses, chat)["id"]
+    route = f"/api/chats/{chat}/noise-analyses/{job_id}"
+    params = {"family": "покормить жабу", "limit": 1}
+    first = client.get(route + "/forms", params=params)
+    assert first.status_code == 200
+    assert first.json()["next_offset"] == 1
+    second = client.get(route + "/forms", params={**params, "offset": 1})
+    forms = [*first.json()["forms"], *second.json()["forms"]]
+    assert {r["form"] for r in forms} == {"покормить жабу", "покорить жабу"}
+    assert (
+        client.get(route.replace(chat, "other-chat") + "/forms", params=params).status_code == 404
+    )
+    assert client.get(route + "/forms", params={"family": "x" * 257}).status_code == 422
+    assert client.get(route + "/forms", params={"family": "../"}).status_code == 400
+    headers = {"X-Session-Token": client.get("/api/session").json()["token"]}
+    response = client.patch(
+        route + "/draft",
+        headers=headers,
+        json={
+            "revision": 0,
+            "overrides": {
+                "покормить жабу": "keep",
+                "покорить жабу": "omit",
+            },
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["overrides"] == {"покормить жабу": "keep", "покорить жабу": "omit"}
+
+
 def test_cancel_remains_available_during_vector_maintenance(client, tmp_path):
     chat = load(client.app.state.importer, export(tmp_path / "a", [message()]))["chat_id"]
     route = f"/api/chats/{chat}/noise-analyses"

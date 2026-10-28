@@ -343,7 +343,11 @@ def test_report_explains_inherited_rules_separately_from_new_analysis_and_overri
     assert rows["бял"]["inherited_decision"] == rows["бял"]["default_decision"] == "omit"
     assert rows["сука"]["candidate"]["decision"] == "omit"
     assert rows["сука"]["inherited_decision"] == rows["сука"]["default_decision"] == "keep"
-    assert all(row["default_origin"] == "inherited" for row in rows.values())
+    assert all(rows[form]["default_origin"] == "inherited" for form in ("бял", "сука"))
+    new_phrases = [row for row in rows.values() if row["form_kind"] == "message"]
+    assert new_phrases
+    assert all(row["default_origin"] == "analysis" for row in new_phrases)
+    assert all(row["default_decision"] == "keep" for row in new_phrases)
     policy.save_overrides(chat, next_job, 0, {"бял": "keep"})
     assert policy.explain_forms(chat, next_job, raw)["forms"] == page["forms"]
     assert policy.metadata(chat, next_job)["overrides"] == {"бял": "keep"}

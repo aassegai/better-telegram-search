@@ -11,7 +11,11 @@ from telegram_search.search.chunking.noise.compile import (
     compile_policy,
     exact_forms,
 )
+from telegram_search.search.chunking.noise.contracts import validate_evidence
 from telegram_search.search.chunking.noise.coverage import application_ready
+from telegram_search.search.chunking.noise.lexicon import load_lexicon
+from telegram_search.search.chunking.noise.message_candidates import auto_message_reason
+from telegram_search.search.chunking.noise.messages import is_message_form
 from telegram_search.search.chunking.policy import (
     APPROVED_FILLER,
     DEFAULT_POLICY,
@@ -161,16 +165,56 @@ class NoisePolicyService:
                 raise UserError("Отчёт анализа изменён. Запустите анализ заново.")
             with report.connect() as conn:
                 report.verify(conn)
-                accepted = [
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT form FROM forms WHERE decision='omit' "
-                        "AND eligible_count>0 ORDER BY form"
-                    )
-                ]
+                accepted = []
+                lexicon = None
+                useful_words = None
+                for count in conn.execute(
+                    "SELECT form,whole_count,eligible_count,payload FROM forms "
+                    "WHERE decision='omit' "
+                    "AND eligible_count>0 ORDER BY form"
+                ):
+                    check()
+                    form = count["form"]
+                    if form not in APPROVED_FILLER:
+                        if (
+                            not is_message_form(form)
+                            or summary.get("message_auto_omit_enabled") is not True
+                            or summary.get("message_auto_omit_version")
+                            != "whole-command-seeds-lexicon-v1"
+                        ):
+                            raise UserError("Версия решений анализа не поддерживается.")
+                        candidate = validate_evidence(json.loads(count["payload"]), form)
+                        stats = dict(count)
+                        stats["days"] = conn.execute(
+                            "SELECT COUNT(*) FROM days WHERE form=?", (form,)
+                        ).fetchone()[0]
+                        stats["eligible_days"] = conn.execute(
+                            "SELECT COUNT(*) FROM eligible_days WHERE form=?", (form,)
+                        ).fetchone()[0]
+                        stats["bot_commands"] = conn.execute(
+                            "SELECT COALESCE((SELECT uses FROM signals WHERE form=? "
+                            "AND kind='bot_command'),0)",
+                            (form,),
+                        ).fetchone()[0]
+                        if lexicon is None:
+                            lexicon = load_lexicon(check)
+                            if (
+                                not isinstance(summary.get("lexicon"), dict)
+                                or summary["lexicon"].get("sha256") != lexicon.sha256
+                            ):
+                                raise UserError("Версия решений анализа не поддерживается.")
+                            useful_words = frozenset(lexicon.forms)
+                        reason = auto_message_reason(
+                            form, stats, candidate["primary_seed"], useful_words=useful_words
+                        )
+                        if (
+                            not reason
+                            or candidate["reason"] != reason
+                            or candidate["decision"] != "omit"
+                        ):
+                            raise UserError("Версия решений анализа не поддерживается.")
+                    accepted.append(form)
                 # No uncalibrated novel form can enter the automatic draft.
-                if any(form not in APPROVED_FILLER for form in accepted):
-                    raise UserError("Версия решений анализа не поддерживается.")
                 for form in selected:
                     if not conn.execute("SELECT 1 FROM forms WHERE form=?", (form,)).fetchone():
                         raise UserError("Форма не найдена в выбранном отчёте.")

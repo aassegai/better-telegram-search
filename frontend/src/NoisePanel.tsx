@@ -9,6 +9,7 @@ import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type Nois
 const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Частичный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
 const phases: Record<string, string> = { queued: 'Ожидаем очередь', scan: 'Считаем сообщения', lexicon: 'Готовим словарь гипотез', candidates: 'Сравниваем варианты', failed: 'Ошибка анализа' };
 const errors: Record<string, string> = { source_changed: 'Диалог или исключения изменились. Запустите анализ заново.', time_limit: 'Достигнут лимит времени анализа.', report_size_limit: 'Достигнут лимит размера отчёта.', analysis_failed: 'Не удалось выполнить анализ. Запустите его заново.', result_save_failed: 'Не удалось сохранить анализ. Перезапустите приложение.', interrupted: 'Анализ прерван перезапуском.' };
+const jobLabel = (job: NoiseJob) => ['ready', 'limited'].includes(job.state) && job.summary?.scan_complete === true && !job.summary.complete ? 'Отчёт готов с ограничениями' : noiseLabel(states, job.state, 'Нет данных');
 const limits: Record<string, string> = { message_limit: 'Лимит сообщений', form_limit: 'Лимит однословных форм', phrase_form_limit: 'Лимит слов из фраз', text_limit: 'Ограничение размера сообщения', candidate_limit: 'Ограничение гипотез', payload_limit: 'Ограничение подробностей отчёта', report_size_limit: 'Достигнут лимит размера отчёта.' };
 type View = 'forms' | 'families';
 type Action = (current: () => boolean, signal: AbortSignal) => Promise<void>;
@@ -27,6 +28,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const [dirty, setDirty] = useState(false);
   const [comparisonProtected, setComparisonProtected] = useState(false);
   const [page, setPage] = useState<NoisePage | null>(null);
+  const [family, setFamily] = useState<{ seed: string; page: NoisePage | null } | null>(null);
   const [view, setView] = useState<View>('forms');
   const [decision, setDecision] = useState('review');
   const [offset, setOffset] = useState(0);
@@ -42,7 +44,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const op = useDialogOperation();
 
   useEffect(() => () => request.current?.abort(), []);
-  const clearReview = () => { setPage(null); setPreview(null); setOverrides({}); setDirty(false); setDraft(null); setOffset(0); };
+  const clearReview = () => { setPage(null); setFamily(null); setPreview(null); setOverrides({}); setDirty(false); setDraft(null); setOffset(0); };
   const choose = (id: string | null) => {
     if (id !== selectedRef.current) { clearReview(); setNotice(''); }
     selectedRef.current = id; setSelected(id);
@@ -50,14 +52,14 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const acceptJob = (value: NoiseJob) => {
     setJob(value); setJobs(previous => previous.map(item => item.id === value.id ? value : item));
     if (value.stale) {
-      setPage(null); setPreview(null); setOverrides({}); setDirty(false);
+      setPage(null); setFamily(null); setPreview(null); setOverrides({}); setDirty(false);
       setDraft(previous => previous ? { ...previous, overrides: {}, overrides_available: false, stale: true } : null);
     }
   };
   const acceptDraft = (value: NoiseDraft, preserveEdits = false) => {
     if (preview && (preview.revision !== value.revision || (draft && (draft.current_policy_id !== value.current_policy_id || JSON.stringify(draft.overrides) !== JSON.stringify(value.overrides))))) setPreview(null);
     if (value.stale || !value.overrides_available) {
-      setDraft(value); setOverrides({}); setDirty(false); setPage(null); setPreview(null); return;
+      setDraft(value); setOverrides({}); setDirty(false); setPage(null); setFamily(null); setPreview(null); return;
     }
     if (preserveEdits) {
       if (draft && value.revision !== draft.revision) op.setError(t('Проект изменился. Обновите его перед сохранением.'));
@@ -115,12 +117,12 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   }, [open, selected, pollEpoch, base]);
   useEffect(() => {
     // External policy/model rebuilds make any earlier preview inapplicable.
-    setPreview(null); setPage(null); setPollEpoch(value => value + 1);
+    setPreview(null); setPage(null); setFamily(null); setPollEpoch(value => value + 1);
   }, [currentPolicyId]);
 
   const loadReport = (nextView = view, nextDecision = decision, nextOffset = offset) => perform(async (current, signal) => {
     if (!selected) return;
-    setPage(null);
+    setPage(null); setFamily(null);
     const query = new URLSearchParams({ offset: String(nextOffset), limit: '50' });
     if (nextView === 'forms' && nextDecision) query.set('decision', nextDecision);
     const [result, metadata] = await Promise.all([
@@ -131,6 +133,25 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     if (metadata.stale) { acceptDraft(metadata); return; }
     setPage(result); setView(nextView); setDecision(nextDecision); setOffset(nextOffset); acceptDraft(metadata, dirty);
   });
+  const loadFamily = (seed: string | null, nextOffset = 0) => {
+    if (seed === null) { setFamily(null); return; }
+    perform(async (current, signal) => {
+      if (!selected) return;
+      if (nextOffset === 0) setFamily({ seed, page: null });
+      const query = new URLSearchParams({ family: seed, offset: String(nextOffset), limit: '50' });
+      const [result, metadata] = await Promise.all([
+        api<NoisePage>(`${base}/${selected}/forms?${query}`, { signal }),
+        api<NoiseDraft>(`${base}/${selected}/draft`, { signal }),
+      ]);
+      if (!current() || selectedRef.current !== selected) return;
+      if (metadata.stale) { acceptDraft(metadata); return; }
+      acceptDraft(metadata, dirty);
+      setFamily(previous => ({ seed, page: { ...result, forms: [
+        ...(nextOffset && previous?.seed === seed ? previous.page?.forms ?? [] : []),
+        ...result.forms ?? [],
+      ] } }));
+    });
+  };
   const start = () => perform(async (current, signal) => {
     const value = await api<NoiseJob>(base, { method: 'POST', signal, body: JSON.stringify({ max_messages: maxMessages, time_limit_seconds: timeLimit }) });
     if (current()) { choose(value.id); clearReview(); setJobs(previous => [value, ...previous.filter(item => item.id !== value.id)]); setJob(value); setNotice(''); }
@@ -192,11 +213,11 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
       if (event.target !== event.currentTarget) return;
       const visible = event.currentTarget.open; setOpen(visible); onOpenChange(visible);
       if (visible) { if (!op.busy) perform(loadList); else setReloadRequested(true); }
-      else { interaction.current++; request.current?.abort(); setReloadRequested(false); setPage(null); setPreview(null); }
+      else { interaction.current++; request.current?.abort(); setReloadRequested(false); setPage(null); setFamily(null); setPreview(null); }
     }}>
       <summary>{t('Фильтр смыслового шума')}</summary>
-      <p>{t('Анализ сообщений с менее чем пятью уникальными словами. Длинные сообщения пропускаются; переписка и поиск по словам сохраняются.')}</p>
-      <p className="baseline-note">{t('Автоматический отсев новых форм пока выключен. Спорные формы сохраняются; исключение можно задать вручную.')}</p>
+      <p>{t('Анализ целых сообщений с менее чем пятью уникальными словами: реакции, многословный спам, команды и семейства опечаток. Переписка и поиск по словам сохраняются.')}</p>
+      <p className="baseline-note">{t('Уверенные команды и подтверждённые семейства отбираются в проект автоматически. Одна частота повторений не доказывает спам; сомнительные сообщения сохраняются. Индекс меняется только после применения правил.')}</p>
       <details className="noise-limits"><summary>{t('Лимиты анализа')}</summary>
         <label>{t('Максимум сообщений')}<input type="number" min="1" max="1000000" value={Number.isNaN(maxMessages) ? '' : maxMessages} disabled={busy} onChange={event => setMaxMessages(event.target.value === '' ? NaN : Number(event.target.value))} /></label>
         <label>{t('Лимит времени, с')}<input type="number" min="1" max="3600" value={Number.isNaN(timeLimit) ? '' : timeLimit} disabled={busy} onChange={event => setTimeLimit(event.target.value === '' ? NaN : Number(event.target.value))} /></label>
@@ -209,16 +230,17 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
       {jobs.length > 0 && <label>{t('Отчёт анализа')}<select disabled={busy || dirty} value={selected ?? ''} onChange={event => {
         const id = event.target.value; choose(id); const chosen = jobs.find(item => item.id === id); if (chosen) acceptJob(chosen);
         perform(async (current, signal) => { const metadata = await api<NoiseDraft>(`${base}/${id}/draft`, { signal }); if (current() && selectedRef.current === id) acceptDraft(metadata); });
-      }}>{jobs.map(item => <option key={item.id} value={item.id}>{new Date(item.created_at * 1000).toLocaleString(uiLocale())} · {t(noiseLabel(states, item.state, 'Нет данных'))} · {item.id.slice(0, 8)}</option>)}</select></label>}
+      }}>{jobs.map(item => <option key={item.id} value={item.id}>{new Date(item.created_at * 1000).toLocaleString(uiLocale())} · {t(jobLabel(item))} · {item.id.slice(0, 8)}</option>)}</select></label>}
       {job && <div className="noise-job" aria-live="polite">
-        <strong>{t(noiseLabel(states, job.state, 'Нет данных'))}</strong>
+        <strong>{t(jobLabel(job))}</strong>
         {active && <>
           <p>{t(noiseLabel(phases, job.progress.phase, 'Анализируем'))} · {t('Прошло {p0} с', { p0: Math.round(job.progress.elapsed_seconds) })}</p>
           <progress aria-label={t('Прогресс анализа')} value={job.progress.total !== null ? job.progress.completed : undefined} max={job.progress.total || 1} />
           {job.progress.waiting_reason === 'database' && <p>{t('Ожидаем доступ к базе.')}</p>}
           <button type="button" disabled={busy || job.state === 'cancelling'} onClick={cancel}>{t('Отменить анализ')}</button>
         </>}
-        <p>{t('Просмотрено сообщений: {p0} · однословных: {p1} · форм: {p2}', { p0: job.summary?.scanned_messages ?? job.progress.scanned_messages ?? 0, p1: job.summary?.whole_messages ?? job.progress.whole_messages ?? 0, p2: job.summary?.forms ?? job.progress.forms ?? 0 })}</p>
+        <p>{t((job.summary?.message_forms_enabled ?? job.progress.message_forms_enabled) ? 'Просмотрено сообщений: {p0} · коротких: {p1} · вариантов: {p2}' : 'Просмотрено сообщений: {p0} · однословных: {p1} · форм: {p2}', { p0: job.summary?.scanned_messages ?? job.progress.scanned_messages ?? 0, p1: job.summary?.whole_messages ?? job.progress.whole_messages ?? 0, p2: job.summary?.forms ?? job.progress.forms ?? 0 })}</p>
+        {job.summary?.scan_complete === true && <p role="status">{t('Проход по диалогу завершён. Пропуски и ограничения отдельных гипотез указаны ниже; анализ не завис.')}</p>}
         {job.stale && <p className="warning">{t('Диалог или исключения изменились. Запустите анализ заново.')}</p>}
         {job.error && !job.stale && <p className={['time_limit', 'report_size_limit'].includes(job.error) && noiseApplicable(job.summary) ? 'warning' : 'error'} role="alert">{t(noiseLabel(errors, job.error, 'Не удалось выполнить анализ. Запустите его заново.'))}</p>}
         {job.summary?.limits?.map(limit => <p className="warning" key={limit}>{t(noiseLabel(limits, limit, 'Неполное покрытие анализа'))}</p>)}
@@ -229,6 +251,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
         {job.state === 'limited' && !noiseApplicable(job.summary) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
         {job.state === 'ready' && (!hasDigest || !noiseApplicable(job.summary)) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
         <div className="job-actions"><button type="button" disabled={busy || !canReview} onClick={() => loadReport(view, decision, 0)}>{t('Просмотреть отчёт')}</button><button type="button" disabled={busy || active || comparisonProtected || dirty} onClick={remove}>{t('Удалить отчёт')}</button></div>
+        <button type="button" disabled={busy || !canReview} onClick={() => loadReport('families', '', 0)}>{t('Семейства и варианты сообщений')}</button>
         <p className="baseline-note">{t('Удаление отчёта не меняет уже выбранные правила и индексы.')}</p>
       </div>}
       {page && <>
@@ -236,7 +259,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
           <label>{t('Часть отчёта')}<select value={view} disabled={busy} onChange={event => loadReport(event.target.value as View, decision, 0)}><option value="forms">{t('Формы')}</option><option value="families">{t('Семейства')}</option></select></label>
           {view === 'forms' && <label>{t('Решения анализа')}<select disabled={busy} value={decision} onChange={event => loadReport(view, event.target.value, 0)}><option value="">{t('Все решения')}</option><option value="review">{t('Неоднозначные')}</option><option value="keep">{t('Сохранить')}</option><option value="omit">{t('Исключить из смыслового текста')}</option></select></label>}
         </div>
-        <NoiseReport page={page} overrides={overrides} disabled={busy || !canEdit} onOverride={changeOverride} />
+        <NoiseReport page={page} overrides={overrides} disabled={busy || !canEdit} onOverride={changeOverride} family={family} onFamily={loadFamily} familyBusy={busy} />
         <div className="job-actions"><button type="button" disabled={busy || offset === 0} onClick={() => loadReport(view, decision, Math.max(0, offset - 50))}>{t('Предыдущие записи')}</button><button type="button" disabled={busy || page.next_offset === null} onClick={() => { if (page.next_offset !== null) loadReport(view, decision, page.next_offset); }}>{t('Следующие записи')}</button></div>
       </>}
       {draft && !draft.stale && <div className="noise-draft">

@@ -13,7 +13,7 @@ from telegram_search.config.model_registry import model_spec
 from telegram_search.indexing.noise_policy import NoiseDraftConflict
 from telegram_search.indexing.noise_source import DryRunLimited, NoiseSource
 from telegram_search.search.chunking.builder import EpisodeBuilder
-from telegram_search.search.chunking.classification import classify, whole_word
+from telegram_search.search.chunking.classification import classify
 from telegram_search.search.chunking.legacy import ChunkBuilder
 from telegram_search.search.chunking.noise.contracts import DryRunOptions
 from telegram_search.search.chunking.noise.dry_run import (
@@ -21,6 +21,7 @@ from telegram_search.search.chunking.noise.dry_run import (
     ChunkMetrics,
     OwnedMessages,
 )
+from telegram_search.search.chunking.noise.messages import message_form
 from telegram_search.search.chunking.policy import APPROVED_FILLER, LEGACY_POLICY_ID
 from telegram_search.security.paths import is_link_or_reparse
 from telegram_search.shared.errors import UserError
@@ -234,7 +235,7 @@ class NoiseDryRun:
                                 else None
                             )
                             classified = classify(message, policy, parent)
-                            form = whole_word(message.text)
+                            form = message_form(message.text)
                             counts["classified_omitted_messages"] += int(
                                 classified.role == "filler" and not classified.include
                             )

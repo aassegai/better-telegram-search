@@ -344,5 +344,6 @@
   "Версия решений анализа не поддерживается.": "This analysis decision version is unsupported.",
   "Форма не найдена в выбранном отчёте.": "The form was not found in this report.",
   "Не удалось скомпилировать правила. Проверьте лимиты проекта.": "Could not compile rules. Check the draft limits.",
-  "Нужен актуальный завершённый отчёт. Запустите анализ заново.": "A current finalized report is required. Run the analysis again."
+  "Нужен актуальный завершённый отчёт. Запустите анализ заново.": "A current finalized report is required. Run the analysis again.",
+  "Недопустимое семейство сообщений.": "Invalid message family."
 }

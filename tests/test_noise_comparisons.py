@@ -311,7 +311,8 @@ def test_oversized_author_id_is_bounded_before_python_and_marks_source_incomplet
 
     monkeypatch.setattr(analyses, "_source_page", checked)
     state = start_ready(analyses, chat)
-    assert state["state"] == "limited" and not state["summary"]["source_complete"]
+    assert state["state"] == "ready" and not state["summary"]["source_complete"]
+    assert state["summary"]["scan_complete"]
     assert state["summary"]["limited_messages"] == 1 and pages == [1]
     with db.connect() as conn:
         assert (

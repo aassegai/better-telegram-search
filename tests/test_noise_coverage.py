@@ -210,7 +210,7 @@ def test_long_messages_are_skipped_and_do_not_block_rules(db, importer, tmp_path
     state = start_ready(analyses, chat)
     assert state["summary"]["skipped_long_messages"] == 1
     assert state["summary"]["limited_messages"] == 1
-    assert state["summary"]["statistics_scope"] == "short-messages-under-five-unique-v1"
+    assert state["summary"]["statistics_scope"] == "whole-short-messages-under-five-unique-v2"
     assert application_ready(state["summary"])
     assert {row["form"] for row in analyses.report(chat, state["id"])["forms"]} == {"бял"}
     policies.save_overrides(chat, state["id"], 0, {"бял": "omit"})

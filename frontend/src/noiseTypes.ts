@@ -3,11 +3,12 @@ export type NoiseJob = {
   id: string; state: string; stale: boolean; active?: boolean; created_at: number;
   error?: string | null;
   progress: { phase: string; completed: number; total: number | null; elapsed_seconds: number;
-    scanned_messages?: number; whole_messages?: number; forms?: number; waiting_reason?: string | null };
+    scanned_messages?: number; whole_messages?: number; forms?: number; waiting_reason?: string | null; message_forms_enabled?: boolean };
   summary?: { complete: boolean; limits: string[]; scanned_messages: number; whole_messages: number;
     coverage_version?: string; source_complete?: boolean; evidence_complete?: boolean;
     policy_applicable?: boolean; limited_evidence_forms?: number; new_auto_omit_enabled?: boolean;
     limited_messages?: number; skipped_long_messages?: number; statistics_scope?: string; max_unique_words?: number;
+    scan_complete?: boolean; single_word_messages?: number; message_forms_enabled?: boolean; message_auto_omit_enabled?: boolean;
     forms: number; decisions: Record<string, number>; cpu_seconds: number; process_rss_mib: number; report_sha256?: string } | null;
 };
 export type NoiseDraft = { id: string; revision: number; overrides: Record<string, NoiseDecision>;
@@ -16,6 +17,7 @@ export type NoiseDraft = { id: string; revision: number; overrides: Record<strin
 export type NoisePreview = { policy_id: string; version: string; revision: number; explicit_omit_forms: number; keep_forms: number };
 export type NoiseHypothesis = { form: string; operation: string; corpus_count: number; score: number };
 export type NoiseForm = { form: string; whole_count: number; eligible_count: number; days: number;
+  form_kind?: 'word' | 'message';
   inherited_decision?: NoiseDecision | null; default_decision?: NoiseDecision; default_origin?: 'inherited' | 'base' | 'analysis';
   authors: number; protections: Record<string, number>; candidate: null | { decision: string; reason: string;
     complete: boolean; noise: NoiseHypothesis[]; useful: NoiseHypothesis[]; unchanged: NoiseHypothesis;

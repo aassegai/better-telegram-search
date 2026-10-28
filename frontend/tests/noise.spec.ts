@@ -156,7 +156,7 @@ test('real synthetic API report is applied from the chat UI without model prepar
     const panel = page.locator('.noise-panel');
     await panel.locator(':scope > details > summary').click();
     await panel.getByRole('button', { name: 'Запустить анализ', exact: true }).click();
-    await expect(panel.getByText('Отчёт готов', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(panel.getByText('Отчёт готов с ограничениями', { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(panel.getByText('Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')).toBeVisible();
     await panel.getByRole('button', { name: 'Просмотреть отчёт' }).click();
     await panel.getByRole('combobox', { name: 'Решение для бял', exact: true }).selectOption('omit');
@@ -171,7 +171,7 @@ test('real synthetic API report is applied from the chat UI without model prepar
     const found = await (await page.request.get('/api/search', { params: { q: 'бял', chat_id: chatId, mode: 'words' } })).json();
     expect(found.results[0].message_id).toBe(2);
     await panel.getByRole('button', { name: 'Запустить анализ', exact: true }).click();
-    await expect(panel.getByText('Отчёт готов', { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(panel.getByText('Отчёт готов с ограничениями', { exact: true })).toBeVisible({ timeout: 15000 });
     await panel.getByRole('button', { name: 'Просмотреть отчёт' }).click();
     await expect(panel.getByText('Ранее выбранное правило: Исключать с учётом защит')).toBeVisible();
     await expect(panel.getByText('Правило проекта: Исключать с учётом защит')).toBeVisible();
@@ -333,5 +333,81 @@ for (const english of [false, true]) for (const legacy of [false, true]) {
     await panel.getByRole('button', { name: english ? 'Apply rules and rebuild text' : 'Применить правила и перестроить текст' }).click();
     expect(state.overrides).toEqual({ бял: 'keep' });
     expect(state.writes.some(write => write.path.endsWith('/apply'))).toBe(true);
+  });
+}
+
+for (const english of [false, true]) {
+  test(`whole-message families and finished scan limits are explicit (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    state.job = readyNoiseJob({ complete: false, limits: ['text_limit', 'candidate_limit'],
+      coverage_version: 'bounded-exact-rules-v2', source_complete: false, evidence_complete: false,
+      policy_applicable: true, new_auto_omit_enabled: false, message_forms_enabled: true,
+      message_auto_omit_enabled: true, scan_complete: true, scanned_messages: 312142,
+      whole_messages: 150000, forms: 5144, limited_messages: 8 });
+    state.job.state = 'limited';
+    Object.assign(state.forms[0], { form: 'покормить жабу', form_kind: 'message',
+      default_decision: 'omit', candidate: { ...state.forms[0].candidate, decision: 'omit',
+        reason: 'approved_message_seed', unchanged: { ...state.forms[0].candidate.unchanged, form: 'покормить жабу' } } });
+    const panel = await openNoise(page, english);
+    await expect(panel.getByText(english ? 'Report ready with limits' : 'Отчёт готов с ограничениями', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('status').filter({ hasText: english ? 'The dialog scan is complete.' : 'Проход по диалогу завершён.' })).toBeVisible();
+    await expect(panel.getByText(english ? 'Messages scanned: 312142 · short messages: 150000 · variants: 5144' : 'Просмотрено сообщений: 312142 · коротких: 150000 · вариантов: 5144', { exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: english ? 'Review report' : 'Просмотреть отчёт' }).click();
+    await panel.getByRole('combobox', { name: english ? 'Analysis decisions' : 'Решения анализа', exact: true }).selectOption('');
+    await expect(panel.getByText(english ? 'Whole message · the rule does not remove individual words from phrases' : 'Целое сообщение · правило не удаляет отдельные слова из фраз', { exact: true })).toBeVisible();
+    const command = panel.getByRole('article').filter({ hasText: 'покормить жабу' }).first();
+    await command.getByText(english ? 'Why this decision' : 'Почему такое решение', { exact: true }).click();
+    await expect(command.getByText(english ? 'Confirmed whole command' : 'Подтверждённая команда целиком', { exact: true })).toBeVisible();
+    await expect(command.getByText(english ? 'Similar messages and families' : 'Похожие сообщения и семейства', { exact: true })).toBeVisible();
+    await panel.getByRole('combobox', { name: english ? 'Decision for покормить жабу' : 'Решение для покормить жабу', exact: true }).selectOption('keep');
+    await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
+    expect(state.overrides['покормить жабу']).toBe('keep');
+    expect(state.writes.some(item => item.path.endsWith('/apply'))).toBe(false);
+  });
+}
+
+test('active whole-message analysis labels the short-message counter before a summary exists', async ({ page }) => {
+  const state = await mockNoise(page, true);
+  state.job = { ...readyNoiseJob(), state: 'running', active: true, summary: null!,
+    progress: { ...readyNoiseJob().progress, message_forms_enabled: true, scanned_messages: 100, whole_messages: 75, forms: 20 } };
+  state.autoFinish = false;
+  const panel = await openNoise(page);
+  await expect(panel.getByText('Просмотрено сообщений: 100 · коротких: 75 · вариантов: 20', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Отменить анализ' })).toBeEnabled();
+});
+
+for (const english of [false, true]) {
+  test(`whole family opens all variants and applies independent keep/omit decisions (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    state.forms = state.forms.slice(0, 2);
+    const seed = 'покормить жабу';
+    state.families = [{ seed, observed_count: 8, eligible_count: 8, omit_count: 4, review_count: 4, keep_count: 0 }];
+    for (const [index, text] of [seed, 'покорить жабу'].entries()) {
+      Object.assign(state.forms[index], { form: text, form_kind: 'message', default_decision: index ? 'keep' : 'omit',
+        candidate: { ...state.forms[index].candidate, decision: index ? 'review' : 'omit',
+          noise: [{ form: seed, operation: index ? 'deletion' : 'exact', corpus_count: 4, score: 1 }],
+          unchanged: { ...state.forms[index].candidate.unchanged, form: text } } });
+    }
+    const panel = await openNoise(page, english);
+    await panel.getByRole('button', { name: english ? 'Message families and variants' : 'Семейства и варианты сообщений' }).click();
+    const open = panel.getByRole('button', { name: english ? 'Open entire family' : 'Открыть всё семейство' });
+    await expect(open).toHaveAttribute('aria-expanded', 'false');
+    await open.click();
+    const original = panel.getByRole('combobox', { name: english ? `Decision for ${seed}` : `Решение для ${seed}`, exact: true });
+    const variant = panel.getByRole('combobox', { name: english ? 'Decision for покорить жабу' : 'Решение для покорить жабу', exact: true });
+    await expect(original).toBeEnabled();
+    await expect(variant).toBeEnabled();
+    await original.selectOption('keep');
+    await variant.selectOption('omit');
+    await panel.getByRole('button', { name: english ? 'Hide variants' : 'Скрыть варианты' }).click();
+    await panel.getByRole('button', { name: english ? 'Open entire family' : 'Открыть всё семейство' }).click();
+    await expect(original).toHaveValue('keep');
+    await expect(variant).toHaveValue('omit');
+    expect(state.writes).toEqual([]);
+    await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
+    expect(state.overrides).toEqual({ [seed]: 'keep', 'покорить жабу': 'omit' });
+    await panel.getByRole('button', { name: english ? 'Preview rules' : 'Предпросмотр правил' }).click();
+    await panel.getByRole('button', { name: english ? 'Apply rules and rebuild text' : 'Применить правила и перестроить текст' }).click();
+    expect(state.writes.find(item => item.path.endsWith('/apply'))?.body).toEqual({ revision: 1 });
   });
 }

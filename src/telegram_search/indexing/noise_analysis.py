@@ -16,12 +16,13 @@ from telegram_search.search.chunking.noise.candidates import CandidateGenerator
 from telegram_search.search.chunking.noise.contracts import ANALYSIS_VERSION, AnalysisOptions
 from telegram_search.search.chunking.noise.coverage import application_ready, coverage
 from telegram_search.search.chunking.noise.lexicon import load_lexicon
+from telegram_search.search.chunking.noise.message_candidates import MessageCandidates
+from telegram_search.search.chunking.noise.messages import is_message_form
 from telegram_search.search.chunking.noise.scoring import SCORE_VERSION, evaluate
 from telegram_search.search.chunking.noise.statistics import (
     MAX_METADATA_CHARS,
     MAX_TEXT_CHARS,
     MAX_UNIQUE_WORDS,
-    STATISTICS_SCOPE,
     collect_batch,
 )
 from telegram_search.shared.errors import UserError
@@ -96,6 +97,7 @@ class NoiseAnalysisService:
                     "total": None,
                     "scanned_messages": 0,
                     "whole_messages": 0,
+                    "message_forms_enabled": True,
                     "forms": 0,
                     "elapsed_seconds": 0,
                     "version": ANALYSIS_VERSION,
@@ -196,6 +198,10 @@ class NoiseAnalysisService:
                     "json_extract(CASE WHEN e.type='object' THEN e.value ELSE '{}' END,'$.type') "
                     "IN ('mention','text_mention','text_link','code','pre','link')) "
                     "END AS protected,"
+                    "CASE WHEN length(m.raw_json)>? THEN 0 ELSE "
+                    "EXISTS(SELECT 1 FROM json_each(m.raw_json,'$.text_entities') e WHERE "
+                    "json_extract(CASE WHEN e.type='object' THEN e.value ELSE '{}' END,'$.type') "
+                    "='bot_command') END AS bot_command,"
                     "CASE WHEN length(p.text)>? THEN 1 "
                     "ELSE COALESCE(instr(p.text,'?')>0,0) END AS parent_question "
                     "FROM indexable_messages m LEFT JOIN indexable_messages p "
@@ -206,6 +212,7 @@ class NoiseAnalysisService:
                     "ORDER BY m.timestamp,m.message_id LIMIT ?",
                     (
                         MAX_TEXT_CHARS + 1,
+                        MAX_METADATA_CHARS,
                         MAX_METADATA_CHARS,
                         MAX_METADATA_CHARS,
                         MAX_METADATA_CHARS,
@@ -220,6 +227,8 @@ class NoiseAnalysisService:
     def _analyze(self, job):
         report = NoiseReport(self.db, job.id, job.fence, create=True)
         scanned = whole = limited_messages = skipped_long = 0
+        single_words = 0
+        scan_complete = False
         comparisons = postings = limited_evidence_forms = 0
         lexicon = None
         try:
@@ -231,13 +240,17 @@ class NoiseAnalysisService:
                 self._checkpoint(job)
                 rows = self._page(job, cursor, min(128, job.options.max_messages - scanned))
                 if not rows:
+                    scan_complete = True
                     break
                 # No archive connection or write transaction is held during text work.
-                batch = collect_batch(rows, salt, lambda: self._checkpoint(job))
+                batch = collect_batch(
+                    rows, salt, lambda: self._checkpoint(job), include_messages=True
+                )
                 self._checkpoint(job)
                 report.add_batch(batch, job.options.max_forms)
                 scanned += len(rows)
                 whole += len(batch.observations)
+                single_words += batch.single_word_messages
                 limited_messages += batch.limited_messages
                 skipped_long += batch.skipped_long_messages
                 cursor = rows[-1]["timestamp"], rows[-1]["message_id"]
@@ -248,13 +261,25 @@ class NoiseAnalysisService:
                     whole_messages=whole,
                     forms=report.forms_count,
                 )
-            if scanned == job.options.max_messages and self._page(job, cursor, 1):
-                report.limits.add("message_limit")
+            if scanned == job.options.max_messages:
+                if self._page(job, cursor, 1):
+                    report.limits.add("message_limit")
+                else:
+                    scan_complete = True
             self._current(job)
             self._progress(job, phase="lexicon", completed=0, total=None)
             lexicon = load_lexicon(lambda: self._checkpoint(job))
             generator = CandidateGenerator(
                 useful_words=lexicon.forms, check=lambda: self._checkpoint(job)
+            )
+            with report.connect() as reader:
+                leaders = reader.execute(
+                    "SELECT form,whole_count FROM forms WHERE instr(form,' ')>0 "
+                    "AND whole_count>=3 AND eligible_count>0 "
+                    "ORDER BY whole_count DESC,form LIMIT 2000"
+                ).fetchall()
+            messages = MessageCandidates(
+                leaders, useful_words=lexicon.forms, check=lambda: self._checkpoint(job)
             )
             self._current(job)
             self._progress(job, phase="candidates", completed=0, total=report.forms_count)
@@ -270,12 +295,17 @@ class NoiseAnalysisService:
                     candidates = []
                     for count in counts:
                         self._checkpoint(job)
-                        evidence = generator.analyze(
-                            count["form"], check=lambda: self._checkpoint(job)
-                        )
-                        comparisons += evidence.comparisons
-                        postings += evidence.postings_read
-                        payload = evaluate(evidence, count, frequency)
+                        if is_message_form(count["form"]):
+                            payload = messages.evaluate(
+                                count["form"], count, frequency, check=lambda: self._checkpoint(job)
+                            )
+                        else:
+                            evidence = generator.analyze(
+                                count["form"], check=lambda: self._checkpoint(job)
+                            )
+                            comparisons += evidence.comparisons
+                            postings += evidence.postings_read
+                            payload = evaluate(evidence, count, frequency)
                         if not payload["complete"]:
                             report.limits.add("candidate_limit")
                         candidates.append((count, payload))
@@ -328,11 +358,16 @@ class NoiseAnalysisService:
             **coverage(report.limits),
             "limited_evidence_forms": limited_evidence_forms,
             "scanned_messages": scanned,
+            "scan_complete": scan_complete,
             "whole_messages": whole,
+            "single_word_messages": single_words,
+            "message_forms_enabled": True,
+            "message_auto_omit_enabled": True,
+            "message_auto_omit_version": "whole-command-seeds-lexicon-v1",
             "forms": report.forms_count,
             "limited_messages": limited_messages,
             "skipped_long_messages": skipped_long,
-            "statistics_scope": STATISTICS_SCOPE,
+            "statistics_scope": "whole-short-messages-under-five-unique-v2",
             "max_unique_words": MAX_UNIQUE_WORDS,
             "decisions": decisions,
             "candidate_comparisons": comparisons,
@@ -359,7 +394,11 @@ class NoiseAnalysisService:
             job.summary = self._analyze(job)
             job.state = (
                 "ready"
-                if application_ready(job.summary) and job.summary["source_complete"]
+                if application_ready(job.summary)
+                and job.summary["scan_complete"]
+                and not (
+                    set(job.summary["limits"]) - {"text_limit", "candidate_limit", "payload_limit"}
+                )
                 else "limited"
             )
         except AnalysisCancelled:
@@ -422,6 +461,29 @@ class NoiseAnalysisService:
             error = job.error if job else row["error"]
             active = job is not None and not job.publish_failed
         stale = row["stale"]
+        summary = None if stale else json.loads(row["summary_json"] or "null")
+        if (
+            isinstance(summary, dict)
+            and "scan_complete" not in summary
+            and state in {"ready", "limited"}
+            and error is None
+            and progress.get("phase") == "candidates"
+            and isinstance(summary.get("limits"), list)
+            and all(type(limit) is str for limit in summary["limits"])
+            and not (
+                set(summary["limits"])
+                - {
+                    "text_limit",
+                    "candidate_limit",
+                    "payload_limit",
+                    "form_limit",
+                    "phrase_form_limit",
+                }
+            )
+        ):
+            # Old bounded reports entered candidates only after exhausting the
+            # source. Expose this fact without rewriting their digest or rules.
+            summary["scan_complete"] = True
         return {
             "id": job_id,
             "state": "stale" if stale else state,
@@ -431,7 +493,7 @@ class NoiseAnalysisService:
             "revision": fence_id(json.loads(row["fence_json"])),
             "progress": progress,
             "error": "source_changed" if stale else error,
-            "summary": None if stale else json.loads(row["summary_json"] or "null"),
+            "summary": summary,
             "options": json.loads(row["options_json"]),
             "new_auto_omit_enabled": False,
         }
