@@ -127,7 +127,7 @@ test('OCR model selection is saved separately from hybrid devices and preserves 
   expect(writes).toEqual([]);
   await recognition.getByRole('button', { name: 'Сохранить выбор OCR', exact: true }).click();
   await expect(recognition.getByRole('button', { name: 'Сохранить выбор OCR', exact: true })).toBeDisabled();
-  expect(writes).toEqual([{ device: 'cpu', ocr_engine: 'paddle' }]);
+  expect(writes).toEqual([{ device: 'cpu', ocr_engine: 'paddle', defer_preparation: true }]);
   await page.getByRole('tab', { name: 'Производительность', exact: true }).click();
   await ocr.getByLabel('Устройство распознавания', { exact: true }).selectOption('hybrid');
   await expect(ocr.getByText('CPU и GPU распознают разные изображения одновременно. Пауза OCR останавливает оба устройства.')).toBeVisible();
@@ -145,5 +145,5 @@ test('OCR model selection is saved separately from hybrid devices and preserves 
   await expect(page.getByRole('button', { name: 'Save OCR selection', exact: true })).toBeDisabled();
   await page.getByRole('tab', { name: 'Performance', exact: true }).click();
   await expect(page.getByLabel('Recognition device', { exact: true })).toHaveValue('cpu');
-  expect(writes[2]).toEqual({ device: 'cpu', ocr_engine: 'tesseract' });
+  expect(writes[2]).toEqual({ device: 'cpu', ocr_engine: 'tesseract', defer_preparation: true });
 });
