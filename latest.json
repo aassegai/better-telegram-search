@@ -2,8 +2,8 @@
   "commit": "2419440be80681a53b093e5851357bb08ef04071",
   "run_id": "40684166865",
   "result": "success",
-  "draft": true,
-  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/untagged-8fd111aeba0d59bfc578",
+  "draft": false,
+  "release": "https://github.com/aassegai/better-telegram-search/releases/tag/v0.7.5",
   "builds": {
     "linux-x86_64-gpu": {
       "state": "ready",
@@ -27,7 +27,7 @@
         "telegram_runtime": true,
         "cuda_libraries": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-linux-x86_64-gpu.tar.xz",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-linux-x86_64-gpu.tar.xz",
       "core": {
         "artifact": "better-telegram-search-0.7.5-linux-x86_64-gpu-core.tar.xz",
         "bytes": 207102988,
@@ -565,7 +565,7 @@
         "device_selection": true,
         "telegram_runtime": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-linux-arm64.tar.gz"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-linux-arm64.tar.gz"
     },
     "darwin-arm64": {
       "state": "ready",
@@ -588,7 +588,7 @@
         "device_selection": true,
         "telegram_runtime": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-darwin-arm64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-darwin-arm64.zip"
     },
     "linux-x86_64": {
       "state": "ready",
@@ -611,7 +611,7 @@
         "device_selection": true,
         "telegram_runtime": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-linux-x86_64.tar.gz"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-linux-x86_64.tar.gz"
     },
     "darwin-x86_64": {
       "state": "ready",
@@ -634,7 +634,7 @@
         "device_selection": true,
         "telegram_runtime": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-darwin-x86_64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-darwin-x86_64.zip"
     },
     "win32-x86_64-gpu": {
       "state": "ready",
@@ -658,7 +658,7 @@
         "telegram_runtime": true,
         "cuda_libraries": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-win32-x86_64-gpu.zip",
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-win32-x86_64-gpu.zip",
       "core": {
         "artifact": "better-telegram-search-0.7.5-win32-x86_64-gpu-core.zip",
         "bytes": 226416222,
@@ -1160,7 +1160,7 @@
         "device_selection": true,
         "telegram_runtime": true
       },
-      "url": "https://github.com/aassegai/better-telegram-search/releases/download/untagged-8fd111aeba0d59bfc578/better-telegram-search-0.7.5-win32-x86_64.zip"
+      "url": "https://github.com/aassegai/better-telegram-search/releases/download/v0.7.5/better-telegram-search-0.7.5-win32-x86_64.zip"
     }
   },
   "jobs": [
@@ -1650,5 +1650,7 @@
   ],
   "workflow": "https://github.com/aassegai/better-telegram-search/actions/runs/40684166865",
   "failures": {},
-  "diagnostics_complete": true
+  "diagnostics_complete": true,
+  "published_tag": "v0.7.5",
+  "release_commit": "836b38b58048d111801d70449563bffa81d091ce"
 }
