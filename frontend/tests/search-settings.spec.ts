@@ -84,6 +84,24 @@ test('expanded context includes a large displayed card using its result snapshot
   await expect(page.locator('.result-card .message')).toHaveCount(100);
   await page.getByRole('button', { name: 'Открыть контекст' }).click();
   await expect(page.locator('.context-modal .message')).toHaveCount(100);
+  const close = page.getByRole('button', { name: 'Закрыть контекст', exact: true });
+  const before = await close.boundingBox();
+  await page.locator('.context-messages').evaluate(element => {
+    const scroll = element.closest('.modal')!;
+    scroll.scrollTop = scroll.scrollHeight;
+  });
+  await expect.poll(() => page.locator('.context-messages').evaluate(element => element.closest('.modal')!.scrollTop)).toBeGreaterThan(1000);
+  await expect(close).toBeInViewport();
+  expect((await close.boundingBox())!.y).toBeCloseTo(before!.y, 0);
+  await close.click();
+  await expect(page.locator('.context-modal')).toHaveCount(0);
+  const opener = page.getByRole('button', { name: 'Открыть контекст', exact: true });
+  await expect(opener).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.context-modal')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.context-modal')).toHaveCount(0);
+  await expect(opener).toBeFocused();
 });
 
 for (const otherFails of [false, true]) {

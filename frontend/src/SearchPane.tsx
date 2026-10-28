@@ -12,6 +12,7 @@ import SearchProgress from './SearchProgress';
 import { RetrievalChoice, RetrievalSummary } from './RetrievalStrategy';
 import Icon from './Icon';
 import DateField from './DateField';
+import Dialog from './Dialog';
 import ImageViewer from './ImageViewer';
 import type { OpenImage } from './ImageViewer';
 import type { Chat, Hit, MediaStatus, Message, RestoredSearch, RetrievalInfo, SearchTab, TabResult, SearchIntent, SearchPage, SearchJobStatus, SearchModality, SemanticStatus } from './types';
@@ -137,6 +138,13 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
   const [openImage, setOpenImage] = useState<OpenImage | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const contextVersion = useRef(0);
+  const contextOpener = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (context || loadingContext || !contextOpener.current) return;
+    const opener = contextOpener.current;
+    contextOpener.current = null;
+    if (active && opener.isConnected) opener.focus();
+  }, [context, loadingContext, active]);
   const [searchFilters, setSearchFilters] = useState('');
   const closeContext = () => { contextVersion.current++; setContext(null); setLoadingContext(false); };
   const reportError = (error: unknown) => setError(error instanceof Error ? error.message : t('Ошибка соединения.'));
@@ -510,6 +518,7 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
 
   async function openContext(hit: Hit, anchor = hit.message_id) {
     const version = ++contextVersion.current;
+    if (!context && !contextOpener.current && document.activeElement instanceof HTMLElement) contextOpener.current = document.activeElement;
     setLoadingContext(true);
     const position = hit.messages.findIndex(message => message.message_id === hit.message_id);
     const before = Math.min(100, Math.max(15, position + 5));
@@ -610,11 +619,11 @@ const SearchPane = forwardRef<SearchPaneHandle, SearchPaneProps>(function Search
           {hasMore && nextOffset === null && !browseCursor && <p className="more-note">{t('Показаны первые {p0} фрагментов. Уточните запрос или фильтры, чтобы найти больше.', { p0: hits.length })}</p>}
         </section>}
       </div>
-    {context && <div className="overlay"><section className="modal context-modal" role="dialog" aria-modal="true" aria-labelledby="context-title">
-      <button className="close" aria-label={t("Закрыть контекст")} onClick={closeContext}><Icon name="close" /></button><div className="eyebrow">{t("КОНТЕКСТ ДИАЛОГА")}</div><h2 id="context-title">{context.hit.chat_name}</h2>
+    {context && <Dialog className="context-modal" titleId="context-title" closeLabel={t('Закрыть контекст')} onClose={closeContext}>
+      <div className="eyebrow">{t("КОНТЕКСТ ДИАЛОГА")}</div><h2 id="context-title">{context.hit.chat_name}</h2>
       <div className="context-nav"><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[0].message_id)}><Icon name="left" size={16} />{t('Более ранние')}</button><button disabled={loadingContext} onClick={() => void openContext(context.hit, context.messages[context.messages.length - 1].message_id)}>{t('Более поздние')}<Icon name="arrow" size={16} /></button></div>
       <div className="context-messages">{context.messages.map(message => <MessageRow key={message.message_id} message={message} anchor={context.hit.message_id} query={submitted} onOpenImage={setOpenImage} />)}</div>
-    </section></div>}
+    </Dialog>}
     {openImage && <ImageViewer key={`${openImage.id}/${openImage.messageId}`} image={openImage} onClose={() => setOpenImage(null)} />}
   </>;
 });

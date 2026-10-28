@@ -127,7 +127,7 @@ mark { color: inherit; background: var(--highlight-bg, #e6edbd); padding: 0 1px;
 .diagnostics { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: 13px; margin: 27px 0; }
 .diagnostics dt { color: var(--text-muted, #909a83); }
 .diagnostics dd { margin: 0; color: var(--text-secondary, #456244); }
-.context-modal { width: 730px; }
+.context-modal .dialog-frame { width: 730px; }
 .context-nav { display: flex; justify-content: space-between; margin: 20px 0; }
 .context-nav button { background: var(--surface-soft, #eaf0e3); border: 1px solid var(--line, #d7e1cc); border-radius: 5px; color: var(--text-secondary, #66815a); padding: 7px 11px; font-size: 11px; }
 .context-messages { border: 1px solid var(--line, #e1e8da); border-radius: 8px; overflow: hidden; }
