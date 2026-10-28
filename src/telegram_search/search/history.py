@@ -80,7 +80,12 @@ class SearchHistory:
             "images": {
                 "profile": media[2],
                 "space_id": media[3],
-                "manifests": [spec.manifest for spec in visual_specs(media[2]).values()],
+                "manifests": [
+                    spec.manifest
+                    for spec in visual_specs(
+                        media[2], db.workspace, allow_unavailable=True
+                    ).values()
+                ],
             }
             if media[0]
             else None,

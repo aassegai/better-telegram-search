@@ -25,14 +25,18 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
   const op = useDialogOperation();
   const preparing = media?.preparation_state === 'preparing';
   const disabled = op.busy || preparing;
+  const custom = profile.startsWith('custom:');
+  const customNames = { ...Object.fromEntries((media?.visual_profiles ?? []).filter(item => item.profile.startsWith('custom:')).map(item => [item.profile, item.model_id ?? item.profile])), ...models?.clip.profile_names };
+  const availableCustom = Object.hasOwn(customNames, profile);
   const changing = Boolean(media?.images_enabled && (media.visual_profile ?? 'clip') !== profile);
   const ready = Boolean(media?.images_available && !changing);
+  const needsReindex = changing || Boolean(custom && media?.images_enabled && !media.images_available);
   const engineDirty = Boolean(models?.ocr && models.ocr.engine !== engine);
   const bytes = media?.visual_profiles?.find(item => item.profile === profile)?.download_bytes;
   const prepare = (kind: 'ocr' | 'images') => { setOperationRole(kind); void op.run(async current => {
     const value = await api<MediaStatus>('/api/media-index/prepare', { method: 'POST', body: JSON.stringify({
       kind, offline: kind === 'ocr' ? ocrOffline : offline,
-      ...(kind === 'images' ? { profile, reindex: changing && reindex } : {}),
+      ...(kind === 'images' ? { profile, reindex: needsReindex && reindex } : {}),
     }) });
     if (current()) onMediaChange(value);
   }); };
@@ -41,22 +45,25 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
     {preparing && !media?.preparation_kind && <p role="status">{t('Подготавливаем модели…')}</p>}
     <ModelCard title="Модель изображений" purpose="Поиск фотографий по описанию."
       ready={ready} preparing={Boolean(preparing && media?.preparation_kind === 'images')} error={operationRole === 'images' ? op.error : null}
-      details={<><ModelPaths role="clip" profile={profile} /><p>ONNX Runtime · {profile === 'siglip2' ? 'SigLIP 2 · 224 × 224' : 'CLIP · legacy'}</p></>}
+      details={<><ModelPaths role="clip" profile={profile} /><p>{custom ? t('Локальный Python-адаптер') : 'ONNX Runtime'} · {custom ? customNames[profile] ?? profile : profile === 'siglip2' ? 'SigLIP 2 · 224 × 224' : 'CLIP · legacy'}</p></>}
       device={<ModelDeviceSummary role="clip" onPerformance={onPerformance} />} download={preparing ? { completed: 0, total: 0 } : undefined}
       options={<>
-        {changing && <label className="check-label"><input type="checkbox" checked={reindex} disabled={disabled} onChange={event => setReindex(event.target.checked)} />{t('Перестроить индекс изображений при смене модели; кэш OCR сохранится')}</label>}
-        <label className="check-label"><input type="checkbox" checked={offline} disabled={disabled} onChange={event => setOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>
+        {needsReindex && <label className="check-label"><input type="checkbox" checked={reindex} disabled={disabled} onChange={event => setReindex(event.target.checked)} />{t('Перестроить индекс изображений при смене модели; кэш OCR сохранится')}</label>}
+        {!custom && <label className="check-label"><input type="checkbox" checked={offline} disabled={disabled} onChange={event => setOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>}
       </>}
-      actions={<button className={changing ? 'danger' : 'primary'} disabled={disabled || ready || (changing && !reindex)}
+      actions={<button className={changing ? 'danger' : 'primary'} disabled={disabled || ready || (needsReindex && !reindex) || (custom && !availableCustom)}
         onClick={() => prepare('images')}>{changing ? t('Сменить модель и перестроить изображения') : t('Подготовить модель изображений')}</button>}>
       <label>{t('Визуальная модель')}<select aria-label={t('Визуальная модель')} value={profile} disabled={disabled}
-        onChange={event => { chosen.current = true; setProfile(event.target.value as 'clip' | 'siglip2'); setReindex(false); }}>
+        onChange={event => { chosen.current = true; setProfile(event.target.value); setReindex(false); }}>
         {media?.images_enabled === 1 && media.visual_profile === 'clip' && <option value="clip" disabled>CLIP · legacy</option>}
         <option value="siglip2">SigLIP 2</option>
+        {custom && !availableCustom && <option value={profile} disabled>{t('Пользовательская модель недоступна')}</option>}
+        {Object.entries(customNames).map(([key, name]) => <option key={key} value={key}>{name}</option>)}
       </select></label>
       {media?.images_enabled === 1 && media.visual_profile === 'clip' && <p className="warning">{t('Существующий индекс использует прежнюю модель. Его можно продолжать; переход на другую модель требует перестройки.')}</p>}
-      <p>{t('Источник модели')}: {t('Встроенная загрузка')}</p>
-      {bytes != null && <small>{t('Размер загрузки: {p0} МиБ', { p0: (bytes / 1024 ** 2).toFixed(0) })}</small>}
+      <p>{t('Источник модели')}: {t(custom ? 'Проверенный локальный адаптер' : 'Встроенная загрузка')}</p>
+      {custom && !availableCustom && <p className="warning">{t('Проверьте регистрацию адаптера. Текущий индекс сохранён.')}</p>}
+      {!custom && bytes != null && <small>{t('Размер загрузки: {p0} МиБ', { p0: (bytes / 1024 ** 2).toFixed(0) })}</small>}
     </ModelCard>
     <ModelCard title="Модель распознавания · OCR" purpose="Распознавание текста на фотографиях для словесного и смыслового поиска."
       ready={Boolean(media?.ocr_available && !engineDirty)} preparing={Boolean(preparing && media?.preparation_kind === 'ocr')} error={operationRole === 'ocr' ? op.error : null}

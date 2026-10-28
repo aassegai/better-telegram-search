@@ -102,3 +102,36 @@ for (const language of ['ru', 'en']) for (const theme of ['light', 'dark']) {
     expect(await page.getByRole('dialog').locator('.modal').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   });
 }
+
+
+for (const english of [false, true]) {
+  test(`registered image adapters require explicit image reindex (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    if (english) await page.addInitScript(() => localStorage.setItem('bts.language', 'en'));
+    const profile = 'custom:' + 'd'.repeat(64);
+    await page.route('**/api/models', async route => {
+      const response = await route.fetch(); const models = await response.json();
+      await route.fulfill({ json: { ...models, clip: { ...models.clip, profile_names: { [profile]: 'custom/public-rgb · test-v1' }, profile_paths: { ...models.clip.profile_paths, [profile]: ['/synthetic/adapter-snapshot'] } } } });
+    });
+    await page.route('**/api/media-index', async route => {
+      const response = await route.fetch(); const media = await response.json();
+      await route.fulfill({ json: { ...media, images_enabled: 1, visual_profile: 'siglip2', images_available: true } });
+    });
+    let request: Record<string, unknown> | null = null;
+    await page.route('**/api/media-index/prepare', async route => {
+      request = route.request().postDataJSON();
+      await route.fulfill({ status: 202, json: { images_enabled: 1, visual_profile: profile, images_available: true, preparation_state: 'ready' } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: english ? 'Settings' : 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: english ? 'Models' : 'Модели', exact: true }).click();
+    const selector = page.getByRole('combobox', { name: english ? 'Visual model' : 'Визуальная модель', exact: true });
+    await expect(selector.locator(`option[value="${profile}"]`)).toHaveText('custom/public-rgb · test-v1');
+    await selector.selectOption(profile);
+    const change = page.getByRole('button', { name: english ? 'Switch model and rebuild images' : 'Сменить модель и перестроить изображения', exact: true });
+    await expect(change).toBeDisabled(); expect(request).toBeNull();
+    await page.getByLabel(english ? 'Rebuild the image index when switching models; keep the OCR cache' : 'Перестроить индекс изображений при смене модели; кэш OCR сохранится', { exact: true }).check();
+    await expect(change).toBeEnabled();
+    await change.click();
+    await expect.poll(() => request).toEqual({ kind: 'images', offline: false, profile, reindex: true });
+  });
+}

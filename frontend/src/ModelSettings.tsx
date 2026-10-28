@@ -5,7 +5,7 @@ import { t } from './i18n';
 
 export type ModelRole = 'e5' | 'clip' | 'ocr';
 export type Device = 'cpu' | 'auto' | 'gpu' | 'hybrid';
-export type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string | string[]> };
+export type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string | string[]>; profile_names?: Record<string, string> };
 type Models = Record<ModelRole, ModelSettings>;
 const Context = createContext<{ models: Models | null; update: (role: ModelRole, model: ModelSettings) => void }>({ models: null, update: () => {} });
 

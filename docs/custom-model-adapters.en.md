@@ -12,8 +12,8 @@ sandbox**. Only run code and Python environments you trust.
 
 All five roles have manifest inspection, isolated execution, output validation,
 smoke tests and saved registrations: text embedding, image embedding, reranking,
-OCR and ASR. **Text adapters are connected to indexing and search; rerankers
-are connected to candidate scoring.** The other three custom roles currently
+OCR and ASR. **Text and image adapters are connected to indexing and search; rerankers
+are connected to candidate scoring.** The other two custom roles currently
 support validation only; their registrations
 do not replace a built-in model or start a background index. Speech recognition
 and those role bindings are still being implemented. A successful smoke test
@@ -214,3 +214,12 @@ terminates the worker; idle sessions unload. Model failure preserves the base
 order and publishes a safe reason. Model/environment identities enter score caches
 and persisted search history. A missing package leaves base search and the model
 selector available, so a built-in model can be selected.
+
+
+## Image and text-query adapters
+
+After explicit registration, select the adapter in **Settings → Models → Image model** and prepare it. The adapter supplies both `encode_images` and `encode_image_queries` in one vector space. Switching an existing index or repairing an incompatible environment requires explicit reindex confirmation; source files, OCR text and other indexes are preserved. No bundle is downloaded for a registered adapter.
+
+The parent decodes supported image files to EXIF-oriented RGB pixels without resizing. Model-specific resizing and normalization belong in the adapter and its versioned preprocessing contract. Encoded files are limited to 32 MiB; dimensions to 16,384 per side; decoded pixels to 16 megapixels and 24 MiB of RGB data. An oversized or corrupt image becomes a retryable indexing error. The current decoded batch and one lookahead batch each have a 24 MiB budget. The queue caps batches to the manifest `max_batch`, leaves overflow images pending and retains adaptive halving on inference errors. Binary RGB data crosses a bounded base64 JSON frame; this transport prioritizes compatibility over zero-copy throughput.
+
+Image indexing and query devices are independent. GPU activation compares public CPU/GPU vectors before using the shared space; Auto may fall back to CPU. This check requires CPU support. Actual custom GPU performance is not yet measured. Manifest, environment, RGB preprocessing and Pillow identities enter the vector space, query cache and persisted search history. Package metadata is read without executing code; only preparation/inference starts a worker.

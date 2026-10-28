@@ -88,7 +88,7 @@ class ModelRequest(BaseModel):
 class MediaModelRequest(BaseModel):
     kind: Literal["ocr", "images"]
     offline: bool = False
-    profile: Literal["clip", "siglip2"] | None = None
+    profile: Annotated[str, Field(pattern=r"^(clip|siglip2|custom:[0-9a-f]{64})$")] | None = None
     reindex: bool = False
 
 

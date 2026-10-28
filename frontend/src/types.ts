@@ -81,8 +81,8 @@ export type MediaStatus = {
   memory_wait?: { stages: ('clip' | 'ocr' | 'ocr_dense')[]; rss_bytes: number; limit_bytes: number; available_bytes: number | null } | null;
   ocr_estimate?: IndexEstimate; images_estimate?: IndexEstimate; ocr_dense_estimate?: IndexEstimate;
   preparation_estimate?: IndexEstimate;
-  visual_profile?: 'clip' | 'siglip2';
-  visual_profiles?: { profile: string; download_bytes: number }[];
+  visual_profile?: string;
+  visual_profiles?: { profile: string; download_bytes: number; model_id?: string }[];
   ocr_batch_size?: number; ocr_region_batch_size?: number;
   ocr_dense_paused?: boolean | number;
   ocr_dense_estimated_remaining_seconds?: number | null;

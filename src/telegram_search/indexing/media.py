@@ -101,6 +101,10 @@ class MediaService(MediaImages):
             if ann is not None:
                 ann.models_changed(old_space)
         self._clip = engine
+        if previous is not None and previous is not engine and hasattr(previous, "retire"):
+            previous.retire()
+            if getattr(previous, "retirement_error", None):
+                self.resource_error = previous.retirement_error
 
     @property
     def ocr(self):
@@ -152,35 +156,32 @@ class MediaService(MediaImages):
         return engine
 
     def _new_clip(self, settings=None, profile=None, *, adopt_existing=True):
-        try:
-            from telegram_search.inference.clip import ClipEncoder
-        except ImportError as exc:
-            raise UserError(
-                "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
-            ) from exc
-
         settings = settings or self.db.settings
         if profile is None:
             with self.db.connect() as conn:
                 profile = conn.execute(
                     "SELECT visual_profile FROM media_state WHERE id=1"
                 ).fetchone()[0]
-        if profile == "siglip2":
-            from telegram_search.inference.siglip import SiglipEncoder
+        if profile.startswith("custom:"):
+            from telegram_search.config.model_registry import visual_specs
 
-            adapter = SiglipEncoder
-        elif profile == "clip":
-            adapter = ClipEncoder
+            try:
+                from telegram_search.model_adapters.image_encoder import AdapterImageEncoder
+            except ImportError as exc:
+                raise UserError(
+                    "Для векторного поиска установите: uv sync --locked --extra semantic."
+                ) from exc
+
+            encoder = AdapterImageEncoder(
+                visual_specs(profile, self.db.workspace)[profile],
+                self.db.workspace,
+                settings,
+                cancelled=self.stop,
+            )
+        elif profile in {"siglip2", "clip"}:
+            encoder = self._builtin_clip(settings, profile)
         else:
             raise UserError("Неизвестный профиль визуальной модели.")
-        encoder = adapter(
-            self.db.workspace,
-            threads=settings.cpu_threads,
-            device=settings.model_device("clip"),
-            search_device=settings.model_device("clip", query=True),
-            gpu_device_id=settings.gpu_device_id,
-            gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
-        )
         with self.db.connect() as conn:
             spaces = conn.execute(
                 "SELECT space_id,COUNT(*) AS count FROM media_embeddings WHERE kind='image' "
@@ -199,6 +200,30 @@ class MediaService(MediaImages):
                 encoder.adopt_space(row["space_id"])
                 break
         return encoder
+
+    def _builtin_clip(self, settings, profile):
+        try:
+            from telegram_search.inference.clip import ClipEncoder
+        except ImportError as exc:
+            raise UserError(
+                "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."
+            ) from exc
+        if profile == "siglip2":
+            from telegram_search.inference.siglip import SiglipEncoder
+
+            adapter = SiglipEncoder
+        elif profile == "clip":
+            adapter = ClipEncoder
+        else:
+            raise UserError("Неизвестный профиль визуальной модели.")
+        return adapter(
+            self.db.workspace,
+            threads=settings.cpu_threads,
+            device=settings.model_device("clip"),
+            search_device=settings.model_device("clip", query=True),
+            gpu_device_id=settings.gpu_device_id,
+            gpu_memory_limit_mib=settings.gpu_memory_limit_mib,
+        )
 
     def _load_existing(self):
         with self.db.connect() as conn:
@@ -226,7 +251,7 @@ class MediaService(MediaImages):
                         "SELECT images_enabled,visual_profile FROM media_state WHERE id=1"
                     ).fetchone()
                 profile = profile or (state[1] if state[0] else "siglip2")
-                visual_specs(profile)
+                visual_specs(profile, self.db.workspace)
                 if state[0] and state[1] != profile and not reindex:
                     raise UserError("Подтвердите переиндексацию при смене визуальной модели.")
             if self.preparation and self.preparation.is_alive():
@@ -250,6 +275,8 @@ class MediaService(MediaImages):
     def _prepare(self, kind, offline, profile=None, reindex=False):
         engine = None
         try:
+            if self.stop.is_set():
+                return
             if kind == "ocr":
                 engine = self._new_ocr()
                 engine.prepare(offline=offline)
@@ -257,11 +284,14 @@ class MediaService(MediaImages):
                 from telegram_search.config.model_registry import visual_specs
                 from telegram_search.inference.bundles import BundleStore
 
-                for spec in visual_specs(profile).values():
-                    BundleStore(self.db.workspace).prepare(spec, offline=offline, repair=True)
+                for spec in visual_specs(profile, self.db.workspace).values():
+                    if spec.manifest.get("runtime") != "python-adapter":
+                        BundleStore(self.db.workspace).prepare(spec, offline=offline, repair=True)
                 engine = self._new_clip(profile=profile, adopt_existing=not reindex)
                 engine.check_contract()
             with self.lock:
+                if self.stop.is_set():
+                    raise InterruptedError("Media preparation is stopping.")
                 old = self.ocr if kind == "ocr" else self.clip
                 if old and hasattr(old, "unload"):
                     old.unload()
@@ -281,7 +311,7 @@ class MediaService(MediaImages):
                     self.ocr = engine
                 else:
                     self.clip = engine
-        except Exception:
+        except Exception as exc:
             if (
                 engine
                 and engine is not self.clip
@@ -289,11 +319,15 @@ class MediaService(MediaImages):
                 and hasattr(engine, "unload")
             ):
                 engine.unload()
+            if self.stop.is_set():
+                return
             with self.db.connect() as conn:
                 conn.execute(
                     "UPDATE media_state SET preparation_state='failed',error=? WHERE id=1",
                     (
-                        "Не удалось подготовить медиа. Проверьте runtime, свободное место "
+                        str(exc)
+                        if isinstance(exc, UserError)
+                        else "Не удалось подготовить медиа. Проверьте runtime, свободное место "
                         "и доступ к закреплённым моделям.",
                     ),
                 )
@@ -392,7 +426,9 @@ class MediaService(MediaImages):
             if stage == "clip":
                 requested = row["image_batch"] or self.db.settings.image_batch
                 key = min(
-                    requested, self.image_limits.get((id(engine), row["id"], requested), requested)
+                    requested,
+                    self.image_limits.get((id(engine), row["id"], requested), requested),
+                    getattr(engine, "index_batch_limit", requested),
                 )
             elif stage == "ocr_dense":
                 key = indexing_batch_size(
@@ -542,7 +578,9 @@ class MediaService(MediaImages):
                 state["ocr_dense_paused"] = bool(state["ocr_dense_paused"] or chat[2])
                 configured = chat[3] or self.db.settings.image_batch
                 image_batch = min(
-                    configured, self.image_limits.get((id(clip), chat_id, configured), configured)
+                    configured,
+                    self.image_limits.get((id(clip), chat_id, configured), configured),
+                    getattr(clip, "index_batch_limit", configured),
                 )
                 dense_batch = indexing_batch_size(
                     encoder, chat[4] or self.db.settings.embedding_batch
@@ -776,16 +814,19 @@ class MediaService(MediaImages):
             else None,
         }
 
-    @staticmethod
-    def visual_profiles():
+    def visual_profiles(self):
         from telegram_search.config.model_registry import visual_specs
+        from telegram_search.model_adapters.registry import custom_specs
 
         return [
             {
                 "profile": key,
-                "download_bytes": sum(spec.download_bytes for spec in visual_specs(key).values()),
+                "download_bytes": sum(
+                    spec.download_bytes for spec in visual_specs(key, self.db.workspace).values()
+                ),
+                "model_id": next(iter(visual_specs(key, self.db.workspace).values())).model_id,
             }
-            for key in ("siglip2", "clip")
+            for key in ("siglip2", "clip", *custom_specs(self.db.workspace, "image_embedding"))
         ]
 
     def _read_photo(self, sha):

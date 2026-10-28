@@ -1184,5 +1184,11 @@
   "изображений": "images",
   "Подготовка кандидатов для уточнения": "Preparing reranking candidates",
   "Загрузка модели уточнения": "Loading the reranking model",
-  "Проверка покрытия медиаиндекса": "Checking media index coverage"
+  "Проверка покрытия медиаиндекса": "Checking media index coverage",
+  "Проверенный локальный адаптер": "Validated local adapter",
+  "Пользовательская модель недоступна": "Custom model unavailable",
+  "Проверьте регистрацию адаптера. Текущий индекс сохранён.": "Check the adapter registration. The existing index is preserved.",
+  "Пользовательская модель": "Custom model",
+  "Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано для текста, изображений и переранжирования.": "This role supports validation and registration. Search integration is currently available for text, images and reranking.",
+  "Модель добавлена. Выберите её в карточке изображений; смена индекса требует подтверждения.": "Model added. Select it in the image card; changing the index requires confirmation."
 }

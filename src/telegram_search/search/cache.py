@@ -49,7 +49,10 @@ class SearchCache:
                 "SELECT version FROM ocr_queue_version WHERE id=1"
             ).fetchone()
         # Progress, pauses and download counters do not change the meaning of stored hits.
-        visual = [spec.identity for spec in visual_specs(media[2]).values()]
+        visual = [
+            spec.identity
+            for spec in visual_specs(media[2], db.workspace, allow_unavailable=True).values()
+        ]
         fingerprint = [
             epoch,
             {

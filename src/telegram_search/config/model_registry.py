@@ -59,7 +59,30 @@ def media_registry() -> dict[str, ModelSpec]:
     return {profile: ModelSpec(profile, value) for profile, value in manifest.items()}
 
 
-def visual_specs(profile="clip") -> dict[str, ModelSpec]:
+def visual_specs(
+    profile="clip", workspace=None, *, allow_unavailable=False
+) -> dict[str, ModelSpec]:
+    if isinstance(profile, str) and profile.startswith("custom:") and workspace is not None:
+        from telegram_search.model_adapters.registry import custom_spec
+
+        try:
+            return {profile: custom_spec(workspace, profile, role="image_embedding")}
+        except (UserError, OSError, ValueError, KeyError):
+            if not allow_unavailable:
+                raise
+            return {
+                profile: ModelSpec(
+                    profile,
+                    {
+                        "runtime": "python-adapter",
+                        "role": "image",
+                        "model_id": profile,
+                        "revision": "unavailable",
+                        "unavailable": True,
+                        "files": [],
+                    },
+                )
+            }
     if profile == "clip":
         return media_registry()
     if profile == "siglip2":

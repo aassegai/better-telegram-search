@@ -135,16 +135,17 @@ class WorkspaceService:
     def models(self):
         from telegram_search.config.model_registry import ocr_spec, registry, visual_specs
         from telegram_search.inference.bundles import BundleStore
+        from telegram_search.model_adapters.registry import custom_specs
 
         settings = self.db.settings
         store = BundleStore(self.db.workspace)
         text = registry(self.db.workspace)
 
         def text_path(spec):
-            if "adapter_identity" in spec.manifest:
+            if spec.profile.startswith("custom:"):
                 from telegram_search.model_adapters.store import AdapterStore
 
-                return AdapterStore(self.db.workspace).root / spec.manifest["adapter_identity"]
+                return AdapterStore(self.db.workspace).root / spec.profile.removeprefix("custom:")
             return store.path(spec)
 
         with self.db.connect() as conn:
@@ -156,6 +157,10 @@ class WorkspaceService:
                 or "berta"
             )
             visual = conn.execute("SELECT visual_profile FROM media_state WHERE id=1").fetchone()[0]
+        visuals = {
+            key: visual_specs(key, self.db.workspace)
+            for key in ("clip", "siglip2", *custom_specs(self.db.workspace, "image_embedding"))
+        }
         ocr_path = (
             store.path(ocr_spec())
             if settings.ocr_engine == "paddle"
@@ -171,10 +176,22 @@ class WorkspaceService:
             "clip": {
                 "device": settings.model_device("clip"),
                 "search_device": settings.model_device("clip", query=True),
-                "paths": [str(store.path(spec)) for spec in visual_specs(visual).values()],
+                "paths": [
+                    str(text_path(spec))
+                    for spec in visual_specs(
+                        visual, self.db.workspace, allow_unavailable=True
+                    ).values()
+                ],
                 "profile_paths": {
-                    key: [str(store.path(spec)) for spec in visual_specs(key).values()]
-                    for key in ("clip", "siglip2")
+                    key: [str(text_path(spec)) for spec in specs.values()]
+                    for key, specs in visuals.items()
+                },
+                "profile_names": {
+                    key: next(iter(specs.values())).model_id
+                    + " · "
+                    + next(iter(specs.values())).revision
+                    for key, specs in visuals.items()
+                    if key.startswith("custom:")
                 },
             },
             "ocr": {
@@ -444,18 +461,32 @@ class WorkspaceService:
                         "Приостановите индексацию текста и медиа перед сменой устройства."
                     )
             try:
-                execution = Execution(
-                    "gpu" if device == "hybrid" else device,
-                    device_id=gpu_device_id,
-                    memory_limit_mib=gpu_memory_limit_mib,
-                    threads=candidate.cpu_threads,
-                )
-                query_execution = Execution(
-                    search_device,
-                    device_id=gpu_device_id,
-                    memory_limit_mib=gpu_memory_limit_mib,
-                    threads=candidate.cpu_threads,
-                )
+                custom = None
+                if model == "e5" and active and active["profile"].startswith("custom:"):
+                    custom = self.semantic.encoder
+                elif model == "clip" and str(getattr(self.media.clip, "profile", "")).startswith(
+                    "custom:"
+                ):
+                    custom = self.media.clip
+                if custom is not None:
+                    from telegram_search.model_adapters.text_encoder import AdapterExecution
+
+                    supported = custom.manifest.data["devices"]
+                    execution = AdapterExecution(device, candidate, supported)
+                    query_execution = AdapterExecution(search_device, candidate, supported)
+                else:
+                    execution = Execution(
+                        "gpu" if device == "hybrid" else device,
+                        device_id=gpu_device_id,
+                        memory_limit_mib=gpu_memory_limit_mib,
+                        threads=candidate.cpu_threads,
+                    )
+                    query_execution = Execution(
+                        search_device,
+                        device_id=gpu_device_id,
+                        memory_limit_mib=gpu_memory_limit_mib,
+                        threads=candidate.cpu_threads,
+                    )
             except ImportError as exc:
                 raise UserError(
                     "Установите ONNX runtime: uv sync --locked --extra semantic или --extra gpu."

@@ -437,5 +437,18 @@
   "GPU своей модели недоступен; режим Авто использует CPU.": "Custom GPU unavailable; Auto uses CPU.",
   "Недопустимый лимит символов для переранжирования.": "Invalid reranker character budget.",
   "Зарегистрированная модель переранжирования недоступна. Выберите или зарегистрируйте модель.": "The registered reranker is unavailable. Select or register a model.",
-  "Окружение переранжирования изменилось. Повторите проверку и подготовку модели.": "The reranker environment changed. Validate and prepare it again."
+  "Окружение переранжирования изменилось. Повторите проверку и подготовку модели.": "The reranker environment changed. Validate and prepare it again.",
+  "Пользовательская модель не является парой изображение/запрос.": "The custom model is not an image/query adapter.",
+  "Адаптер изображений или его окружение отличаются от сохранённого индекса. Подтвердите перестройку.": "The image adapter or its environment differs from the stored index.",
+  "Неподходящее изображение для адаптера: допустимый размер файла — 32 МиБ.": "Invalid image for custom model (maximum encoded size: 32 MiB).",
+  "Распакованное изображение превышает лимит памяти адаптера.": "The decoded image exceeds the custom model memory budget.",
+  "Не удалось безопасно прочитать изображение для адаптера.": "Could not safely decode the image for the custom model.",
+  "Батч изображений превышает лимит адаптера.": "Image batch exceeds the custom model limit.",
+  "Подготовленные изображения относятся к другой модели или батчу.": "Prepared images belong to another custom model or batch.",
+  "Батч изображений превышает лимит памяти адаптера. Уменьшите его размер.": "Custom image batch exceeds its memory budget; reduce its size.",
+  "Батч запросов превышает лимит адаптера изображений.": "Query batch exceeds the custom image model limit.",
+  "Модель изображений изменилась. Повторите поиск.": "The image model changed. Repeat the search.",
+  "Не завершена очистка worker прежней модели изображений.": "Previous custom image worker cleanup is incomplete.",
+  "Для векторного поиска установите: uv sync --locked --extra semantic.": "For vector search install: uv sync --locked --extra semantic.",
+  "Визуальная модель не смогла обработать фотографию.": "The visual model could not process the photo."
 }

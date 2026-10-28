@@ -12,6 +12,7 @@ from telegram_search.shared.text import serialize
 class MediaImages:
     def _prepare_image_batch(self, encoder, photos):
         good, values, failures = [], [], []
+        retained = 0
         for sha in photos:
             if self.stop.is_set():
                 break
@@ -22,6 +23,13 @@ class MediaImages:
                     if hasattr(encoder, "prepare_images")
                     else data
                 )
+                if hasattr(encoder, "prepared_byte_limit"):
+                    size = encoder.prepared_bytes(value)
+                    if size > encoder.prepared_byte_limit:
+                        raise UserError("Decoded image exceeds the adapter memory budget.")
+                    if retained + size > encoder.prepared_byte_limit:
+                        break
+                    retained += size
                 values.append(value)
                 good.append(sha)
             except UserError:
@@ -52,7 +60,11 @@ class MediaImages:
                 return False
             configured = chat["image_batch"] or self.db.settings.image_batch
             limit_key = (id(encoder), chat["id"], configured)
-            limit = min(configured, self.image_limits.get(limit_key, configured))
+            limit = min(
+                configured,
+                self.image_limits.get(limit_key, configured),
+                getattr(encoder, "index_batch_limit", configured),
+            )
             photos = conn.execute(
                 "SELECT DISTINCT r.sha256 FROM indexable_media_refs r WHERE r.chat_id=? AND "
                 + pending
@@ -71,11 +83,15 @@ class MediaImages:
         good, data, failures = self.image_prefetch.take(
             key, lambda: self._prepare_image_batch(encoder, photos)
         )
+        if self.stop.is_set():
+            return False
         for sha in failures:
             self._failure(sha, encoder.space_id, "Файл недоступен или изменился. Повторите импорт.")
         # Prepare one following batch while the current one uses the device/writes
-        # vectors. Retain normalized 224x224 tensors, not full decoded photographs.
-        placeholders = ",".join("?" for _ in photos)
+        # vectors. Built-ins retain normalized tensors; custom RGB has a byte cap.
+        # Unprepared photos remain pending when the decoded-byte budget is full.
+        in_flight = good + failures
+        placeholders = ",".join("?" for _ in in_flight)
         with self.db.connect() as conn:
             upcoming = (
                 [
@@ -89,12 +105,16 @@ class MediaImages:
                             chat["id"],
                             encoder.space_id,
                             encoder.space_id,
-                            *photos,
-                            min(configured, self.image_limits.get(limit_key, configured)),
+                            *in_flight,
+                            min(
+                                configured,
+                                self.image_limits.get(limit_key, configured),
+                                getattr(encoder, "index_batch_limit", configured),
+                            ),
                         ),
                     )
                 ]
-                if photos
+                if in_flight
                 else []
             )
         if upcoming:
@@ -119,10 +139,14 @@ class MediaImages:
                 else:
                     embeddings = encoder.encode_images(values)
             except Exception as exc:
+                if self.stop.is_set() or self.clip is not encoder:
+                    return
                 if len(hashes) == 1:
                     errors += 1
                     self._failure(
-                        hashes[0], encoder.space_id, "CLIP не смог обработать фотографию."
+                        hashes[0],
+                        encoder.space_id,
+                        "Визуальная модель не смогла обработать фотографию.",
                     )
                     return
                 middle = len(hashes) // 2
@@ -153,7 +177,12 @@ class MediaImages:
                     published,
                     finished - began,
                     settings=self.db.settings,
-                    batch=min(configured, self.image_limits.get(limit_key, configured)),
+                    batch=min(
+                        configured,
+                        self.image_limits.get(limit_key, configured),
+                        getattr(encoder, "index_batch_limit", configured),
+                        len(good),
+                    ),
                     cold=cold,
                     errors=errors,
                 )
