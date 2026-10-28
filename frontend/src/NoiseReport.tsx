@@ -27,12 +27,13 @@ function Evidence({ row }: { row: NoiseForm }) {
   </details>;
 }
 
-export default function NoiseReport({ page, overrides, disabled, onOverride, family, onFamily, familyBusy = false }: {
+export default function NoiseReport({ page, overrides, disabled, onOverride, family, onFamily, familyBusy = false, onOmitFamily }: {
   page: NoisePage; overrides: Record<string, NoiseDecision>; disabled: boolean;
   onOverride: (form: string, value: NoiseDecision | '') => void;
   family?: { seed: string; page: NoisePage | null } | null;
   onFamily?: (seed: string | null, offset?: number) => void;
   familyBusy?: boolean;
+  onOmitFamily?: (seed: string) => void;
 }) {
   return <div className="noise-report">
     {page.forms?.map(row => {
@@ -56,6 +57,7 @@ export default function NoiseReport({ page, overrides, disabled, onOverride, fam
         <p>{t('Вхождений: {p0} · допустимо: {p1}', { p0: row.observed_count, p1: row.eligible_count })}</p>
         <p>{t('Исключить: {p0} · неоднозначно: {p1} · сохранить: {p2}', { p0: row.omit_count, p1: row.review_count, p2: row.keep_count })}</p>
         {onFamily && <button type="button" disabled={familyBusy} aria-expanded={family?.seed === row.seed} onClick={() => onFamily(family?.seed === row.seed ? null : row.seed)}>{t(family?.seed === row.seed ? 'Скрыть варианты' : 'Открыть всё семейство')}</button>}
+        {onOmitFamily && <button type="button" disabled={disabled} onClick={() => onOmitFamily(row.seed)}>{t('Исключить всё семейство')}</button>}
         {family?.seed === row.seed && family.page && <>
           <p className="baseline-note">{t('Выберите для каждого варианта: исключать или сохранять. Решения не распространяются на новые варианты автоматически.')}</p>
           <NoiseReport page={family.page} overrides={overrides} disabled={disabled} onOverride={onOverride} />

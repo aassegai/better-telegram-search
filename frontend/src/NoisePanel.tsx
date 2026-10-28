@@ -166,15 +166,45 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     await api(`${base}/${selected}`, { method: 'DELETE', signal });
     if (current()) { choose(null); setJob(null); clearReview(); await loadList(current, signal); }
   }, true);
+  const changeOverrides = (next: Record<string, NoiseDecision>) => {
+    const canonical = (values: Record<string, NoiseDecision>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
+    if (new TextEncoder().encode(JSON.stringify(next)).length > 512 * 1024) throw new Error(t('Проект фильтра слишком большой. Уменьшите число переопределений.'));
+    setOverrides(next); setDirty(canonical(next) !== canonical(draft?.overrides ?? {})); setPreview(null); setNotice('');
+  };
   const changeOverride = (form: string, value: NoiseDecision | '') => {
     if (value && !Object.hasOwn(overrides, form) && Object.keys(overrides).length >= 1000) {
       op.setError(t('Допускается не более 1000 переопределений в одном отчёте.')); return;
     }
     const next = { ...overrides }; if (value) next[form] = value; else delete next[form];
-    setOverrides(next);
-    const canonical = (values: Record<string, NoiseDecision>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
-    setDirty(canonical(next) !== canonical(draft?.overrides ?? {})); setPreview(null); setNotice('');
+    try { changeOverrides(next); } catch (error) { op.setError(error instanceof Error ? error.message : t('Ошибка операции.')); }
   };
+  const omitFamily = (seed: string) => perform(async (current, signal) => {
+    if (!selected || !draft) return;
+    const selectedForms = new Set<string>();
+    const keys = new Set(Object.keys(overrides));
+    let nextOffset: number | null = 0;
+    while (nextOffset !== null) {
+      const offset: number = nextOffset;
+      const query = new URLSearchParams({ family: seed, offset: String(offset), limit: '100' });
+      const result = await api<NoisePage>(`${base}/${selected}/forms?${query}`, { signal });
+      if (!current() || selectedRef.current !== selected) return;
+      const rows = result.forms;
+      if (!Array.isArray(rows) || rows.length > 100) throw new Error(t('Не удалось выбрать всё семейство. Повторите попытку.'));
+      const invalidOffset = result.next_offset !== null && (!Number.isInteger(result.next_offset) || result.next_offset <= offset || result.next_offset > 50000 || !rows.length);
+      if (invalidOffset) throw new Error(t('Не удалось выбрать всё семейство. Повторите попытку.'));
+      for (const row of rows) {
+        keys.add(row.form); selectedForms.add(row.form);
+        if (keys.size > 1000) throw new Error(t('Допускается не более 1000 переопределений в одном отчёте.'));
+      }
+      nextOffset = result.next_offset;
+    }
+    const metadata = await api<NoiseDraft>(`${base}/${selected}/draft`, { signal });
+    if (!current() || selectedRef.current !== selected) return;
+    if (metadata.stale) { acceptDraft(metadata); return; }
+    if (metadata.revision !== draft.revision) throw new Error(t('Проект изменился. Обновите его перед сохранением.'));
+    changeOverrides(Object.fromEntries([...Object.entries(overrides), ...Array.from(selectedForms, form => [form, 'omit' as const]) ]));
+    setNotice(t('Выбрано исключение для {p0} вариантов семейства. Защищённые вхождения сохраняются. Сохраните и примените правила.', { p0: selectedForms.size }));
+  });
   const save = () => perform(async (current, signal) => {
     if (!selected || !draft) return;
     const value = await api<NoiseDraft>(`${base}/${selected}/draft`, { method: 'PATCH', signal, body: JSON.stringify({ revision: draft.revision, overrides }) });
@@ -259,7 +289,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
           <label>{t('Часть отчёта')}<select value={view} disabled={busy} onChange={event => loadReport(event.target.value as View, decision, 0)}><option value="forms">{t('Формы')}</option><option value="families">{t('Семейства')}</option></select></label>
           {view === 'forms' && <label>{t('Решения анализа')}<select disabled={busy} value={decision} onChange={event => loadReport(view, event.target.value, 0)}><option value="">{t('Все решения')}</option><option value="review">{t('Неоднозначные')}</option><option value="keep">{t('Сохранить')}</option><option value="omit">{t('Исключить из смыслового текста')}</option></select></label>}
         </div>
-        <NoiseReport page={page} overrides={overrides} disabled={busy || !canEdit} onOverride={changeOverride} family={family} onFamily={loadFamily} familyBusy={busy} />
+        <NoiseReport page={page} overrides={overrides} disabled={busy || !canEdit} onOverride={changeOverride} family={family} onFamily={loadFamily} familyBusy={busy} onOmitFamily={omitFamily} />
         <div className="job-actions"><button type="button" disabled={busy || offset === 0} onClick={() => loadReport(view, decision, Math.max(0, offset - 50))}>{t('Предыдущие записи')}</button><button type="button" disabled={busy || page.next_offset === null} onClick={() => { if (page.next_offset !== null) loadReport(view, decision, page.next_offset); }}>{t('Следующие записи')}</button></div>
       </>}
       {draft && !draft.stale && <div className="noise-draft">

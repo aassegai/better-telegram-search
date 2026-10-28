@@ -1178,5 +1178,9 @@
   "Скрыть варианты": "Hide variants",
   "Выберите для каждого варианта: исключать или сохранять. Решения не распространяются на новые варианты автоматически.": "Choose whether to omit or keep each variant. Decisions do not automatically extend to new variants.",
   "Показать ещё варианты": "Show more variants",
-  "Семейства и варианты сообщений": "Message families and variants"
+  "Семейства и варианты сообщений": "Message families and variants",
+  "Исключить всё семейство": "Omit entire family",
+  "Проект фильтра слишком большой. Уменьшите число переопределений.": "The filter draft is too large. Reduce the number of overrides.",
+  "Не удалось выбрать всё семейство. Повторите попытку.": "Could not select the entire family. Try again.",
+  "Выбрано исключение для {p0} вариантов семейства. Защищённые вхождения сохраняются. Сохраните и примените правила.": "Omission selected for {p0} family variants. Protected occurrences are kept. Save and apply the rules."
 }

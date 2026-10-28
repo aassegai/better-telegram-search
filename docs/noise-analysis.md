@@ -76,6 +76,13 @@ loads further bounded pages. Save overrides, preview, then apply explicitly.
 A family is a review group, not a rule that deletes every similar future message.
 The family summary reflects analysis decisions; your draft choices appear per variant.
 
+Use **Omit entire family** to select all observed variants across every page.
+This replaces Keep overrides inside that family, preserves choices in other
+families, and lets you restore individual Keep choices before saving. Selection
+is atomic: requests, revision conflicts or draft limits cannot leave a partially
+selected family. It does not save, apply or rebuild the index by itself.
+Protected occurrences remain kept after application.
+
 ## Local API
 
 All routes are scoped to `/api/chats/{chat_id}/noise-analyses` and retain the

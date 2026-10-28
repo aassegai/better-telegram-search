@@ -411,3 +411,100 @@ for (const english of [false, true]) {
     expect(state.writes.find(item => item.path.endsWith('/apply'))?.body).toEqual({ revision: 1 });
   });
 }
+
+function bulkFamily(state: Awaited<ReturnType<typeof mockNoise>>, count: number) {
+  const seed = 'покормить жабу';
+  const example = state.forms[0];
+  state.forms = Array.from({ length: count }, (_, index) => ({ ...example,
+    form: `вариант команды ${index}`, form_kind: 'message' as const,
+    candidate: { ...example.candidate, noise: [{ form: seed, operation: 'substitution', corpus_count: count, score: 1 }] } }));
+  state.families = [{ seed, observed_count: count, eligible_count: count, omit_count: 0, review_count: count, keep_count: 0 }];
+  return seed;
+}
+
+for (const english of [false, true]) {
+  test(`omit entire family includes unopened pages and permits individual keep (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    bulkFamily(state, 120);
+    state.overrides = { 'правило другого семейства': 'keep', 'вариант команды 0': 'keep' };
+    const panel = await openNoise(page, english);
+    await panel.getByRole('button', { name: english ? 'Message families and variants' : 'Семейства и варианты сообщений' }).click();
+    const before = state.formsStarted;
+    await panel.getByRole('button', { name: english ? 'Omit entire family' : 'Исключить всё семейство' }).click();
+    await expect(panel.getByRole('status').filter({ hasText: english ? 'Omission selected for 120' : 'Выбрано исключение для 120' })).toBeVisible();
+    expect(state.formsStarted - before).toBe(2);
+    expect(state.writes).toEqual([]);
+    await panel.getByRole('button', { name: english ? 'Open entire family' : 'Открыть всё семейство' }).click();
+    const first = panel.getByRole('combobox', { name: english ? 'Decision for вариант команды 0' : 'Решение для вариант команды 0', exact: true });
+    await expect(first).toHaveValue('omit');
+    await first.selectOption('keep');
+    await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
+    expect(Object.keys(state.overrides)).toHaveLength(121);
+    expect(state.overrides['вариант команды 119']).toBe('omit');
+    expect(state.overrides['вариант команды 0']).toBe('keep');
+    expect(state.overrides['правило другого семейства']).toBe('keep');
+    expect(state.writes.some(item => item.path.endsWith('/apply'))).toBe(false);
+  });
+}
+
+test('oversized family does not partially change the draft', async ({ page }) => {
+  const state = await mockNoise(page, true);
+  bulkFamily(state, 1001);
+  state.overrides = { 'вариант команды 0': 'keep' };
+  const panel = await openNoise(page);
+  await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
+  await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
+  await expect(panel.getByRole('alert').filter({ hasText: 'Допускается не более 1000' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Сохранить переопределения' })).toBeDisabled();
+  expect(state.overrides).toEqual({ 'вариант команды 0': 'keep' });
+  expect(state.writes).toEqual([]);
+});
+
+test('family bulk selection is discarded if the draft changed in another window', async ({ page }) => {
+  const state = await mockNoise(page, true);
+  bulkFamily(state, 120);
+  state.overrides = { 'вариант команды 0': 'keep' };
+  const panel = await openNoise(page);
+  await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
+  let release!: () => void;
+  state.formsGate = new Promise<void>(resolve => { release = resolve; });
+  const before = state.formsStarted;
+  await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
+  await expect.poll(() => state.formsStarted).toBeGreaterThan(before);
+  state.revision++;
+  release(); state.formsGate = null;
+  await expect(panel.getByRole('alert').filter({ hasText: 'Проект изменился' })).toBeVisible();
+  expect(state.overrides).toEqual({ 'вариант команды 0': 'keep' });
+  expect(state.writes).toEqual([]);
+  await expect(panel.getByRole('button', { name: 'Сохранить переопределения' })).toBeDisabled();
+});
+
+test('collapsing cancels an unfinished whole-family selection', async ({ page }) => {
+  const state = await mockNoise(page, true);
+  bulkFamily(state, 120);
+  const panel = await openNoise(page);
+  await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
+  let release!: () => void;
+  state.formsGate = new Promise<void>(resolve => { release = resolve; });
+  const before = state.formsStarted;
+  await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
+  await expect.poll(() => state.formsStarted).toBeGreaterThan(before);
+  await panel.locator(':scope > details > summary').click();
+  release(); state.formsGate = null;
+  await panel.locator(':scope > details > summary').click();
+  await expect(panel.getByRole('button', { name: 'Сохранить переопределения' })).toBeDisabled();
+  expect(state.overrides).toEqual({});
+  expect(state.writes).toEqual([]);
+});
+
+test('family selection respects the serialized draft byte limit atomically', async ({ page }) => {
+  const state = await mockNoise(page, true);
+  bulkFamily(state, 1000);
+  for (const [index, row] of state.forms.entries()) row.form = `${'𐐨'.repeat(130)} cmd${index}`;
+  const panel = await openNoise(page);
+  await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
+  await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
+  await expect(panel.getByRole('alert').filter({ hasText: 'Проект фильтра слишком большой' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Сохранить переопределения' })).toBeDisabled();
+  expect(state.writes).toEqual([]);
+});

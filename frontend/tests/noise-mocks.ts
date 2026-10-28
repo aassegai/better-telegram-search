@@ -92,7 +92,8 @@ export async function mockNoise(page: Page, initial = false) {
       const family = url.searchParams.get('family');
       const rows = control.forms.filter(row => (!choice || row.candidate.decision === choice) && (!family || row.candidate.noise.some(item => item.form === family)));
       const offset = Number(url.searchParams.get('offset') ?? 0);
-      const result = { forms: rows.slice(offset, offset + 50), next_offset: rows.length > offset + 50 ? offset + 50 : null };
+      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const result = { forms: rows.slice(offset, offset + limit), next_offset: rows.length > offset + limit ? offset + limit : null };
       if (control.formsGate) await control.formsGate;
       return send(result);
     }
