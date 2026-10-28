@@ -5,11 +5,13 @@ import json
 from dataclasses import asdict, dataclass, field
 
 from telegram_search.search.chunking.classification import whole_word
+from telegram_search.search.chunking.noise.messages import is_message_form, message_form, valid_form
 from telegram_search.search.chunking.noise.normalization import structural_flags
 from telegram_search.search.chunking.policy import DEFAULT_POLICY, ChunkPolicy
 from telegram_search.shared.text import serialize
 
 POLICY_VERSION = "telegram-episodes-noise-v3"
+MESSAGE_POLICY_VERSION = "telegram-episodes-messages-v4"
 PROTECTION_VERSION = "whole-form-structural-context-v1"
 MAX_POLICY_BYTES = 8 * 1024**2
 MAX_FORMS = 50000
@@ -19,7 +21,7 @@ def exact_forms(values):
     if not isinstance(values, (list, tuple)) or len(values) > MAX_FORMS:
         raise ValueError("Invalid exact noise forms")
     for value in values:
-        if not isinstance(value, str) or not 1 <= len(value) <= 64 or whole_word(value) != value:
+        if not valid_form(value):
             raise ValueError("Invalid exact noise form")
     return tuple(sorted(set(values)))
 
@@ -53,6 +55,8 @@ class NoisePolicy:
         ):
             raise ValueError("Unsupported base document semantics")
         seeds = exact_forms(self.base.filler)
+        if any(whole_word(seed) != seed for seed in seeds):
+            raise ValueError("The v2 base accepts single-word seeds only")
         keep, omit = exact_forms(self.keep), exact_forms(self.omit)
         if len(keep) + len(omit) > MAX_FORMS:
             raise ValueError("Exact noise policy form limit exceeded")
@@ -66,7 +70,7 @@ class NoisePolicy:
         object.__setattr__(self, "_omitted", frozenset((*seeds, *omit)) - self._kept)
         serialized = serialize(
             {
-                "version": POLICY_VERSION,
+                "version": self.version,
                 "base": json.loads(self.base.json),
                 "omit": self.omit,
                 "keep": self.keep,
@@ -84,7 +88,11 @@ class NoisePolicy:
 
     @property
     def version(self):
-        return POLICY_VERSION
+        return (
+            MESSAGE_POLICY_VERSION
+            if any(is_message_form(f) for f in (*self.omit, *self.keep))
+            else POLICY_VERSION
+        )
 
     @property
     def filter_borrowed_context(self):
@@ -100,14 +108,20 @@ class NoisePolicy:
 
     def omits_form(self, form, message, parent=None):
         # Only exact normalized set membership is used at inference time.
+        if form is None:
+            form = message_form(message.text)
         if form not in self._omitted:
             return False
         if message.has_attachment or message.has_photo or message.protected:
             return False
         if parent is not None and "?" in parent.text:
             return False
-        if form not in self._seeds and (
-            structural_flags(message.text.strip(), form) or any(char in form for char in "-'’")
+        if (
+            whole_word(form) is not None
+            and form not in self._seeds
+            and (
+                structural_flags(message.text.strip(), form) or any(char in form for char in "-'’")
+            )
         ):
             return False
         return True
@@ -120,7 +134,7 @@ class NoisePolicy:
         if (
             not isinstance(data, dict)
             or set(data) != {"version", "base", "omit", "keep", "protections"}
-            or data["version"] != POLICY_VERSION
+            or data["version"] not in {POLICY_VERSION, MESSAGE_POLICY_VERSION}
             or data["protections"] != PROTECTION_VERSION
             or not isinstance(data["base"], dict)
             or data["base"].get("version") != "telegram-episodes-v2"

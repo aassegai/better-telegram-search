@@ -77,7 +77,7 @@ class ChunkPolicy:
         import json
 
         data = json.loads(value)
-        if data.get("version") == "telegram-episodes-noise-v3":
+        if data.get("version") in {"telegram-episodes-noise-v3", "telegram-episodes-messages-v4"}:
             from telegram_search.search.chunking.noise.compile import NoisePolicy
 
             return NoisePolicy.from_json(value)

@@ -10,7 +10,7 @@ export function readyComparison() {
       after: { chunks: 4, tokens: 450, own_messages: 54, source_messages: 55, skipped_messages: 1, padded_token_slots: 600, protected_noise_messages: 2 },
       delta: { chunks: -1, tokens: -50 }, cpu_seconds: 1, elapsed_seconds: 2, process_peak_rss_bytes: 80 * 1024 ** 2, batch_size: 16 } };
 }
-export function readyNoiseJob(coverage: Partial<Pick<NonNullable<NoiseJob['summary']>, 'coverage_version' | 'source_complete' | 'evidence_complete' | 'policy_applicable' | 'limited_evidence_forms' | 'new_auto_omit_enabled'>> = {}) {
+export function readyNoiseJob(coverage: Partial<NonNullable<NoiseJob['summary']>> = {}) {
   return { id: noiseJobId, state: 'ready', stale: false, active: false, created_at: 1750000000,
     error: null as string | null, progress: { phase: 'candidates', completed: 51, total: 51, elapsed_seconds: 2,
       scanned_messages: 55, whole_messages: 54, forms: 51 },
@@ -19,7 +19,7 @@ export function readyNoiseJob(coverage: Partial<Pick<NonNullable<NoiseJob['summa
       report_sha256: '1'.repeat(64), new_auto_omit_enabled: false, ...coverage } };
 }
 function form(name: string, decision = 'keep') {
-  return { inherited_decision: null as 'keep' | 'omit' | null, default_decision: (decision === 'omit' ? 'omit' : 'keep') as 'keep' | 'omit', default_origin: 'analysis' as 'analysis' | 'base' | 'inherited', form: name, whole_count: 1, eligible_count: 1, days: 1, authors: 1, protections: {},
+  return { inherited_decision: null as 'keep' | 'omit' | null, default_decision: (decision === 'omit' ? 'omit' : 'keep') as 'keep' | 'omit', form_kind: 'word' as 'word' | 'message', default_origin: 'analysis' as 'analysis' | 'base' | 'inherited', form: name, whole_count: 1, eligible_count: 1, days: 1, authors: 1, protections: {},
     candidate: { decision, reason: decision === 'review' ? 'uncalibrated' : decision === 'omit' ? 'approved_seed' : 'no_noise_hypothesis',
       complete: true, noise: decision === 'review' ? [{ form: 'бля', operation: 'transposition', corpus_count: 20, score: 3 }] : [],
       useful: decision === 'review' ? [{ form: 'был', operation: 'substitution', corpus_count: 30, score: 3.4 }] : [],
@@ -32,6 +32,7 @@ export async function mockNoise(page: Page, initial = false) {
     formsGate: null as Promise<void> | null, formsStarted: 0, statusCalls: 0,
     comparison: null as ReturnType<typeof readyComparison> | null, comparisonCalls: 0,
     comparisonGate: null as Promise<void> | null,
+    families: [{ seed: 'бля', observed_count: 4, eligible_count: 4, omit_count: 0, review_count: 4, keep_count: 0 }],
     forms: [form('бял', 'review'), form('сука', 'omit'),
       ...Array.from({ length: 48 }, (_, index) => form(`synthetic${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + index % 26)}`)), form('constructor')] };
   await page.route('**/api/chats/*/noise-analyses**', async route => {
@@ -88,13 +89,14 @@ export async function mockNoise(page: Page, initial = false) {
     if (suffix.endsWith('/forms')) {
       control.formsStarted++;
       const choice = url.searchParams.get('decision');
-      const rows = control.forms.filter(row => !choice || row.candidate.decision === choice);
+      const family = url.searchParams.get('family');
+      const rows = control.forms.filter(row => (!choice || row.candidate.decision === choice) && (!family || row.candidate.noise.some(item => item.form === family)));
       const offset = Number(url.searchParams.get('offset') ?? 0);
       const result = { forms: rows.slice(offset, offset + 50), next_offset: rows.length > offset + 50 ? offset + 50 : null };
       if (control.formsGate) await control.formsGate;
       return send(result);
     }
-    if (suffix.endsWith('/families')) return send({ families: [{ seed: 'бля', observed_count: 4, eligible_count: 4, omit_count: 0, review_count: 4, keep_count: 0 }], next_offset: null });
+    if (suffix.endsWith('/families')) return send({ families: control.families, next_offset: null });
     if (suffix.endsWith('/cancel')) {
       if (control.job) control.job = { ...control.job, active: false, state: control.job.stale ? 'stale' : 'cancelled' };
       return send(control.job);

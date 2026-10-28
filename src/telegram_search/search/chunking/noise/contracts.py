@@ -87,8 +87,14 @@ class CandidateReport:
 def validate_evidence(value, observed_form):
     """Validate the complete persisted schema before exposing it to a renderer."""
     from telegram_search.search.chunking.classification import whole_word
+    from telegram_search.search.chunking.noise.messages import is_message_form
+    from telegram_search.search.chunking.noise.messages import valid_form as valid_message
+
+    message = isinstance(value, dict) and value.get("schema_version") == 2
 
     def valid_form(form):
+        if message:
+            return valid_message(form)
         return isinstance(form, str) and 1 <= len(form) <= 64 and whole_word(form) == form
 
     def number(item):
@@ -141,7 +147,8 @@ def validate_evidence(value, observed_form):
         not isinstance(value, dict)
         or set(value) != required
         or type(value["schema_version"]) is not int
-        or value["schema_version"] != 1
+        or value["schema_version"] not in {1, 2}
+        or (message and not is_message_form(observed_form))
         or type(value["decision"]) is not str
         or value["decision"] not in {"keep", "review", "omit"}
         or not isinstance(value["reason"], str)

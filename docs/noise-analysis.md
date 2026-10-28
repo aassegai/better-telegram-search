@@ -10,8 +10,9 @@ rules and indexing checkpoints unchanged; explicit apply rebuilds only text.
 The local API, per-chat settings UI and standalone CLI share the draft, override
 and apply services. Real-token dry-run is available in the standalone CLI and
 as a cancellable background job in chat settings. Calibration remains pending.
-**Automatic omission of new forms is disabled.** New ambiguous forms stay unless
-you explicitly choose an omit rule; previously selected manual rules are retained.
+**New one-word automatic omissions remain disabled.** Whole short-message families
+are also analyzed now. Ambiguous messages stay; selected rules only take effect
+after explicit apply. Previously selected manual rules are retained.
 
 ## Evidence and decisions
 
@@ -24,8 +25,9 @@ correction or transitive expansion of seeds. Every form retains an unchanged
 hypothesis; synthetic `бял` can compete with both `бля` and `был`.
 
 Counts separate whole-message occurrences, occurrences eligible for filtering,
-phrase evidence, distinct days and salted author counts. Reports contain no full
-messages, neighboring text, author names or author IDs. Attachment captions,
+phrase evidence, distinct days and salted author counts. Private reports now contain
+normalized whole short messages as well as single words. They contain no neighboring
+text, author names or author IDs. Treat reports as private archive data. Attachment captions,
 structured links/code/mentions and replies to questions are protected per
 occurrence. New forms also preserve case, number, mixed-script and compound-term
 signals. Excluded senders are excluded from both observations and parent lookup.
@@ -34,9 +36,45 @@ The current evidence score is `log1p(whole_count + phrase_count)` with equal
 error-operation weights. It is **uncalibrated, not a probability**. Useful and
 unchanged competitors and the score margin remain visible. Known forms and
 unknown forms without a noise hypothesis stay; novel ambiguous forms go to
-review. Only the pre-existing approved exact seeds can be labelled omit, and
-protected occurrences still stay. Analysis never activates these labels.
+review. For words, only the pre-existing approved exact seeds can be labelled omit. Whole-message
+command decisions follow the separate conservative rules below; protected occurrences still stay. Analysis never activates these labels.
 Family counts are descriptive and cannot decide the fate of individual variants.
+
+## Whole messages and typo families
+
+The scope remains fewer than five unique normalized words. Each bounded whole
+message is a candidate, including multiword phrases and commands. Variants are
+compared by one insertion/deletion/substitution/adjacent transposition or direct
+letter lengthening. Frequent observed messages become family anchors, so the
+report is not limited to a command whitelist. Families do not expand transitively.
+A phrase's frequency and its variants are descriptive evidence, not spam probability.
+
+Automatic draft omissions currently cover the explicitly confirmed commands
+`зоопарк xd` and `покормить жабу`; repeated, internal transposition/letter-lengthening
+variants additionally require a local useful-word check and at least three eligible
+occurrences on two eligible days. Deletions/substitutions such as `покорить жабу`
+remain reviewable because they can change meaning. New argumentless slash commands
+require actual Telegram bot-command entities and at least ten eligible occurrences
+on two days. Commands with meaningful arguments and frequency-only conversational
+phrases remain reviewable. Protected occurrences never supply the missing eligible
+day evidence. This is a conservative rule system, not a calibrated semantic spam model.
+
+The saved V4 policy contains exact observed whole-message forms. It never removes
+matching words from a larger message, preserves explicit keep rules and context
+protections, and survives model/index rebuilds. Existing V3 hashes remain unchanged.
+Overrides accept normalized message forms up to 256 characters; reports count local
+size skips. Reports with a finished source pass explicitly show that the scan ended,
+including older bounded reports whose remaining limits concern forms or hypotheses.
+
+## Reviewing an entire family
+
+Choose **Message families and variants**, then **Open entire family**. The list
+contains exact observed messages, including ambiguous variants such as
+`покормить жабу` / `покорить жабу`. Choose keep or omit separately for each variant;
+closing/reopening the family preserves unsaved choices. **Show more variants**
+loads further bounded pages. Save overrides, preview, then apply explicitly.
+A family is a review group, not a rule that deletes every similar future message.
+The family summary reflects analysis decisions; your draft choices appear per variant.
 
 ## Local API
 
@@ -51,6 +89,7 @@ application's Host/Origin/local-session guards. Mutations require
 | `GET /{id}` | State, elapsed time, bounded progress and summary |
 | `POST /{id}/cancel` | Cooperative cancellation, also during vector maintenance |
 | `GET /{id}/forms?decision=review&offset=0&limit=50` | Paginated forms, evidence and protections |
+| `GET /{id}/forms?family=...&offset=0&limit=50` | All observed variants of one exact family, with individual decisions |
 | `GET /{id}/families?offset=0&limit=50` | Descriptive family aggregates |
 | `DELETE /{id}` | Remove a stopped job and its owned private report |
 | `GET /{id}/draft` | Lightweight override/revision/application metadata |
@@ -67,8 +106,8 @@ Allowed maxima: one million messages, 50,000 forms in each whole/phrase vocabula
 one hour. Pages contain at most 100 entries. At most eight reports are saved,
 with one active job per chat and one CPU analysis worker across the workspace.
 A report is capped at 128 MiB. Delete unused reports before starting a ninth.
-Source, candidate, detail and time limits are explicit. Source/time limits block
-application. Bounded hypothesis lists never authorize automatic omission of new
+Source, candidate, detail and time limits are explicit. Known source/time limits do not block applying finalized exact rules;
+unexamined messages remain kept. Bounded hypothesis lists never authorize automatic omission of new
 forms. Timing and sampled RSS are measured costs, not claimed GPU savings.
 
 Short canonical reads use timestamp/message-ID keysets. Text processing runs

@@ -41,7 +41,8 @@ def reset_for_rebuild(conn, chat_id=None):
         + "AND NOT EXISTS (SELECT 1 FROM chat_chunking selected "
         "JOIN chunking_policies p ON p.id=selected.policy_id "
         "WHERE selected.chat_id=chats.id "
-        "AND json_extract(p.policy_json,'$.version')='telegram-episodes-noise-v3') "
+        "AND json_extract(p.policy_json,'$.version') IN "
+        "('telegram-episodes-noise-v3','telegram-episodes-messages-v4')) "
         + "ON CONFLICT(chat_id) DO UPDATE SET policy_id=excluded.policy_id",
         (DEFAULT_POLICY.identity, chat_id) if chat_id is not None else (DEFAULT_POLICY.identity,),
     )

@@ -35,7 +35,7 @@ def test_exact_policy_is_canonical_frozen_and_independent_of_audit_counts():
     [
         ("Бял",),
         ("бял!",),
-        ("два слова",),
+        ("один два три четыре пять",),
         ("https://example.org/lol",),
         ("а" * 65,),
         (None,),

@@ -89,7 +89,8 @@ def test_cpu_analysis_aggregates_rare_variants_and_preserves_source_and_index_st
     assert (row["whole_count"], row["eligible_count"], row["days"], row["authors"]) == (3, 2, 2, 2)
     assert row["protections"] == {"attachment": 1}
     rows = analysis.report(chat_id, status["id"])["forms"]
-    assert {r["form"] for r in rows} == {"сука", "бял", "блля"}
+    assert {r["form"] for r in rows} == {"сука", "бял", "блля", "он был рядом"}
+    assert next(r for r in rows if r["form"] == "он был рядом")["candidate"]["decision"] == "review"
     typo = next(r for r in rows if r["form"] == "бял")
     assert typo["candidate"]["decision"] != "omit"
     assert analysis.report(chat_id, status["id"], kind="families")["families"]
@@ -135,11 +136,11 @@ def test_cpu_collection_holds_no_main_writer_or_lifecycle_lock_and_cancel_is_reu
     entered, release = threading.Event(), threading.Event()
     original = module.collect_batch
 
-    def held(rows, salt, check):
+    def held(rows, salt, check, **kwargs):
         entered.set()
         assert release.wait(5)
         check()
-        return original(rows, salt, check)
+        return original(rows, salt, check, **kwargs)
 
     monkeypatch.setattr(module, "collect_batch", held)
     try:
@@ -167,8 +168,8 @@ def test_source_mutation_during_cpu_work_stales_report(
     chat_id = chat(importer, tmp_path)
     original = module.collect_batch
 
-    def mutate(*args):
-        result = original(*args)
+    def mutate(*args, **kwargs):
+        result = original(*args, **kwargs)
         with db.connect() as conn:
             conn.execute("UPDATE chats SET revision=revision+1 WHERE id=?", (chat_id,))
         return result
@@ -218,6 +219,7 @@ def test_explicit_caps_partial_report_and_bounded_pagination(importer, tmp_path,
     chat_id = chat(importer, tmp_path, [message(i, f"term{i}") for i in range(1, 8)])
     status = start_ready(analysis, chat_id, AnalysisOptions(max_messages=4, max_forms=2))
     assert status["state"] == "limited"
+    assert not status["summary"]["scan_complete"]
     assert set(status["summary"]["limits"]) == {"message_limit", "form_limit"}
     assert len(analysis.report(chat_id, status["id"])["forms"]) == 2
     for kwargs in ({"limit": 101}, {"offset": -1}, {"offset": True}, {"decision": "invalid"}):
@@ -373,7 +375,8 @@ def test_sql_metadata_cap_is_explicit_and_large_parent_conservatively_protects_r
         ],
     )
     status = start_ready(analysis, chat_id)
-    assert status["state"] == "limited"
+    assert status["state"] == "ready"
+    assert status["summary"]["scan_complete"] and not status["summary"]["source_complete"]
     assert status["summary"]["limited_messages"] == 2
     assert status["summary"]["limits"] == ["text_limit"]
     rows = analysis.report(chat_id, status["id"])["forms"]
