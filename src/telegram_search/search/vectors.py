@@ -2,6 +2,8 @@ import heapq
 import os
 import re
 import threading
+import time
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from telegram_search.search.execution import (
     search_lock,
     strategy,
 )
+from telegram_search.search.vector_optimization import VectorOptimization
 from telegram_search.security.paths import owned_vector_path
 from telegram_search.shared.errors import UserError
 
@@ -33,24 +36,58 @@ class VectorStore:
         self.db = lancedb.connect(location)
         self.location = location
         self.lock = threading.RLock()
+        self.write_lock = threading.RLock()
         self.indexed_ids = set()
         self.ann_process = None
         self.ann_observer = None
         self.ann_options = None
         self.ann_threads = 4
         self.ann_memory_limit_mib = 512
+        self.optimization = VectorOptimization()
 
     def _ann_invalidate(self, space_id):
+        self.optimization.writer_ready()
         if self.ann_observer is not None:
             self.ann_observer.invalidate(space_id)
 
     def _ann_dirty(self, space_id, dimension):
+        self.optimization.changed(space_id)
         if self.ann_observer is not None:
             self.ann_observer.dirty(space_id, dimension)
 
+    def _ann_for_maintenance(self, space_id):
+        self.optimization.writer_ready()
+        if self.ann_observer is not None:
+            self.ann_observer.maintenance(space_id)
+
     def close(self):
+        self.optimization.close(wait=True)
         if self.ann_process is not None:
             self.ann_process.close()
+
+    def maybe_optimize(self, spaces, *, threads=4, memory_limit_mib=1024):
+        with self.write_lock:
+            return self.optimization.run(
+                self, spaces, threads=threads, memory_limit_mib=memory_limit_mib
+            )
+
+    @contextmanager
+    def publication(self, lifecycle):
+        # Background publication must wait for maintenance BEFORE owning the
+        # lifecycle lock. A UI operation may already own lifecycle and need the
+        # writer, so never wait for lifecycle while retaining the writer lock.
+        while True:
+            checkpoint()
+            if self.write_lock.acquire(timeout=0.05):
+                if lifecycle.acquire(blocking=False):
+                    break
+                self.write_lock.release()
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            lifecycle.release()
+            self.write_lock.release()
 
     def ann_status(self, space_id, dimension):
         from telegram_search.search.ann import index_status
@@ -67,7 +104,7 @@ class VectorStore:
         """Synchronous primitive for the background builder, not an HTTP handler."""
         from telegram_search.search.ann import AnnOptions, build_index
 
-        with self.lock:
+        with self.write_lock, self.lock:
             self._ann_invalidate(space_id)
             table = self.table(space_id, dimension)
             if table is None:
@@ -232,7 +269,8 @@ class VectorStore:
 
         if embeddings.shape != (len(chunks), dimension):
             raise UserError("Размерность векторов не совпадает с embedding space.")
-        with self.lock:
+        with self.write_lock, self.lock:
+            self.optimization.writer_ready()
             table = self.table(space_id, dimension, create=True)
             self._validate_table(table, dimension)
             data = pa.Table.from_pylist(
@@ -402,22 +440,43 @@ class VectorStore:
     def prune_segment(
         self, spaces: list[dict], chat_id: str, day: str, keep_space: str, generation: int
     ):
-        with self.lock:
+        self.prune_segments(
+            spaces,
+            [
+                {
+                    "chat_id": chat_id,
+                    "utc_day": day,
+                    "keep_space_id": keep_space,
+                    "generation": generation,
+                }
+            ],
+        )
+
+    def prune_segments(self, spaces, segments):
+        if not segments:
+            return
+        if len(segments) > 64:
+            raise ValueError("Vector cleanup batch exceeds its budget")
+        with self.write_lock, self.lock:
             for space in spaces:
                 table = self.table(space["id"], space["dimension"])
                 if table is None:
                     continue
-                predicate = f"chat_id={sql_literal(chat_id)} AND utc_day={sql_literal(day)}"
-                if space["id"] == keep_space:
-                    predicate += f" AND generation<{int(generation)}"
-                else:
-                    predicate += f" AND generation<={int(generation)}"
+                clauses = []
+                for segment in segments:
+                    comparison = "<" if space["id"] == segment["keep_space_id"] else "<="
+                    clauses.append(
+                        f"(chat_id={sql_literal(segment['chat_id'])} "
+                        f"AND utc_day={sql_literal(segment['utc_day'])} "
+                        f"AND generation{comparison}{int(segment['generation'])})"
+                    )
+                predicate = " OR ".join(clauses)
                 if table.count_rows(predicate):
                     self._ann_invalidate(space["id"])
                     table.delete(predicate)
 
     def delete_chat(self, spaces: list[dict], chat_id: str) -> None:
-        with self.lock:
+        with self.write_lock, self.lock:
             for space in spaces:
                 table = self.table(space["id"], space["dimension"])
                 if table is not None and table.count_rows(f"chat_id={sql_literal(chat_id)}"):
@@ -425,7 +484,7 @@ class VectorStore:
                     table.delete(f"chat_id={sql_literal(chat_id)}")
 
     def compact(self, spaces: list[dict]) -> None:
-        with self.lock:
+        with self.write_lock, self.lock:
             for space in spaces:
                 self._ann_invalidate(space["id"])
                 table = self.table(space["id"], space["dimension"])
@@ -444,7 +503,7 @@ class VectorStore:
         if not predicates:
             return 0
         removed = 0
-        with self.lock:
+        with self.write_lock, self.lock:
             for space in spaces:
                 self._ann_invalidate(space["id"])
                 path = self.table_path(space["id"])
@@ -474,7 +533,7 @@ class VectorStore:
 
     def prune_media(self, space_id, dimension, eligible):
         """Stream only media IDs; never load corpus vectors into Python during cleanup."""
-        with self.lock:
+        with self.write_lock, self.lock:
             table = self.table(space_id, dimension)
             if table is None:
                 return

@@ -132,15 +132,14 @@ class MediaImages:
                 encode(hashes[:middle], values[:middle])
                 encode(hashes[middle:], values[middle:])
             else:
-                with self.lock:
-                    if self.clip is encoder:
-                        published += self._publish(
-                            encoder.space_id,
-                            getattr(encoder, "dimension", 512),
-                            "image",
-                            hashes,
-                            embeddings,
-                        )
+                published += self._publish(
+                    encoder.space_id,
+                    getattr(encoder, "dimension", 512),
+                    "image",
+                    hashes,
+                    embeddings,
+                    expected_encoder=encoder,
+                )
 
         encode(good, data)
         finished = self.last_used = time.monotonic()
@@ -168,9 +167,12 @@ class MediaImages:
             )
         return True
 
-    def _publish(self, space, dimension, kind, hashes, embeddings):
-        self._register_space(space, dimension, kind)
-        with self.lock, self.db.connect() as conn:
+    def _publish(self, space, dimension, kind, hashes, embeddings, *, expected_encoder=None):
+        vectors = self.semantic._vector_store()
+        with vectors.publication(self.lock), self.db.connect() as conn:
+            if expected_encoder is not None and self.clip is not expected_encoder:
+                return 0
+            self._register_space(space, dimension, kind)
             chosen = [i for i, sha in enumerate(hashes) if self._current(conn, sha)]
             rows = [
                 {
@@ -183,7 +185,7 @@ class MediaImages:
             ]
             if not rows:
                 return 0
-            self.semantic._vector_store().upsert(space, dimension, rows, embeddings[chosen])
+            vectors.upsert(space, dimension, rows, embeddings[chosen])
             conn.execute(
                 "INSERT OR IGNORE INTO media_spaces VALUES(?,?,?)", (space, dimension, kind)
             )

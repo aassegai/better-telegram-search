@@ -425,7 +425,7 @@ class SegmentWorker:
                         continue
                     raise
                 publish_started = time.perf_counter()
-                with self.lock, self.db.connect() as conn:
+                with self.vectors.publication(self.lock), self.db.connect() as conn:
                     self._guard(conn, work)
                     # If the process dies after this write, replay uses the same stable IDs.
                     self.vectors.upsert(
@@ -482,22 +482,8 @@ class SegmentWorker:
                     "keep_space_id=excluded.keep_space_id,generation=excluded.generation,error=NULL",
                     (work["chat_id"], work["utc_day"], self.encoder.space_id, work["generation"]),
                 )
-            with self.lock, self.db.connect() as conn:
-                spaces = [
-                    dict(row) for row in conn.execute("SELECT id,dimension FROM embedding_spaces")
-                ]
-                self.vectors.prune_segment(
-                    spaces,
-                    work["chat_id"],
-                    work["utc_day"],
-                    self.encoder.space_id,
-                    work["generation"],
-                )
-                conn.execute(
-                    "DELETE FROM vector_segment_cleanup WHERE chat_id=? AND utc_day=? "
-                    "AND generation=?",
-                    (work["chat_id"], work["utc_day"], work["generation"]),
-                )
+            # Physical removal is a durable batched outbox operation. Canonical
+            # SQLite generations already hide superseded vectors from search.
         except ContextChanged:
             from telegram_search.storage.generations import invalidate_segments
 

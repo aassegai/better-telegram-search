@@ -1,0 +1,13 @@
+{
+  "synthetic": true,
+  "dimension": 64,
+  "rows": 1024,
+  "fragments_before": 256,
+  "fragments_after": 1,
+  "individual_32_cleanup_seconds": 0.654979,
+  "batched_32_cleanup_seconds": 0.034993,
+  "compacted_batched_cleanup_seconds": 0.007296,
+  "maintenance_seconds": 4.91328,
+  "ids_vectors_unchanged": true,
+  "old_snapshot_readable": true
+}

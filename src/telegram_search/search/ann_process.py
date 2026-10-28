@@ -75,6 +75,12 @@ def _serve(connection, threads, background=False):
                                     table, request["dimension"], AnnOptions(**request["options"])
                                 )
                             }
+                        elif request.get("operation") == "optimize":
+                            from telegram_search.search.vector_files import optimize_files
+
+                            # Concurrent readers and interrupted writers may still
+                            # own old files. Automatic maintenance retains them.
+                            response = optimize_files(table)
                         else:
                             table.checkout(request["version"])
                             query = (
@@ -240,6 +246,15 @@ class AnnProcess:
             self.close()
             raise AnnUnavailable("ann_build_failed")
         return status
+
+    def optimize(self, *, location, table):
+        response = self._request(
+            {"operation": "optimize", "location": str(location), "table": table}
+        )
+        if response.get("optimized") is not True:
+            self.close()
+            raise AnnUnavailable("ann_maintenance_failed")
+        return response
 
     def _request(self, request):
         operation = request.get("operation", "query")

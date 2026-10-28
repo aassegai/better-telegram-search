@@ -358,6 +358,8 @@ def test_model_switch_is_explicit_and_only_current_generation_is_eligible(db, im
         pending
     )
     assert updated["state"] == "done"
+    # Superseded rows are already ineligible. Physical removal is now batched.
+    service.cleanup()
     assert service.vectors.table("synthetic", 4).count_rows() == 0
     assert service.vectors.table("other", 4).count_rows() == updated["chunks_total"]
     with db.connect() as conn:

@@ -60,3 +60,33 @@ test('dead worker is visible while the ordinary status read is blocked and can b
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('maintenance replaces the ETA and returns to indexing in both languages', async ({ page }) => {
+  let running = true;
+  await page.route('**/api/indexing/health', route => route.fulfill({ json: { semantic: {
+    enabled: true, alive: true, stopped: false, phase: 'indexing', waiting_reason: null,
+    error: null, database_wait_seconds: 0, retry_in_seconds: 0, heartbeat_age_seconds: 0,
+    vector_maintenance: { state: running ? 'running' : 'done', error: null },
+  } } }));
+  await page.route('**/api/chats/*/index', async route => {
+    const base = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...base, semantic: { ...base.semantic,
+      enabled: 1, profile: 'small', preparation_state: 'ready', paused: 0,
+      ready_segments: 1, total_segments: 20, estimated_remaining_seconds: 120,
+      estimate: { lower_seconds: 60, upper_seconds: 180 },
+      works: [{ state: 'pending', count: 19, chunks_total: 0, chunks_done: 0 }],
+    } } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: /^Настройки индексации / }).first().click();
+  const text = page.getByRole('region', { name: 'Текст · E5' });
+  await expect(text.getByText('Уплотнение индекса', { exact: true })).toBeVisible();
+  await expect(text.getByRole('status')).toHaveText('Уплотняем файлы индекса. Готовые векторы и прогресс сохраняются.');
+  await expect(text.locator('.index-eta')).toHaveCount(0);
+  await page.getByRole('button', { name: 'RU', exact: true }).press('End');
+  const english = page.getByRole('region', { name: 'Text · E5' });
+  await expect(english.getByText('Index maintenance', { exact: true })).toBeVisible();
+  running = false;
+  await expect(english.locator('.index-eta')).toHaveText('About 1–3 min remaining.');
+  await expect(english.getByText('Indexing', { exact: true })).toBeVisible();
+});

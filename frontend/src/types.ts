@@ -67,6 +67,7 @@ export type Hit = {
 };
 
 export type IndexWorkerHealth = {
+  vector_maintenance?: { state: string; error: string | null };
   enabled: boolean; alive: boolean; stopped: boolean; phase: string;
   waiting_reason: 'database' | null; error: string | null;
   database_wait_seconds: number; retry_in_seconds: number; heartbeat_age_seconds: number;

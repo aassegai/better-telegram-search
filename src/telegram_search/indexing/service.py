@@ -43,6 +43,7 @@ class SemanticService:
         self._failed_result = None
         self.last_used = time.monotonic()
         self.estimates = Estimates(db)
+        self._segment_cleanup_at = time.monotonic() + 60
         self.query_cache = OrderedDict()
         self.available = all(
             importlib.util.find_spec(name)
@@ -82,11 +83,14 @@ class SemanticService:
                 self.background.start()
 
     def worker_status(self):
-        return self.health.snapshot(
+        status = self.health.snapshot(
             enabled=self.background_enabled and self.available,
             thread=self.background,
             stopped=self.stop.is_set(),
         )
+        if self.vectors is not None:
+            status["vector_maintenance"] = self.vectors.optimization.status()
+        return status
 
     def _new_encoder(self, profile, settings=None):
         from telegram_search.inference.bundles import BundleStore
@@ -435,6 +439,19 @@ class SemanticService:
                     "SELECT chat_id,created_at FROM vector_deletions LIMIT 64"
                 ).fetchall()
                 segments = conn.execute("SELECT * FROM vector_segment_cleanup LIMIT 64").fetchall()
+                indexing = conn.execute(
+                    "SELECT 1 FROM index_work w JOIN chats c ON c.id=w.chat_id "
+                    "JOIN semantic_state s ON s.id=1 WHERE w.state IN ('pending','running') "
+                    "AND c.text_paused=0 AND s.enabled=1 AND s.paused=0 LIMIT 1"
+                ).fetchone()
+            if (
+                self.background_enabled
+                and not compact
+                and indexing
+                and len(segments) < 32
+                and time.monotonic() < self._segment_cleanup_at
+            ):
+                segments = []
             if not spaces:
                 return
             vectors = self._vector_store()
@@ -447,22 +464,25 @@ class SemanticService:
                         "DELETE FROM vector_deletions WHERE chat_id=? AND created_at=?",
                         (row["chat_id"], row["created_at"]),
                     )
-            for row in segments:
-                vectors.prune_segment(
-                    spaces, row["chat_id"], row["utc_day"], row["keep_space_id"], row["generation"]
-                )
+            if segments:
+                vectors.prune_segments(spaces, segments)
                 with self.db.connect() as conn:
-                    conn.execute(
+                    conn.executemany(
                         "DELETE FROM vector_segment_cleanup WHERE chat_id=? AND utc_day=? "
                         "AND keep_space_id=? AND generation=?",
-                        (row["chat_id"], row["utc_day"], row["keep_space_id"], row["generation"]),
+                        [
+                            (r["chat_id"], r["utc_day"], r["keep_space_id"], r["generation"])
+                            for r in segments
+                        ],
                     )
+                self._segment_cleanup_at = time.monotonic() + 60
             if compact:
                 vectors.compact(spaces)
 
     def _step(self):
         self.health.update("cleanup", keep_wait=True)
         self.cleanup()
+        self._maintain_vectors()
         worker = None
         with self.lock:
             encoder = self.encoder
@@ -500,6 +520,33 @@ class SemanticService:
                     self.query_cache.clear()
         self.health.update("idle")
         return False
+
+    def _maintain_vectors(self):
+        # Do not retain the lifecycle lock while the CPU child compacts files.
+        # Settings, worker health and SQLite writers remain available.
+        vectors = self.vectors
+        if vectors is None or self.stop.is_set():
+            return
+        spaces = {}
+        if self.encoder is not None:
+            spaces[self.encoder.space_id] = {
+                "id": self.encoder.space_id,
+                "dimension": self.encoder.spec.dimension,
+            }
+        visual = getattr(getattr(self, "media", None), "clip", None)
+        if visual is not None:
+            spaces[visual.space_id] = {
+                "id": visual.space_id,
+                "dimension": getattr(visual, "dimension", 512),
+            }
+        if spaces:
+            settings = self.db.settings
+            self.health.update("maintenance")
+            vectors.maybe_optimize(
+                list(spaces.values()),
+                threads=min(4, settings.cpu_threads),
+                memory_limit_mib=min(2048, settings.memory_limit_mib // 2),
+            )
 
     def _pause_failed_result(self):
         encoder, result = self._failed_result
@@ -597,6 +644,8 @@ class SemanticService:
     def shutdown(self):
         self.stop.set()
         self.wake.set()
+        if self.vectors is not None:
+            self.vectors.optimization.close()
         if self.background:
             self.background.join()
         if self.preparation:

@@ -141,6 +141,12 @@ class AnnIndexService:
             raise UserError("Индекс ANN останавливается. Повторите очистку через несколько секунд.")
         self.wake.set()
 
+    def maintenance(self, space_id):
+        # Physical compaction preserves data and the user's queued/manual build.
+        if not self._interrupt(space=space_id, state="checking", requeue=True):
+            raise UserError("Индекс ANN останавливается. Повторите очистку через несколько секунд.")
+        self.wake.set()
+
     def models_changed(self, previous_space=None):
         if previous_space is not None:
             self._interrupt(space=previous_space, state="checking")
@@ -209,6 +215,8 @@ class AnnIndexService:
         if active is None:
             return
         store, spaces = active
+        if store and store.optimization.writer_active:
+            return
         settings = self.db.settings
         with self.condition:
             self.initializing = False
@@ -223,6 +231,8 @@ class AnnIndexService:
         options = AnnOptions(partitions=settings.ann_partitions, probes=settings.ann_probes)
         for space, (dimension, roles) in spaces.items():
             with store.lock:
+                if store.optimization.writer_active:
+                    return
                 table = store.table(space, dimension)
                 info = store.ann_status(space, dimension)
                 rows = table.count_rows() if table is not None else 0

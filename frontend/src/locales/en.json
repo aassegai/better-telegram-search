@@ -1180,6 +1180,8 @@
   "Показать ещё варианты": "Show more variants",
   "Семейства и варианты сообщений": "Message families and variants",
   "Исключить всё семейство": "Omit entire family",
+  "Уплотнение индекса": "Index maintenance",
+  "Уплотняем файлы индекса. Готовые векторы и прогресс сохраняются.": "Compacting index files. Completed vectors and progress are preserved.",
   "К исключению в проекте: {p0} из {p1} вариантов": "Selected for omission in the draft: {p0} of {p1} variants",
   "Всё семейство": "Entire family",
   "Частично": "Partially selected",

@@ -255,7 +255,12 @@ def test_cleanup_does_not_hold_sqlite_writer_during_native_vector_io(db, monkeyp
             assert release.wait(3)
 
     monkeypatch.setattr(
-        service, "_vector_store", lambda: SimpleNamespace(delete_chat=native, prune_segment=native)
+        service,
+        "_vector_store",
+        lambda: SimpleNamespace(
+            delete_chat=native,
+            prune_segments=lambda spaces, rows: native(spaces, rows[-1]["chat_id"]),
+        ),
     )
 
     def cleanup():

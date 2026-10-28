@@ -264,6 +264,8 @@ def create_app(
                 updates.start_cleanup()
             yield
         finally:
+            if semantic and semantic.vectors is not None:
+                semantic.vectors.optimization.close()
             if diagnostics_cache:
                 diagnostics_cache.close()
             verification_stop.set()

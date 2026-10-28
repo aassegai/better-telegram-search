@@ -1210,10 +1210,11 @@ class MediaService(MediaImages):
                         continue
                     raise
                 # Publish all parts together: no searchable partial OCR on a failed batch.
-                with self.lock, self.db.connect() as conn:
+                vectors = self.semantic._vector_store()
+                with vectors.publication(self.lock), self.db.connect() as conn:
                     if not self._ocr_guard(conn, row["sha256"], encoder, engine, attempt=attempt):
                         return True
-                    self.semantic._vector_store().upsert(
+                    vectors.upsert(
                         encoder.space_id,
                         encoder.spec.dimension,
                         [
@@ -1326,7 +1327,24 @@ class MediaService(MediaImages):
                 )
 
     def cleanup(self, *, compact=False):
-        with self.lock, self.db.connect() as conn:
+        vectors = self.semantic.vectors
+        if vectors is None:
+            with self.lock, self.db.connect() as conn:
+                if not conn.execute("SELECT 1 FROM media_spaces LIMIT 1").fetchone():
+                    tombstones = conn.execute(
+                        "SELECT sha256 FROM media_vector_cleanup LIMIT 100"
+                    ).fetchall()
+                    if tombstones:
+                        conn.executemany(
+                            "DELETE FROM media_vector_cleanup WHERE sha256=?", tombstones
+                        )
+                    return
+                if not self.semantic.available:
+                    raise UserError("Для очистки медиа-векторов установите CPU runtime semantic.")
+            # Lazy opening publishes the store pointer; an optimizer can observe
+            # it immediately. It must happen outside the lifecycle lock too.
+            vectors = self.semantic._vector_store()
+        with vectors.publication(self.lock), self.db.connect() as conn:
             spaces = [dict(row) for row in conn.execute("SELECT * FROM media_spaces")]
             if spaces and not self.semantic.available:
                 raise UserError("Для очистки медиа-векторов установите CPU runtime semantic.")
