@@ -14,7 +14,10 @@ from telegram_search.shared.errors import UserError
 from telegram_search.storage.noise import NoiseReport, NoiseStore, report_path
 
 
-def wait_terminal(service, chat, job_id, timeout=15):
+def wait_terminal(service, chat, job_id, timeout=60):
+    # Functional completion guard: cold Windows runners can spend more than
+    # 15 seconds building the local lexicon/signature index. Result assertions
+    # below still verify the finished job rather than treating a timeout as success.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with service.lock:
