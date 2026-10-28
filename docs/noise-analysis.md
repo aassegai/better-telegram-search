@@ -207,7 +207,9 @@ closed. Old full checksum-bearing reports remain compatible; old partial reports
 are never silently upgraded. The UI explains when the source is complete but
 evidence is limited, and why an incompatible report requires a new analysis.
 
-At most 1,000 canonical observed forms may have `keep`/`omit` overrides. Save uses
+Canonical observed forms may have `keep`/`omit` overrides without the former
+1,000-entry limit. The report inventory and the compiled 8 MiB policy budget
+remain the bounds. Save uses
 a draft revision; stale edits return `409`. Preview compiles effective rules
 without applying them. Report hashing and compilation hold no main write or
 lifecycle lock. Apply rechecks source/draft revisions inside a short transaction,
@@ -383,3 +385,26 @@ page. New forms are kept by default; approved seeds and inherited exact rules
 retain their existing behavior. The report's final hash/write uses bounded report size
 and retains cancellation/source checks; it is outside the analysis time budget.
 These 0.7.3 rules supersede the earlier full-source-only applicability requirement.
+
+
+## Family defaults and selection state
+
+Observed family variants initially select **Omit with protections**. The Russian
+responses for yes, no and uh-huh, their recognized variants, and inherited manual
+Keep decisions remain kept. Unclassified forms retain their prior defaults.
+The decision dropdown displays the effective choice directly; reset returns to
+the initial or inherited rule. Analysis evidence is shown separately.
+
+Each family shows how many variants are selected in the current draft, including
+variants on unopened pages. Selecting Keep immediately changes the family to
+partial selection. Saving, reloading, discarding edits and pagination preserve
+that state. The selected button means a draft choice, not a completed rebuild.
+Apply remains explicit; attachments, structured entities and answers to questions
+retain their per-occurrence protections. The original archive and keyword search
+are preserved.
+
+New analyses group whole-message variants differing only in leading/trailing
+punctuation (for example an extra closing bracket), even at similar frequencies.
+Each original form remains independently selectable. Words, negations, arguments,
+question marks and command slashes are not stripped by this grouping key. Existing
+immutable reports remain readable; rerun analysis to obtain the new grouping.

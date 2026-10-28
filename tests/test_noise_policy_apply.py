@@ -64,7 +64,7 @@ def test_explicit_override_apply_is_atomic_text_only_and_idempotent(
             "SELECT target_generation FROM index_segments WHERE chat_id=?", (chat,)
         ).fetchone()[0]
     original = policy.preview(chat, job_id, 0)
-    assert original["explicit_omit_forms"] == 0 and not original["new_auto_omit_enabled"]
+    assert original["explicit_omit_forms"] == 1 and not original["new_auto_omit_enabled"]
     saved = policy.save_overrides(chat, job_id, 0, {"бял": "omit", "сука": "keep"})
     assert saved["revision"] == 1
     preview = policy.preview(chat, job_id, 1)
@@ -378,9 +378,107 @@ def test_inherited_explanation_rechecks_source_scope_after_cpu_work(
         {"бял": []},
         {"бял": "review"},
         {"a" * 65: "keep"},
-        {"a" + str(i): "omit" for i in range(1001)},
     ],
 )
 def test_invalid_overrides_are_safe_user_errors(overrides):
     with pytest.raises(UserError):
         validate_overrides(overrides)
+
+
+def test_more_than_1000_overrides_validate_save_and_reload(db, importer, tmp_path, services):
+    from telegram_search.backend.noise import DraftOverrides
+
+    forms = [f"cmd{i}" for i in range(1001)]
+    values = dict.fromkeys(forms, "keep")
+    assert len(DraftOverrides(revision=0, overrides=values).overrides) == 1001
+    assert validate_overrides(values) == values
+    chat = load(
+        importer, export(tmp_path / "large", [message(i + 1, form) for i, form in enumerate(forms)])
+    )["chat_id"]
+    job = start_ready(services[0], chat)
+    saved = services[1].save_overrides(chat, job["id"], 0, values)
+    assert saved["revision"] == 1 and saved["overrides"] == values
+    assert services[1].metadata(chat, job["id"])["overrides"] == values
+
+
+def test_serialized_override_budget_is_checked_before_saving(db, importer, tmp_path, services):
+    from telegram_search.search.chunking.noise.compile import MAX_POLICY_BYTES, compile_policy
+    from telegram_search.search.chunking.policy import DEFAULT_POLICY
+    from telegram_search.shared.text import serialize
+
+    forms = ["a" * 63 + " " + "b" * 63 + " " + "c" * 63 + " " + f"{i:064d}" for i in range(32000)]
+    values = dict.fromkeys(forms, "keep")
+    assert len(serialize(values).encode()) > MAX_POLICY_BYTES
+    assert len(compile_policy(DEFAULT_POLICY, keep=tuple(forms)).json.encode()) < MAX_POLICY_BYTES
+    chat, job_id, policy = prepared(importer, tmp_path, services)
+    before = policy.metadata(chat, job_id)
+    with pytest.raises(UserError, match="слишком большой"):
+        policy.save_overrides(chat, job_id, 0, values)
+    assert policy.metadata(chat, job_id) == before
+
+
+def test_upgrade_of_current_noop_report_applies_the_same_defaults_as_preview(
+    db, importer, tmp_path, services, monkeypatch
+):
+    from telegram_search.indexing import noise_policy as module
+
+    current = module.family_default
+    monkeypatch.setattr(module, "family_default", lambda *_: None)
+    chat, job_id, policy = prepared(importer, tmp_path, services)
+    policy.apply(chat, job_id, 0)
+    next_job = start_ready(services[0], chat)["id"]
+    assert policy.apply(chat, next_job, 0)["already_applied"]
+    assert not policy.metadata(chat, next_job)["stale"]
+    monkeypatch.setattr(module, "family_default", current)
+    preview = policy.preview(chat, next_job, 0)
+    applied = policy.apply(chat, next_job, 0)
+    assert preview["explicit_omit_forms"] == 1
+    assert applied["policy_id"] == preview["policy_id"] and not applied["already_applied"]
+
+
+def test_family_defaults_match_preview_and_keep_responses_manual_choices_and_protections(
+    db, importer, tmp_path, services
+):
+    from telegram_search.search.chunking.classification import classify
+    from telegram_search.search.chunking.legacy import SourceMessage
+
+    texts = ["доброе утро", "доброе утро)", "да", "нет", "ага", "бял"] * 3
+    chat = load(
+        importer,
+        export(tmp_path / "family-default", [message(i + 1, text) for i, text in enumerate(texts)]),
+    )["chat_id"]
+    job_id = start_ready(services[0], chat)["id"]
+    raw = services[0].report(chat, job_id)
+    rows = {r["form"]: r for r in services[1].explain_forms(chat, job_id, raw)["forms"]}
+    assert all(
+        rows[form]["default_decision"] == "omit" for form in ("доброе утро", "доброе утро)", "бял")
+    )
+    assert all(rows[form]["default_decision"] == "keep" for form in ("да", "нет", "ага"))
+    families = services[1].explain_families(
+        chat, job_id, services[0].report(chat, job_id, kind="families")
+    )
+    group = next(r for r in families["families"] if r["seed"] == "доброе утро")
+    assert group["rule_total"] == group["default_omit_forms"] == 2
+    assert not group["override_forms"]
+    services[1].save_overrides(chat, job_id, 0, {"доброе утро)": "keep"})
+    families = services[1].explain_families(
+        chat, job_id, services[0].report(chat, job_id, kind="families")
+    )
+    group = next(r for r in families["families"] if r["seed"] == "доброе утро")
+    assert group["override_forms"] == [{"form": "доброе утро)", "default_decision": "omit"}]
+    _, compiled, _ = services[1]._prepare(chat, job_id, 1)
+    base = SourceMessage(
+        chat_id=chat,
+        message_id=1,
+        timestamp=1750000000,
+        author="User",
+        author_id="u",
+        text="доброе утро",
+    )
+    from dataclasses import replace
+
+    assert not classify(base, compiled).include
+    assert classify(replace(base, has_attachment=True), compiled).include
+    assert classify(base, compiled, replace(base, text="что сказать?", message_id=2)).include
+    for text in ("да", "нет", "ага", "доброе утро)"):
+        assert classify(replace(base, text=text), compiled).include

@@ -112,6 +112,26 @@ def test_frequency_only_cannot_delete_conversation_and_generic_families_are_disc
     assert result["primary_seed"] == "новый повторяемый спам"
 
 
+@pytest.mark.parametrize("variant", ["ебаный в рот)", "((ебаный в рот))", "ебаный в рот!!!"])
+def test_edge_punctuation_groups_equally_frequent_messages_without_rewriting_forms(variant):
+    seed = "ебаный в рот"
+    frequencies = {seed: 75, variant: 74}
+    generator = MessageCandidates(
+        [{"form": form, "whole_count": count} for form, count in frequencies.items()]
+    )
+    for form in frequencies:
+        result = generator.evaluate(form, counts(), frequencies.get)
+        assert result["primary_seed"] == seed
+        assert result["unchanged"]["form"] == form
+        validate_evidence(result, form)
+    assert (
+        generator.evaluate(
+            seed + "?", counts(whole_count=74), lambda form: frequencies.get(form, 0)
+        )["primary_seed"]
+        is None
+    )
+
+
 def test_bot_command_metadata_is_required_and_meaningful_arguments_stay():
     assert auto_message_reason("/farm", counts(bot_commands=10)) == "structured_bot_command"
     assert auto_message_reason("/farm", counts(bot_commands=9)) is None

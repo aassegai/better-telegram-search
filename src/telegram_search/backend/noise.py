@@ -28,9 +28,7 @@ class DraftRevision(BaseModel):
 
 
 class DraftOverrides(DraftRevision):
-    overrides: dict[
-        Annotated[str, Field(min_length=1, max_length=256)], Literal["keep", "omit"]
-    ] = Field(max_length=1000)
+    overrides: dict[Annotated[str, Field(min_length=1, max_length=256)], Literal["keep", "omit"]]
 
 
 class StartNoiseComparison(DraftRevision):
@@ -110,11 +108,14 @@ def analysis_families(
     offset: Annotated[int, Query(ge=0, le=50000)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
-    return invoke(
-        lambda: request.app.state.noise_analyses.report(
+    def load():
+        state = request.app.state
+        page = state.noise_analyses.report(
             chat_id, job_id, kind="families", offset=offset, limit=limit
         )
-    )
+        return state.noise_policies.explain_families(chat_id, job_id, page)
+
+    return invoke(load)
 
 
 @router.get("/{job_id}/draft")

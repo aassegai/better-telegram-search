@@ -13,6 +13,7 @@ from telegram_search.search.chunking.noise.compile import (
 )
 from telegram_search.search.chunking.noise.contracts import validate_evidence
 from telegram_search.search.chunking.noise.coverage import application_ready
+from telegram_search.search.chunking.noise.families import family_default
 from telegram_search.search.chunking.noise.lexicon import load_lexicon
 from telegram_search.search.chunking.noise.message_candidates import auto_message_reason
 from telegram_search.search.chunking.noise.messages import is_message_form
@@ -31,15 +32,18 @@ from telegram_search.storage.noise import NoiseReport, source_fence
 
 
 def validate_overrides(values):
-    if not isinstance(values, dict) or len(values) > 1000:
-        raise UserError("Допускается не более 1000 переопределений в одном отчёте.")
+    if not isinstance(values, dict):
+        raise UserError("Некорректный проект фильтра.")
     try:
         exact_forms(tuple(values))
     except ValueError:
         raise UserError("Переопределение должно содержать точную нормализованную форму.") from None
     if any(type(value) is not str or value not in {"keep", "omit"} for value in values.values()):
         raise UserError("Неизвестное переопределение фильтра.")
-    return dict(sorted(values.items()))
+    selected = dict(sorted(values.items()))
+    if len(serialize(selected).encode()) > MAX_POLICY_BYTES:
+        raise UserError("Проект фильтра слишком большой. Уменьшите число переопределений.")
+    return selected
 
 
 class NoisePolicyService:
@@ -55,7 +59,7 @@ class NoisePolicyService:
     @staticmethod
     def _overrides(row):
         encoded = row["overrides_json"]
-        if not isinstance(encoded, str) or len(encoded.encode()) > 512 * 1024:
+        if not isinstance(encoded, str) or len(encoded.encode()) > MAX_POLICY_BYTES:
             raise UserError("Проект фильтра повреждён.")
         try:
             return validate_overrides(json.loads(encoded))
@@ -119,10 +123,14 @@ class NoisePolicyService:
             inherited = (
                 "keep" if form in inherited_keep else "omit" if form in inherited_omit else None
             )
-            default = inherited or (
-                "omit"
-                if form in baseline or (item["candidate"] or {}).get("decision") == "omit"
-                else "keep"
+            default = (
+                inherited
+                or family_default(form, item.get("family_seed"))
+                or (
+                    "omit"
+                    if form in baseline or (item["candidate"] or {}).get("decision") == "omit"
+                    else "keep"
+                )
             )
             origin = "inherited" if inherited else "base" if form in baseline else "analysis"
             forms.append(
@@ -137,6 +145,46 @@ class NoisePolicyService:
         if fresh["stale"] or fresh["fence_json"] != row["fence_json"]:
             raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")
         return {**page, "forms": forms}
+
+    def explain_families(self, chat_id, job_id, page):
+        row = self.analyses.store.get(chat_id, job_id)
+        if row["stale"]:
+            raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")
+        fence = json.loads(row["fence_json"])
+        policy = self._source_policy(fence)
+        overrides = self._overrides(row)
+        inherited_keep = set(policy.keep) if isinstance(policy, NoisePolicy) else set()
+        inherited_omit = set(policy.omit) if isinstance(policy, NoisePolicy) else set()
+        baseline = set(policy.filler)
+        families = {
+            item["seed"]: {**item, "rule_total": 0, "default_omit_forms": 0, "override_forms": []}
+            for item in page["families"]
+        }
+        for item in NoiseReport(self.db, job_id, fence).rule_rows():
+            group = families.get(item["family_seed"])
+            if group is None:
+                continue
+            form = item["form"]
+            default = (
+                "keep"
+                if form in inherited_keep
+                else "omit"
+                if form in inherited_omit
+                else family_default(form, item["family_seed"])
+                or ("omit" if form in baseline or item["decision"] == "omit" else "keep")
+            )
+            group["rule_total"] += 1
+            group["default_omit_forms"] += int(default == "omit")
+            if form in overrides:
+                group["override_forms"].append({"form": form, "default_decision": default})
+        fresh = self.analyses.store.get(chat_id, job_id)
+        if fresh["stale"] or fresh["draft_revision"] != row["draft_revision"]:
+            raise NoiseDraftConflict("Проект изменился. Обновите его перед сохранением.")
+        return {
+            **page,
+            "families": list(families.values()),
+            "draft_revision": row["draft_revision"],
+        }
 
     def _prepare(self, chat_id, job_id, revision, overrides=None, *, check=lambda: None):
         check()
@@ -163,6 +211,11 @@ class NoisePolicyService:
         try:
             if report.digest(check) != summary["report_sha256"]:
                 raise UserError("Отчёт анализа изменён. Запустите анализ заново.")
+            defaults = {
+                item["form"]: choice
+                for item in report.rule_rows()
+                if (choice := family_default(item["form"], item["family_seed"])) is not None
+            }
             with report.connect() as conn:
                 report.verify(conn)
                 accepted = []
@@ -229,11 +282,19 @@ class NoisePolicyService:
         inherited_keep = set(base.keep) if isinstance(base, NoisePolicy) else set()
         chosen_omit = {f for f, decision in selected.items() if decision == "omit"}
         chosen_keep = {f for f, decision in selected.items() if decision == "keep"}
+        default_omit = {f for f, choice in defaults.items() if choice == "omit"} - inherited_keep
+        default_keep = {f for f, choice in defaults.items() if choice == "keep"} - inherited_omit
         try:
             policy = compile_policy(
                 base,
-                omit=tuple(sorted((set(accepted) | inherited_omit | chosen_omit) - chosen_keep)),
-                keep=tuple(sorted((inherited_keep | chosen_keep) - chosen_omit)),
+                omit=tuple(
+                    sorted(
+                        (set(accepted) | inherited_omit | default_omit | chosen_omit)
+                        - chosen_keep
+                        - (default_keep - chosen_omit)
+                    )
+                ),
+                keep=tuple(sorted((inherited_keep | default_keep | chosen_keep) - chosen_omit)),
             )
         except (ValueError, TypeError):
             raise UserError(
@@ -288,7 +349,8 @@ class NoisePolicyService:
         # The same applied draft is a no-op even after later imports. No stale
         # report is reinterpreted and no new generation is scheduled here.
         if (
-            row["applied_policy_id"]
+            row["stale"]
+            and row["applied_policy_id"]
             and row["applied_draft_revision"] == revision == row["draft_revision"]
             and row["current_policy_id"] == row["applied_policy_id"]
         ):

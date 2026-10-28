@@ -93,11 +93,16 @@ export async function mockNoise(page: Page, initial = false) {
       const rows = control.forms.filter(row => (!choice || row.candidate.decision === choice) && (!family || row.candidate.noise.some(item => item.form === family)));
       const offset = Number(url.searchParams.get('offset') ?? 0);
       const limit = Number(url.searchParams.get('limit') ?? 50);
-      const result = { forms: rows.slice(offset, offset + limit), next_offset: rows.length > offset + limit ? offset + limit : null };
+      const result = { forms: rows.slice(offset, offset + limit).map(row => ({ ...row, family_seed: control.families.find(group => row.candidate.noise.some(item => item.form === group.seed))?.seed ?? null })), next_offset: rows.length > offset + limit ? offset + limit : null };
       if (control.formsGate) await control.formsGate;
       return send(result);
     }
-    if (suffix.endsWith('/families')) return send({ families: control.families, next_offset: null });
+    if (suffix.endsWith('/families')) return send({ families: control.families.map(group => {
+      const rows = control.forms.filter(row => row.candidate.noise.some(item => item.form === group.seed));
+      return { ...group, rule_total: rows.length,
+        default_omit_forms: rows.filter(row => row.default_decision === 'omit').length,
+        override_forms: rows.filter(row => Object.hasOwn(control.overrides, row.form)).map(row => ({ form: row.form, default_decision: row.default_decision })) };
+    }), next_offset: null, draft_revision: control.revision });
     if (suffix.endsWith('/cancel')) {
       if (control.job) control.job = { ...control.job, active: false, state: control.job.stale ? 'stale' : 'cancelled' };
       return send(control.job);

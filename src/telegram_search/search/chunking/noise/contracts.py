@@ -118,6 +118,7 @@ def validate_evidence(value, observed_form):
                 "lengthening",
                 "repeated_block",
                 "laughter_pattern",
+                "edge_punctuation",
             }
             and (
                 item["distance"] is None

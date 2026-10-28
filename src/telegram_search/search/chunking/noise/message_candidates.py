@@ -4,6 +4,7 @@ import math
 import re
 
 from telegram_search.search.chunking.noise.candidates import one_edit
+from telegram_search.search.chunking.noise.families import punctuation_key
 from telegram_search.search.chunking.noise.messages import APPROVED_MESSAGES, is_message_form
 from telegram_search.search.chunking.noise.normalization import is_lengthening, run_key
 
@@ -51,7 +52,7 @@ class MessageCandidates:
     max_key_chars = 4 * 1024**2
 
     def __init__(self, counts, *, useful_words=None, check=lambda: None):
-        self.index, self.counts = {}, {}
+        self.index, self.counts, self.punctuation_groups = {}, {}, {}
         self.useful_words = None if useful_words is None else frozenset(useful_words)
         self.complete = True
         postings = key_chars = 0
@@ -65,6 +66,7 @@ class MessageCandidates:
                 continue
             signatures = {form, *(form[:i] + form[i + 1 :] for i in range(len(form)))}
             signatures.add("\0runs:" + run_key(form))
+            signatures.add("\0punct:" + punctuation_key(form))
             weight = sum(len(key) for key in signatures)
             if (
                 postings + len(signatures) > self.max_postings
@@ -73,6 +75,7 @@ class MessageCandidates:
                 self.complete = False
                 break
             self.counts[form] = count
+            self.punctuation_groups.setdefault(punctuation_key(form), []).append(form)
             for key in signatures:
                 self.index.setdefault(key, []).append(form)
             postings += len(signatures)
@@ -83,6 +86,8 @@ class MessageCandidates:
         complete = self.complete
         keys = {form, *(form[:i] + form[i + 1 :] for i in range(len(form)))}
         keys.add("\0runs:" + run_key(form))
+        punctuation = punctuation_key(form)
+        keys.add("\0punct:" + punctuation)
         for key in sorted(keys):
             check()
             for other in self.index.get(key, ()):
@@ -98,14 +103,29 @@ class MessageCandidates:
             operation = one_edit(form, other)
             if operation is None and is_lengthening(form, other):
                 operation = "lengthening"
+            same_punctuation = punctuation_key(other) == punctuation
+            if operation is None and same_punctuation:
+                operation = "edge_punctuation"
             if operation is not None and (
                 other == form
                 or other in APPROVED_MESSAGES
+                or same_punctuation
                 or self.counts[other] >= count["whole_count"] * 3
             ):
                 matches.append((other, operation))
+        group = self.punctuation_groups.get(punctuation, ())
+        anchor = (
+            min(group, key=lambda value: (value != punctuation, -self.counts[value], value))
+            if group and (len(group) > 1 or punctuation != form)
+            else None
+        )
         matches.sort(
-            key=lambda pair: (pair[0] not in APPROVED_MESSAGES, -frequency(pair[0]), pair[0])
+            key=lambda pair: (
+                pair[0] not in APPROVED_MESSAGES,
+                pair[0] != anchor,
+                -frequency(pair[0]),
+                pair[0],
+            )
         )
         seed = matches[0][0] if matches else None
         automatic = (
@@ -142,7 +162,9 @@ class MessageCandidates:
                     other,
                     "noise_seed",
                     operation,
-                    None if operation == "lengthening" else int(operation != "exact"),
+                    None
+                    if operation in {"lengthening", "edge_punctuation"}
+                    else int(operation != "exact"),
                 )
                 for other, operation in matches[:16]
             ],

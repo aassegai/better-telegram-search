@@ -4,7 +4,7 @@ import { t, uiLocale } from './i18n';
 import { useDialogOperation } from './useDialogOperation';
 import NoiseReport from './NoiseReport';
 import NoiseComparison from './NoiseComparison';
-import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview } from './noiseTypes';
+import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview, type NoiseForm, type NoiseRule } from './noiseTypes';
 
 const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Частичный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
 const phases: Record<string, string> = { queued: 'Ожидаем очередь', scan: 'Считаем сообщения', lexicon: 'Готовим словарь гипотез', candidates: 'Сравниваем варианты', failed: 'Ошибка анализа' };
@@ -29,6 +29,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const [comparisonProtected, setComparisonProtected] = useState(false);
   const [page, setPage] = useState<NoisePage | null>(null);
   const [family, setFamily] = useState<{ seed: string; page: NoisePage | null } | null>(null);
+  const [familyRules, setFamilyRules] = useState<Record<string, NoiseRule>>({});
   const [view, setView] = useState<View>('forms');
   const [decision, setDecision] = useState('review');
   const [offset, setOffset] = useState(0);
@@ -44,7 +45,14 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const op = useDialogOperation();
 
   useEffect(() => () => request.current?.abort(), []);
-  const clearReview = () => { setPage(null); setFamily(null); setPreview(null); setOverrides({}); setDirty(false); setDraft(null); setOffset(0); };
+  const clearReview = () => { setPage(null); setFamily(null); setFamilyRules({}); setPreview(null); setOverrides({}); setDirty(false); setDraft(null); setOffset(0); };
+  const rememberRules = (rows: NoiseForm[], seed?: string) => {
+    const entries = rows.flatMap(row => {
+      const familySeed = row.family_seed ?? seed;
+      return familySeed ? [[row.form, { seed: familySeed, defaultDecision: row.default_decision ?? (row.candidate?.decision === 'omit' ? 'omit' : 'keep') } satisfies NoiseRule] as const] : [];
+    });
+    setFamilyRules(previous => Object.fromEntries([...Object.entries(previous), ...entries]));
+  };
   const choose = (id: string | null) => {
     if (id !== selectedRef.current) { clearReview(); setNotice(''); }
     selectedRef.current = id; setSelected(id);
@@ -52,14 +60,14 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const acceptJob = (value: NoiseJob) => {
     setJob(value); setJobs(previous => previous.map(item => item.id === value.id ? value : item));
     if (value.stale) {
-      setPage(null); setFamily(null); setPreview(null); setOverrides({}); setDirty(false);
+      setPage(null); setFamily(null); setFamilyRules({}); setPreview(null); setOverrides({}); setDirty(false);
       setDraft(previous => previous ? { ...previous, overrides: {}, overrides_available: false, stale: true } : null);
     }
   };
   const acceptDraft = (value: NoiseDraft, preserveEdits = false) => {
     if (preview && (preview.revision !== value.revision || (draft && (draft.current_policy_id !== value.current_policy_id || JSON.stringify(draft.overrides) !== JSON.stringify(value.overrides))))) setPreview(null);
     if (value.stale || !value.overrides_available) {
-      setDraft(value); setOverrides({}); setDirty(false); setPage(null); setFamily(null); setPreview(null); return;
+      setDraft(value); setOverrides({}); setDirty(false); setPage(null); setFamily(null); setFamilyRules({}); setPreview(null); return;
     }
     if (preserveEdits) {
       if (draft && value.revision !== draft.revision) op.setError(t('Проект изменился. Обновите его перед сохранением.'));
@@ -117,7 +125,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   }, [open, selected, pollEpoch, base]);
   useEffect(() => {
     // External policy/model rebuilds make any earlier preview inapplicable.
-    setPreview(null); setPage(null); setFamily(null); setPollEpoch(value => value + 1);
+    setPreview(null); setPage(null); setFamily(null); setFamilyRules({}); setPollEpoch(value => value + 1);
   }, [currentPolicyId]);
 
   const loadReport = (nextView = view, nextDecision = decision, nextOffset = offset) => perform(async (current, signal) => {
@@ -131,6 +139,9 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     ]);
     if (!current() || selectedRef.current !== selected) return;
     if (metadata.stale) { acceptDraft(metadata); return; }
+    if (result.draft_revision !== undefined && result.draft_revision !== metadata.revision) throw new Error(t('Проект изменился. Обновите его перед сохранением.'));
+    rememberRules(result.forms ?? []);
+    setFamilyRules(previous => Object.fromEntries([...Object.entries(previous), ...(result.families ?? []).flatMap(group => (group.override_forms ?? []).map(row => [row.form, { seed: group.seed, defaultDecision: row.default_decision } satisfies NoiseRule] as const))]));
     setPage(result); setView(nextView); setDecision(nextDecision); setOffset(nextOffset); acceptDraft(metadata, dirty);
   });
   const loadFamily = (seed: string | null, nextOffset = 0) => {
@@ -146,6 +157,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
       if (!current() || selectedRef.current !== selected) return;
       if (metadata.stale) { acceptDraft(metadata); return; }
       acceptDraft(metadata, dirty);
+      rememberRules(result.forms ?? [], seed);
       setFamily(previous => ({ seed, page: { ...result, forms: [
         ...(nextOffset && previous?.seed === seed ? previous.page?.forms ?? [] : []),
         ...result.forms ?? [],
@@ -167,21 +179,18 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     if (current()) { choose(null); setJob(null); clearReview(); await loadList(current, signal); }
   }, true);
   const changeOverrides = (next: Record<string, NoiseDecision>) => {
-    const canonical = (values: Record<string, NoiseDecision>) => JSON.stringify(Object.entries(values).sort(([left], [right]) => left.localeCompare(right)));
-    if (new TextEncoder().encode(JSON.stringify(next)).length > 512 * 1024) throw new Error(t('Проект фильтра слишком большой. Уменьшите число переопределений.'));
-    setOverrides(next); setDirty(canonical(next) !== canonical(draft?.overrides ?? {})); setPreview(null); setNotice('');
+    if (new TextEncoder().encode(JSON.stringify(next)).length > 8 * 1024 * 1024) throw new Error(t('Проект фильтра слишком большой. Уменьшите число переопределений.'));
+    const saved = draft?.overrides ?? {};
+    setOverrides(next); setDirty(Object.keys(next).length !== Object.keys(saved).length || Object.entries(next).some(([form, choice]) => !Object.hasOwn(saved, form) || saved[form] !== choice)); setPreview(null); setNotice('');
   };
   const changeOverride = (form: string, value: NoiseDecision | '') => {
-    if (value && !Object.hasOwn(overrides, form) && Object.keys(overrides).length >= 1000) {
-      op.setError(t('Допускается не более 1000 переопределений в одном отчёте.')); return;
-    }
     const next = { ...overrides }; if (value) next[form] = value; else delete next[form];
     try { changeOverrides(next); } catch (error) { op.setError(error instanceof Error ? error.message : t('Ошибка операции.')); }
   };
   const omitFamily = (seed: string) => perform(async (current, signal) => {
     if (!selected || !draft) return;
     const selectedForms = new Set<string>();
-    const keys = new Set(Object.keys(overrides));
+    const selectedRules: [string, NoiseRule][] = [];
     let nextOffset: number | null = 0;
     while (nextOffset !== null) {
       const offset: number = nextOffset;
@@ -193,8 +202,8 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
       const invalidOffset = result.next_offset !== null && (!Number.isInteger(result.next_offset) || result.next_offset <= offset || result.next_offset > 50000 || !rows.length);
       if (invalidOffset) throw new Error(t('Не удалось выбрать всё семейство. Повторите попытку.'));
       for (const row of rows) {
-        keys.add(row.form); selectedForms.add(row.form);
-        if (keys.size > 1000) throw new Error(t('Допускается не более 1000 переопределений в одном отчёте.'));
+        selectedForms.add(row.form);
+        selectedRules.push([row.form, { seed, defaultDecision: row.default_decision ?? (row.candidate?.decision === 'omit' ? 'omit' : 'keep') }]);
       }
       nextOffset = result.next_offset;
     }
@@ -203,6 +212,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     if (metadata.stale) { acceptDraft(metadata); return; }
     if (metadata.revision !== draft.revision) throw new Error(t('Проект изменился. Обновите его перед сохранением.'));
     changeOverrides(Object.fromEntries([...Object.entries(overrides), ...Array.from(selectedForms, form => [form, 'omit' as const]) ]));
+    setFamilyRules(previous => Object.fromEntries([...Object.entries(previous), ...selectedRules]));
     setNotice(t('Выбрано исключение для {p0} вариантов семейства. Защищённые вхождения сохраняются. Сохраните и примените правила.', { p0: selectedForms.size }));
   });
   const save = () => perform(async (current, signal) => {
@@ -247,7 +257,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
     }}>
       <summary>{t('Фильтр смыслового шума')}</summary>
       <p>{t('Анализ целых сообщений с менее чем пятью уникальными словами: реакции, многословный спам, команды и семейства опечаток. Переписка и поиск по словам сохраняются.')}</p>
-      <p className="baseline-note">{t('Уверенные команды и подтверждённые семейства отбираются в проект автоматически. Одна частота повторений не доказывает спам; сомнительные сообщения сохраняются. Индекс меняется только после применения правил.')}</p>
+      <p className="baseline-note">{t('Варианты семейств по умолчанию выбраны к исключению с учётом защит, кроме «да», «нет», «ага» и их вариантов. Любой вариант можно сохранить вручную. Индекс меняется только после применения правил.')}</p>
       <details className="noise-limits"><summary>{t('Лимиты анализа')}</summary>
         <label>{t('Максимум сообщений')}<input type="number" min="1" max="1000000" value={Number.isNaN(maxMessages) ? '' : maxMessages} disabled={busy} onChange={event => setMaxMessages(event.target.value === '' ? NaN : Number(event.target.value))} /></label>
         <label>{t('Лимит времени, с')}<input type="number" min="1" max="3600" value={Number.isNaN(timeLimit) ? '' : timeLimit} disabled={busy} onChange={event => setTimeLimit(event.target.value === '' ? NaN : Number(event.target.value))} /></label>
@@ -289,13 +299,13 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
           <label>{t('Часть отчёта')}<select value={view} disabled={busy} onChange={event => loadReport(event.target.value as View, decision, 0)}><option value="forms">{t('Формы')}</option><option value="families">{t('Семейства')}</option></select></label>
           {view === 'forms' && <label>{t('Решения анализа')}<select disabled={busy} value={decision} onChange={event => loadReport(view, event.target.value, 0)}><option value="">{t('Все решения')}</option><option value="review">{t('Неоднозначные')}</option><option value="keep">{t('Сохранить')}</option><option value="omit">{t('Исключить из смыслового текста')}</option></select></label>}
         </div>
-        <NoiseReport page={page} overrides={overrides} disabled={busy || !canEdit} onOverride={changeOverride} family={family} onFamily={loadFamily} familyBusy={busy} onOmitFamily={omitFamily} />
+        <NoiseReport page={page} overrides={overrides} familyRules={familyRules} disabled={busy || !canEdit} onOverride={changeOverride} family={family} onFamily={loadFamily} familyBusy={busy} onOmitFamily={omitFamily} />
         <div className="job-actions"><button type="button" disabled={busy || offset === 0} onClick={() => loadReport(view, decision, Math.max(0, offset - 50))}>{t('Предыдущие записи')}</button><button type="button" disabled={busy || page.next_offset === null} onClick={() => { if (page.next_offset !== null) loadReport(view, decision, page.next_offset); }}>{t('Следующие записи')}</button></div>
       </>}
       {draft && !draft.stale && <div className="noise-draft">
-        <p>{t('Ручных правил: {p0} / 1000', { p0: Object.keys(overrides).length })}</p>
+        <p>{t('Ручных правил: {p0}', { p0: Object.keys(overrides).length })}</p>
         {dirty && <p className="baseline-note">{t('Есть несохранённые правки. Они ещё не меняют индекс.')}</p>}
-        <div className="job-actions"><button type="button" disabled={busy || !canEdit || !dirty || Object.keys(overrides).length > 1000} onClick={save}>{t('Сохранить переопределения')}</button><button type="button" disabled={busy || !dirty} onClick={discard}>{t('Отменить правки')}</button><button type="button" disabled={busy || !canApply} onClick={inspect}>{t('Предпросмотр правил')}</button></div>
+        <div className="job-actions"><button type="button" disabled={busy || !canEdit || !dirty} onClick={save}>{t('Сохранить переопределения')}</button><button type="button" disabled={busy || !dirty} onClick={discard}>{t('Отменить правки')}</button><button type="button" disabled={busy || !canApply} onClick={inspect}>{t('Предпросмотр правил')}</button></div>
       </div>}
       {preview && <div className="noise-preview">
         <p>{t('Дополнительных точных исключений: {p0} · правил сохранения: {p1}', { p0: preview.explicit_omit_forms, p1: preview.keep_forms })}</p>

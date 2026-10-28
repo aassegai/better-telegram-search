@@ -386,6 +386,7 @@ class NoiseReport:
             raise UserError("Недопустимое семейство сообщений.")
         with self.connect() as conn:
             self.verify(conn)
+            seed_sql = self._family_sql(conn)
             clauses, params = [], []
             if decision:
                 clauses.append("(decision=? OR (?='review' AND decision IS NULL))")
@@ -403,7 +404,9 @@ class NoiseReport:
             clause = " WHERE " + " AND ".join(clauses) if clauses else ""
             rows = conn.execute(
                 "SELECT form,whole_count,eligible_count,decision,substr(payload,1,8193) AS payload,"
-                "length(CAST(payload AS BLOB)) AS payload_bytes FROM forms"
+                "length(CAST(payload AS BLOB)) AS payload_bytes,"
+                + seed_sql
+                + " AS family_seed FROM forms"
                 + clause
                 + " ORDER BY whole_count DESC,form LIMIT ? OFFSET ?",
                 (*params, limit + 1, offset),
@@ -456,6 +459,7 @@ class NoiseReport:
                 output.append(
                     {
                         "form": row["form"],
+                        "family_seed": row["family_seed"],
                         "form_kind": "message" if is_message_form(row["form"]) else "word",
                         "whole_count": row["whole_count"],
                         "eligible_count": row["eligible_count"],
@@ -466,6 +470,35 @@ class NoiseReport:
                     }
                 )
             return {"forms": output, "next_offset": offset + limit if len(rows) > limit else None}
+
+    @staticmethod
+    def _family_sql(conn):
+        modern = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='family_members'"
+        ).fetchone()
+        return (
+            "(SELECT seed FROM family_members m WHERE m.form=forms.form)"
+            if modern
+            else "json_extract(payload,'$.primary_seed')"
+        )
+
+    def rule_rows(self):
+        """Bounded scalar membership; no evidence payloads or main-DB writes."""
+        with self.connect() as conn:
+            self.verify(conn)
+            rows = conn.execute(
+                "SELECT form,decision,"
+                + self._family_sql(conn)
+                + " AS family_seed FROM forms ORDER BY form LIMIT 50001"
+            ).fetchall()
+        if len(rows) > 50000 or any(
+            not valid_form(row["form"])
+            or row["decision"] not in {None, "keep", "review", "omit"}
+            or (row["family_seed"] is not None and not valid_form(row["family_seed"]))
+            for row in rows
+        ):
+            raise UserError("Отчёт анализа несовместим или повреждён.")
+        return [dict(row) for row in rows]
 
     def families(self, *, offset=0, limit=50):
         self._validate_page(offset, limit)

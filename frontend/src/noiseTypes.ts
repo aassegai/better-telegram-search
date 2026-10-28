@@ -17,14 +17,18 @@ export type NoiseDraft = { id: string; revision: number; overrides: Record<strin
 export type NoisePreview = { policy_id: string; version: string; revision: number; explicit_omit_forms: number; keep_forms: number };
 export type NoiseHypothesis = { form: string; operation: string; corpus_count: number; score: number };
 export type NoiseForm = { form: string; whole_count: number; eligible_count: number; days: number;
+  family_seed?: string | null;
   form_kind?: 'word' | 'message';
   inherited_decision?: NoiseDecision | null; default_decision?: NoiseDecision; default_origin?: 'inherited' | 'base' | 'analysis';
   authors: number; protections: Record<string, number>; candidate: null | { decision: string; reason: string;
     complete: boolean; noise: NoiseHypothesis[]; useful: NoiseHypothesis[]; unchanged: NoiseHypothesis;
     margin: number | null } };
 export type NoiseFamily = { seed: string; observed_count: number; eligible_count: number;
+  rule_total?: number; default_omit_forms?: number;
+  override_forms?: { form: string; default_decision: NoiseDecision }[];
   omit_count: number; review_count: number; keep_count: number };
-export type NoisePage = { forms?: NoiseForm[]; families?: NoiseFamily[]; next_offset: number | null };
+export type NoiseRule = { seed: string; defaultDecision: NoiseDecision };
+export type NoisePage = { forms?: NoiseForm[]; families?: NoiseFamily[]; next_offset: number | null; draft_revision?: number };
 export const noiseActive = (job: NoiseJob | null) => job?.active ?? ['queued', 'running', 'cancelling'].includes(job?.state ?? '');
 export const noiseLabel = (labels: Record<string, string>, key: string | undefined, fallback: string) => key !== undefined && Object.hasOwn(labels, key) ? labels[key] : fallback;
 export function noiseApplicable(summary: NoiseJob['summary']) {

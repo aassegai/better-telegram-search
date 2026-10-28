@@ -152,7 +152,7 @@ def test_short_words_do_not_block_a_full_chat_and_new_ambiguous_forms_stay(
         assert rows[form]["candidate"]["complete"] is False
     assert rows["бял"]["candidate"]["decision"] == "review"
     baseline = policies.preview(chat, state["id"], 0)
-    assert baseline["explicit_omit_forms"] == 0 and not baseline["new_auto_omit_enabled"]
+    assert baseline["explicit_omit_forms"] == 1 and not baseline["new_auto_omit_enabled"]
     policies.save_overrides(chat, state["id"], 0, {"бял": "omit", "сука": "keep"})
     applied = policies.apply(chat, state["id"], 1)
     with db.connect() as conn:

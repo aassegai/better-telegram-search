@@ -22,7 +22,7 @@ for (const english of [false, true]) {
     await expect.poll(() => state.statusCalls).toBeGreaterThan(polled);
     await expect(typo).toHaveValue('omit');
     await panel.getByRole('button', { name: english ? 'Next entries' : 'Следующие записи' }).click();
-    await expect(panel.getByRole('combobox', { name: english ? 'Decision for constructor' : 'Решение для constructor', exact: true })).toHaveValue('');
+    await expect(panel.getByRole('combobox', { name: english ? 'Decision for constructor' : 'Решение для constructor', exact: true })).toHaveValue('keep');
     await panel.getByRole('button', { name: english ? 'Previous entries' : 'Предыдущие записи' }).click();
     await expect(typo).toHaveValue('omit');
     await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
@@ -63,7 +63,7 @@ for (const english of [false, true]) {
     await expect(panel.getByText(english ? 'All messages in scope were processed. The hypothesis list is limited; ambiguous forms are kept. You can apply exact rules.' : 'Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')).toBeVisible();
     await panel.getByRole('button', { name: english ? 'Review report' : 'Просмотреть отчёт' }).click();
     const rule = panel.getByRole('combobox', { name: english ? 'Decision for бял' : 'Решение для бял', exact: true });
-    await expect(rule).toBeEnabled(); await expect(rule).toHaveValue('');
+    await expect(rule).toBeEnabled(); await expect(rule).toHaveValue('keep');
     await panel.getByRole('button', { name: english ? 'Preview rules' : 'Предпросмотр правил' }).click();
     await panel.getByRole('button', { name: english ? 'Apply rules and rebuild text' : 'Применить правила и перестроить текст' }).click();
     expect(state.writes.find(write => write.path.endsWith('/apply'))?.body).toEqual({ revision: 0 });
@@ -213,7 +213,7 @@ test('inherited rules are distinct from analysis suggestions and local overrides
   await expect(typo.getByText('Решение анализа: Сохранить · неоднозначно')).toBeVisible();
   await expect(typo.getByText('Правило проекта: Исключать с учётом защит')).toBeVisible();
   await expect(typo.getByText('Ранее выбранное правило: Исключать с учётом защит')).toBeVisible();
-  await expect(typo.getByRole('combobox')).toHaveValue('');
+  await expect(typo.getByRole('combobox')).toHaveValue('omit');
   await typo.getByRole('combobox').selectOption('keep');
   await expect(typo.getByText('Правило проекта: Сохранять')).toBeVisible();
   await panel.getByRole('combobox', { name: 'Решения анализа', exact: true }).selectOption('');
@@ -233,7 +233,7 @@ test('family and hypothesis details keep words literal and explain the operation
   await expect(panel.locator('.noise-evidence')).toContainText('бял');
   await expect(panel.locator('.noise-evidence')).toContainText('был');
   await panel.getByRole('combobox', { name: 'Report section', exact: true }).selectOption('families');
-  await expect(panel.getByText('Family statistics do not mean all variants are excluded.')).toBeVisible();
+  await expect(panel.getByText('Analysis statistics and draft choices are shown separately. Protected occurrences are kept.')).toBeVisible();
   await expect(panel.locator('.noise-form > strong > bdi')).toHaveText('бля');
 });
 
@@ -447,18 +447,55 @@ for (const english of [false, true]) {
   });
 }
 
-test('oversized family does not partially change the draft', async ({ page }) => {
+test('a family with more than 1000 variants can be selected and saved', async ({ page }) => {
   const state = await mockNoise(page, true);
   bulkFamily(state, 1001);
   state.overrides = { 'вариант команды 0': 'keep' };
   const panel = await openNoise(page);
   await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
   await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
-  await expect(panel.getByRole('alert').filter({ hasText: 'Допускается не более 1000' })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Сохранить переопределения' })).toBeDisabled();
-  expect(state.overrides).toEqual({ 'вариант команды 0': 'keep' });
+  await expect(panel.getByText('К исключению в проекте: 1001 из 1001 вариантов · Всё семейство', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Всё семейство выбрано к исключению' })).toBeDisabled();
   expect(state.writes).toEqual([]);
+  await panel.getByRole('button', { name: 'Сохранить переопределения' }).click();
+  expect(Object.keys(state.overrides)).toHaveLength(1001);
+  expect(Object.values(state.overrides).every(value => value === 'omit')).toBe(true);
 });
+
+for (const english of [false, true]) {
+  test(`family selection reflects defaults, local keep, save, reload and discard (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    bulkFamily(state, 120);
+    state.forms.forEach(row => { row.default_decision = 'omit'; });
+    let panel = await openNoise(page, english);
+    const openFamilies = () => panel.getByRole('button', { name: english ? 'Message families and variants' : 'Семейства и варианты сообщений' }).click();
+    const selected = () => panel.getByRole('button', { name: english ? 'Entire family selected for omission' : 'Всё семейство выбрано к исключению', exact: true });
+    await openFamilies();
+    await expect(selected()).toBeDisabled();
+    await expect(panel.getByText(english ? 'Selected for omission in the draft: 120 of 120 variants · Entire family' : 'К исключению в проекте: 120 из 120 вариантов · Всё семейство', { exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: english ? 'Open entire family' : 'Открыть всё семейство' }).click();
+    const choice = () => panel.getByRole('combobox', { name: english ? 'Decision for вариант команды 0' : 'Решение для вариант команды 0', exact: true });
+    await expect(choice()).toHaveValue('omit');
+    await choice().selectOption('keep');
+    await expect(panel.getByText(english ? 'Selected for omission in the draft: 119 of 120 variants · Partially selected' : 'К исключению в проекте: 119 из 120 вариантов · Частично', { exact: true })).toBeVisible();
+    expect(state.writes).toEqual([]);
+    await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
+    await page.reload();
+    await page.getByRole('button', { name: english ? /^Indexing settings / : /^Настройки индексации / }).first().click();
+    panel = page.locator('.noise-panel');
+    await panel.locator(':scope > details > summary').click();
+    await openFamilies();
+    await expect(panel.getByText(/119.*120/).first()).toBeVisible();
+    await panel.getByRole('button', { name: english ? 'Open entire family' : 'Открыть всё семейство' }).click();
+    await expect(choice()).toHaveValue('keep');
+    await choice().selectOption('');
+    await expect(selected()).toBeDisabled();
+    await expect(choice()).toHaveValue('omit');
+    await panel.getByRole('button', { name: english ? 'Discard edits' : 'Отменить правки' }).click();
+    await expect(choice()).toHaveValue('keep');
+    await expect(panel.getByRole('button', { name: english ? 'Omit entire family' : 'Исключить всё семейство', exact: true })).toBeEnabled();
+  });
+}
 
 test('family bulk selection is discarded if the draft changed in another window', async ({ page }) => {
   const state = await mockNoise(page, true);
@@ -499,8 +536,8 @@ test('collapsing cancels an unfinished whole-family selection', async ({ page })
 
 test('family selection respects the serialized draft byte limit atomically', async ({ page }) => {
   const state = await mockNoise(page, true);
-  bulkFamily(state, 1000);
-  for (const [index, row] of state.forms.entries()) row.form = `${'𐐨'.repeat(130)} cmd${index}`;
+  bulkFamily(state, 17000);
+  for (const [index, row] of state.forms.entries()) row.form = `${'я'.repeat(250)} ${index}`;
   const panel = await openNoise(page);
   await panel.getByRole('button', { name: 'Семейства и варианты сообщений' }).click();
   await panel.getByRole('button', { name: 'Исключить всё семейство' }).click();
