@@ -363,8 +363,8 @@ class NoiseReport:
             raise UserError("Неизвестное решение фильтра.")
         with self.connect() as conn:
             self.verify(conn)
-            clause = " WHERE decision=?" if decision else ""
-            params = (decision,) if decision else ()
+            clause = " WHERE (decision=? OR (?='review' AND decision IS NULL))" if decision else ""
+            params = (decision, decision) if decision else ()
             rows = conn.execute(
                 "SELECT form,whole_count,eligible_count,decision,substr(payload,1,8193) AS payload,"
                 "length(CAST(payload AS BLOB)) AS payload_bytes FROM forms"

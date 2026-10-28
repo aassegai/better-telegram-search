@@ -108,8 +108,8 @@ def test_input_and_phrase_work_are_bounded_without_extracting_urls_as_whole_form
         ],
         "salt",
     )
-    assert batch.limited_messages == 3 and not batch.observations
-    assert batch.phrases == {"слово": 256}
+    assert batch.limited_messages == 2 and not batch.observations
+    assert batch.phrases == {"слово": 300}
 
 
 def test_scores_compete_with_useful_and_unchanged_without_new_automatic_omission():
@@ -182,3 +182,30 @@ def test_complete_persisted_evidence_schema_rejects_malformed_nested_payloads(pa
     target[path[-1]] = value
     with pytest.raises(ValueError, match="persisted"):
         validate_evidence(malformed, "бял")
+
+
+def test_only_messages_with_fewer_than_five_unique_normalized_words_are_analyzed():
+    batch = collect_batch(
+        [
+            observation("раз два три четыре пять"),
+            observation("раз два три четыре " * 300),
+            observation("ЕЩЁ еще ЕЩЕ ещЁ"),
+        ],
+        "salt",
+    )
+    assert batch.skipped_long_messages == 1 and batch.limited_messages == 0
+    assert not batch.observations
+    assert batch.phrases == {"раз": 300, "два": 300, "три": 300, "четыре": 300, "еще": 4}
+
+
+def test_repeated_short_vocabulary_remains_cancellable_without_a_token_cap():
+    calls = 0
+
+    def stop():
+        nonlocal calls
+        calls += 1
+        if calls == 4:
+            raise RuntimeError("cancel short repeated phrase")
+
+    with pytest.raises(RuntimeError, match="cancel short repeated phrase"):
+        collect_batch([observation("да нет " * 1000)], "salt", stop)

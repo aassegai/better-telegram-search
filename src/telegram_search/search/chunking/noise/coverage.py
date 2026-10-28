@@ -1,19 +1,31 @@
-"""Separate a complete source scan from bounded, uncalibrated evidence lists."""
+"""Validate partial reports without confusing safe exact rules with full coverage."""
 
-COVERAGE_VERSION = "source-and-evidence-v1"
+COVERAGE_VERSION = "bounded-exact-rules-v2"
+LEGACY_COVERAGE_VERSION = "source-and-evidence-v1"
 EVIDENCE_LIMITS = frozenset({"candidate_limit", "payload_limit"})
+SOURCE_LIMITS = frozenset(
+    {
+        "message_limit",
+        "form_limit",
+        "phrase_form_limit",
+        "text_limit",
+        "time_limit",
+        "report_size_limit",
+    }
+)
+KNOWN_LIMITS = SOURCE_LIMITS | EVIDENCE_LIMITS
 
 
-def coverage(limits):
+def coverage(limits, *, legacy=False):
     limits = set(limits)
     source_complete = not (limits - EVIDENCE_LIMITS)
     return {
-        "coverage_version": COVERAGE_VERSION,
+        "coverage_version": LEGACY_COVERAGE_VERSION if legacy else COVERAGE_VERSION,
         "source_complete": source_complete,
         "evidence_complete": not (limits & EVIDENCE_LIMITS),
-        # This contract only permits approved seeds plus explicit overrides.
-        # A future calibrated gate must define its own applicability contract.
-        "policy_applicable": source_complete,
+        # Only approved seeds and explicit exact overrides can be compiled.
+        # Unknown formats/limits and automatic novel omissions remain rejected.
+        "policy_applicable": source_complete if legacy else not (limits - KNOWN_LIMITS),
     }
 
 
@@ -29,7 +41,7 @@ def application_ready(summary):
         return False
     limits = set(summary["limits"])
     if "coverage_version" not in summary:
-        # Do not upgrade old limited reports or infer missing evidence metadata.
+        # An old unversioned partial report cannot prove its contract.
         versioned_fields = {
             "source_complete",
             "evidence_complete",
@@ -39,13 +51,15 @@ def application_ready(summary):
         return (
             summary["complete"] is True and not limits and not (versioned_fields & summary.keys())
         )
-    expected = coverage(limits)
-    return (
-        summary["coverage_version"] == COVERAGE_VERSION
-        and all(
-            type(summary.get(key)) is bool and summary[key] == expected[key]
-            for key in ("source_complete", "evidence_complete", "policy_applicable")
-        )
-        and summary["complete"] == (not limits)
-        and summary["source_complete"] is True
-    )
+    version = summary["coverage_version"]
+    if (
+        not isinstance(version, str)
+        or version not in {COVERAGE_VERSION, LEGACY_COVERAGE_VERSION}
+        or limits - KNOWN_LIMITS
+    ):
+        return False
+    expected = coverage(limits, legacy=version == LEGACY_COVERAGE_VERSION)
+    return all(
+        type(summary.get(key)) is bool and summary[key] == expected[key]
+        for key in ("source_complete", "evidence_complete", "policy_applicable")
+    ) and summary["complete"] == (not limits)

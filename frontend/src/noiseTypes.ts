@@ -7,6 +7,7 @@ export type NoiseJob = {
   summary?: { complete: boolean; limits: string[]; scanned_messages: number; whole_messages: number;
     coverage_version?: string; source_complete?: boolean; evidence_complete?: boolean;
     policy_applicable?: boolean; limited_evidence_forms?: number; new_auto_omit_enabled?: boolean;
+    limited_messages?: number; skipped_long_messages?: number; statistics_scope?: string; max_unique_words?: number;
     forms: number; decisions: Record<string, number>; cpu_seconds: number; process_rss_mib: number; report_sha256?: string } | null;
 };
 export type NoiseDraft = { id: string; revision: number; overrides: Record<string, NoiseDecision>;
@@ -28,10 +29,16 @@ export function noiseApplicable(summary: NoiseJob['summary']) {
   if (!summary || !Array.isArray(summary.limits) || summary.new_auto_omit_enabled !== false) return false;
   if (summary.coverage_version === undefined) return summary.complete === true && summary.limits.length === 0
     && !['source_complete', 'evidence_complete', 'policy_applicable', 'limited_evidence_forms'].some(key => Object.hasOwn(summary, key));
+  const evidence = new Set(['candidate_limit', 'payload_limit']);
+  const known = new Set([...evidence, 'message_limit', 'form_limit', 'phrase_form_limit', 'text_limit', 'time_limit', 'report_size_limit']);
   const complete = summary.limits.length === 0;
-  return summary.coverage_version === 'source-and-evidence-v1'
-    && summary.source_complete === true && summary.policy_applicable === true
-    && summary.new_auto_omit_enabled === false && summary.evidence_complete === complete
-    && summary.complete === complete && new Set(summary.limits).size === summary.limits.length
-    && summary.limits.every(limit => limit === 'candidate_limit' || limit === 'payload_limit');
+  const sourceComplete = summary.limits.every(limit => evidence.has(limit));
+  const evidenceComplete = summary.limits.every(limit => !evidence.has(limit));
+  const legacy = summary.coverage_version === 'source-and-evidence-v1';
+  return (legacy || summary.coverage_version === 'bounded-exact-rules-v2')
+    && summary.source_complete === sourceComplete
+    && summary.policy_applicable === (legacy ? sourceComplete : true)
+    && summary.evidence_complete === evidenceComplete && summary.complete === complete
+    && new Set(summary.limits).size === summary.limits.length
+    && summary.limits.every(limit => known.has(limit));
 }

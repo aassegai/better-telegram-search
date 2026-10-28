@@ -309,3 +309,29 @@ for (const english of [false, true]) for (const dark of [false, true]) {
     expect(sizes.modalScroll).toBeLessThanOrEqual(sizes.modalWidth + 1);
   });
 }
+
+
+for (const english of [false, true]) for (const legacy of [false, true]) {
+  test(`partial noise reports allow exact rules without pretending full coverage (${english ? 'EN' : 'RU'}/${legacy ? 'v072' : 'new'})`, async ({ page }) => {
+    const state = await mockNoise(page, true);
+    state.job = readyNoiseJob({ coverage_version: legacy ? 'source-and-evidence-v1' : 'bounded-exact-rules-v2',
+      source_complete: false, evidence_complete: false, policy_applicable: !legacy });
+    state.job.state = 'limited'; state.job.summary.complete = false;
+    state.job.summary.limits = legacy ? ['candidate_limit', 'text_limit'] : ['candidate_limit', 'time_limit'];
+    Object.assign(state.job.summary, { limited_messages: 8, skipped_long_messages: 14 });
+    if (!legacy) state.job.error = 'time_limit';
+    const panel = await openNoise(page, english);
+    await expect(panel.getByText(english ? 'Partial report' : 'Частичный отчёт', { exact: true })).toBeVisible();
+    await expect(panel.getByText(english ? 'Messages skipped with five or more unique words: 14' : 'Пропущено сообщений с пятью и более уникальными словами: 14', { exact: true })).toBeVisible();
+    await expect(panel.getByText(english ? 'The analysis is partial. You can review the report, choose exact rules and apply them. New unexamined forms are not excluded automatically.' : 'Анализ ограничен. Можно просмотреть отчёт, выбрать точные правила и применить их. Новые неизученные формы автоматически не исключаются.', { exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: english ? 'Review report' : 'Просмотреть отчёт' }).click();
+    const choice = panel.getByRole('combobox', { name: english ? 'Decision for бял' : 'Решение для бял', exact: true });
+    await expect(choice).toBeEnabled();
+    await choice.selectOption('keep');
+    await panel.getByRole('button', { name: english ? 'Save overrides' : 'Сохранить переопределения' }).click();
+    await panel.getByRole('button', { name: english ? 'Preview rules' : 'Предпросмотр правил' }).click();
+    await panel.getByRole('button', { name: english ? 'Apply rules and rebuild text' : 'Применить правила и перестроить текст' }).click();
+    expect(state.overrides).toEqual({ бял: 'keep' });
+    expect(state.writes.some(write => write.path.endsWith('/apply'))).toBe(true);
+  });
+}

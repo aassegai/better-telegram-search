@@ -68,6 +68,8 @@ PUBLICATION_FILES = {
     "tests/test_noise_analysis.py",
     "scripts/benchmark_ann_embeddings.py",
     "tests/test_noise_evaluation.py",
+    # Functional import-fixture wait budgets do not change the native payload.
+    "tests/test_lifecycle.py",
     # Browser dependency download timeouts affect CI, not the native payload.
     ".github/workflows/checks.yml",
 }

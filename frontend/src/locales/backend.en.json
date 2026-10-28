@@ -458,5 +458,6 @@
   "Отложить подготовку можно только при выборе модели OCR.": "Only OCR model selection can defer preparation.",
   "Для OCR на CPU + GPU адаптер должен поддерживать оба устройства.": "Custom OCR CPU + GPU requires both devices in the manifest.",
   "Не завершена очистка worker прежней модели OCR.": "Previous OCR worker cleanup is incomplete.",
-  "Роль пользовательской модели отличается от выбранной.": "The custom model has a different role."
+  "Роль пользовательской модели отличается от выбранной.": "The custom model has a different role.",
+  "Нужен актуальный завершённый отчёт. Запустите анализ заново.": "A current finalized report is required. Run the analysis again."
 }

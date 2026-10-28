@@ -1195,5 +1195,11 @@
   "Устройство выбранной модели: {p0}": "Device for the selected model: {p0}",
   "Для этой роли доступны проверка и регистрация. Подключение к поиску пока реализовано для текста, изображений, OCR и переранжирования.": "This role supports validation and registration. Search integration is currently available for text, images, OCR and reranking.",
   "Модель добавлена. Выберите её в карточке OCR, сохраните выбор и подготовьте.": "Model added. Select it in the OCR card, save the selection and prepare it.",
-  "Недоступно: {p0}": "Unavailable: {p0}"
+  "Недоступно: {p0}": "Unavailable: {p0}",
+  "Частичный отчёт": "Partial report",
+  "Анализ сообщений с менее чем пятью уникальными словами. Длинные сообщения пропускаются; переписка и поиск по словам сохраняются.": "Analyze messages with fewer than five unique words. Longer messages are skipped; the archive and keyword search are preserved.",
+  "Пропущено сообщений с пятью и более уникальными словами: {p0}": "Messages skipped with five or more unique words: {p0}",
+  "Не разобрано из-за ограничений размера: {p0}. Остальные результаты доступны.": "Messages not analyzed due to size limits: {p0}. Other results are available.",
+  "Анализ ограничен. Можно просмотреть отчёт, выбрать точные правила и применить их. Новые неизученные формы автоматически не исключаются.": "The analysis is partial. You can review the report, choose exact rules and apply them. New unexamined forms are not excluded automatically.",
+  "Не рассмотрено": "Not evaluated"
 }
