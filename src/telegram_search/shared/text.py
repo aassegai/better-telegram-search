@@ -3,6 +3,7 @@ import json
 import unicodedata
 from datetime import UTC, datetime
 
+from telegram_search.audio.classification import identity_kind
 from telegram_search.shared.errors import UserError
 
 
@@ -87,7 +88,10 @@ def meaningful_content(message: dict, media: list[dict]) -> dict:
         meaningful["members"] = message.get("members", [])
     meaningful["media"] = sorted(
         (
-            {"kind": item["kind"], "identity": item["sha256"] or item["relative_path"]}
+            {
+                "kind": identity_kind(item["kind"]),
+                "identity": item["sha256"] or item["relative_path"],
+            }
             for item in media
         ),
         key=serialize,

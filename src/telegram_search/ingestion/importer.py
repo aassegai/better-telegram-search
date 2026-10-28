@@ -9,6 +9,7 @@ import ijson
 from filelock import FileLock, Timeout
 from PIL import Image, UnidentifiedImageError
 
+from telegram_search.audio.classification import desktop_file_kind
 from telegram_search.ingestion.conflicts import ConflictService
 from telegram_search.ingestion.inspection import checking_media, file_hash, scan_export
 from telegram_search.ingestion.previews import PreviewService
@@ -36,6 +37,8 @@ def read_metadata(path: Path) -> dict:
 def inspect_media(root: Path, message: dict) -> list[dict]:
     media = []
     for field, kind in (("photo", "photo"), ("file", "attachment")):
+        if field == "file":
+            kind = desktop_file_kind(message)
         relative = message.get(field)
         if not isinstance(relative, str) or not relative:
             continue

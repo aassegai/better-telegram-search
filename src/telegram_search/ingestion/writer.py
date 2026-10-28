@@ -4,6 +4,7 @@ import json
 import time
 from contextlib import nullcontext
 
+from telegram_search.audio.classification import identity_kind
 from telegram_search.shared.errors import UserError
 from telegram_search.shared.text import (
     content_hash,
@@ -168,10 +169,30 @@ class CanonicalMessageWriter:
                     if item.get("preserved"):
                         continue
                     prior_ref = conn.execute(
-                        "SELECT sha256,status FROM media_refs WHERE chat_id=? AND message_id=? "
-                        "AND source_root_id=? AND relative_path=?",
+                        "SELECT sha256,status,kind FROM media_refs WHERE chat_id=? "
+                        "AND message_id=? AND source_root_id=? AND relative_path=?",
                         (job["chat_id"], message_id, job["source_root_id"], item["relative_path"]),
                     ).fetchone()
+                    kind = self._media_kind(conn, job["chat_id"], message, item)
+                    if item["sha256"] and identity_kind(kind) == "attachment":
+                        # Keep aliases of this payload consistent across roots,
+                        # including missing copies with the exact same path.
+                        refined = conn.execute(
+                            "UPDATE media_refs SET kind=? WHERE chat_id=? AND message_id=? "
+                            "AND (sha256=? OR (sha256 IS NULL AND relative_path=?)) "
+                            "AND kind IN ('attachment','voice','audio') AND kind<>?",
+                            (
+                                kind,
+                                job["chat_id"],
+                                message_id,
+                                item["sha256"],
+                                item["relative_path"],
+                                kind,
+                            ),
+                        ).rowcount
+                        revision_changed = revision_changed or bool(refined)
+                    if prior_ref and prior_ref["kind"] != kind:
+                        revision_changed = True
                     if (
                         not prior_ref
                         or prior_ref["status"] != item["status"]
@@ -189,13 +210,13 @@ class CanonicalMessageWriter:
                         "kind,sha256,status) VALUES(?,?,?,?,?,?,?) "
                         "ON CONFLICT(chat_id,message_id,source_root_id,relative_path) "
                         "DO UPDATE SET sha256=COALESCE(excluded.sha256,media_refs.sha256),"
-                        "status=excluded.status",
+                        "status=excluded.status,kind=excluded.kind",
                         (
                             job["chat_id"],
                             message_id,
                             job["source_root_id"],
                             item["relative_path"],
-                            item["kind"],
+                            kind,
                             item["sha256"],
                             item["status"],
                         ),
@@ -242,12 +263,42 @@ class CanonicalMessageWriter:
         return "conflicts", "uncertain_revision"
 
     @staticmethod
+    def _media_kind(conn, chat_id, message, item):
+        kind = item["kind"]
+        if identity_kind(kind) != "attachment":
+            return kind
+        declared = message.get("media_type")
+        mime = message.get("mime_type")
+        mime = mime.split(";", 1)[0].strip().casefold() if isinstance(mime, str) else ""
+        strong = declared in (
+            "voice_message",
+            "audio_file",
+            "video_file",
+            "video_message",
+            "animation",
+            "sticker",
+        ) or (mime and mime != "application/octet-stream" and not mime.startswith("audio/"))
+        if strong:
+            return kind
+        # MIME alone cannot distinguish voice from music. Recover an established
+        # type only within this owner and the same bytes (or exact missing path).
+        predicate = "sha256=?" if item["sha256"] else "relative_path=?"
+        value = item["sha256"] or item["relative_path"]
+        known = conn.execute(
+            "SELECT kind FROM media_refs WHERE chat_id=? AND message_id=? AND "
+            + predicate
+            + " AND kind IN ('voice','audio') ORDER BY (kind='voice') DESC,id DESC LIMIT 1",
+            (chat_id, message["id"], value),
+        ).fetchone()
+        return known[0] if known else kind
+
+    @staticmethod
     def _prune_media(conn, chat_id: str, message_id: int, incoming: list[dict]) -> None:
         for ref in conn.execute(
             "SELECT * FROM media_refs WHERE chat_id=? AND message_id=?", (chat_id, message_id)
         ).fetchall():
             compatible = any(
-                item["kind"] == ref["kind"]
+                identity_kind(item["kind"]) == identity_kind(ref["kind"])
                 and (
                     (item["sha256"] is not None and item["sha256"] == ref["sha256"])
                     or (item["sha256"] is None and item["relative_path"] == ref["relative_path"])
@@ -266,10 +317,14 @@ class CanonicalMessageWriter:
             "SELECT kind,relative_path,sha256 FROM media_refs WHERE chat_id=? AND message_id=?",
             (old["chat_id"], old["message_id"]),
         ).fetchall()
-        if {ref["kind"] for ref in refs} != {item["kind"] for item in media}:
+        if {identity_kind(ref["kind"]) for ref in refs} != {
+            identity_kind(item["kind"]) for item in media
+        }:
             return False
         for item in media:
-            same_kind = [ref for ref in refs if ref["kind"] == item["kind"]]
+            same_kind = [
+                ref for ref in refs if identity_kind(ref["kind"]) == identity_kind(item["kind"])
+            ]
             known_hashes = {ref["sha256"] for ref in same_kind if ref["sha256"] is not None}
             if item["sha256"] is not None and known_hashes:
                 if item["sha256"] not in known_hashes:

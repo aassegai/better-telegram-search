@@ -10,6 +10,23 @@ const hit = { chat_id: 'synthetic', chat_name: 'Синтетическая фо�
     author: 'Автор', text: 'Подпись фото', kind: 'message', action: null, reply_to: null, forwarded_from: null,
     matches_filters: true, media: [{ id: 999, kind: 'photo', status: 'ready' }], edited_timestamp: null }] };
 
+for (const kind of ['voice', 'audio']) {
+  test(`typed ${kind} keeps its attachment note without requesting a photo`, async ({ page }) => {
+    let photoRequests = 0;
+    await page.route('**/api/media/999', route => { photoRequests++; return route.fulfill({ status: 404 }); });
+    await mockSearchJobs(page, route => route.fulfill({ json: {
+      results: [{ ...hit, result_type: 'message', matched_by: [], media_id: undefined, ocr_text: undefined,
+        messages: [{ ...hit.messages[0], media: [{ id: 999, kind, status: 'ready' }] }] }],
+      effective_mode: 'words', warnings: [], has_more: false,
+    } }));
+    await page.goto('/');
+    await page.getByLabel('Поисковый запрос').fill('подпись');
+    await page.getByRole('button', { name: 'Найти', exact: true }).click();
+    await expect(page.getByText('В исходном экспорте есть вложение', { exact: true })).toBeVisible();
+    expect(photoRequests).toBe(0);
+  });
+}
+
 test('OCR evidence stays escaped and draft modality changes preserve the submitted result', async ({ page }) => {
   await page.route('**/api/media-index', route => route.fulfill({ json: media }));
   await page.route('**/api/media/999', route => route.fulfill({ status: 404 }));

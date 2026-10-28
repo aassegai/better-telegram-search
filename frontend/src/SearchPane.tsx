@@ -76,7 +76,7 @@ function MessageRow({ message, anchor, query = '', onOpenImage }: { message: Mes
       <button type="button" className="photo-link" aria-label={t('Открыть изображение')} onClick={() => onOpenImage({ id: photo.id, messageId: message.message_id })}>
         <img loading="lazy" src={`/api/media/${photo.id}`} alt={t("Фотография из сообщения")} onError={() => setFailed(true)} />
       </button> : <div className="missing-photo">{t("Изображение недоступно в папке источника")}</div>)}
-    {message.media.some(media => media.kind === 'attachment') && <div className="message-note">{t("В исходном экспорте есть вложение")}</div>}
+    {message.media.some(media => ['attachment', 'voice', 'audio'].includes(media.kind)) && <div className="message-note">{t("В исходном экспорте есть вложение")}</div>}
   </div>;
 }
 

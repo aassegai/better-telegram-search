@@ -4,6 +4,7 @@ import logging
 from datetime import UTC, datetime
 
 from telegram_search import __version__
+from telegram_search.audio.classification import telegram_audio_kind
 from telegram_search.telegram_sync.models import NormalizedMessage, Peer, SourceFailure
 
 
@@ -140,7 +141,18 @@ def normalize_message(message) -> NormalizedMessage:
         mime = getattr(document, "mime_type", "")
         downloadable = mime in {"image/jpeg", "image/png", "image/webp", "image/gif"}
         data["mime_type"] = mime
-        data["media_type"] = "image_document" if downloadable else "document"
+        audio = telegram_audio_kind(document)
+        data["media_type"] = (
+            {"voice": "voice_message", "audio": "audio_file"}[audio]
+            if audio
+            else "image_document"
+            if downloadable
+            else "document"
+        )
+        if audio:
+            # Existing download policy only authorizes images. Audio opt-in and
+            # historical backfill are handled by their own scoped policy.
+            downloadable = False
         if downloadable:
             data["photo"] = "remote"
     elif getattr(message, "media", None):
