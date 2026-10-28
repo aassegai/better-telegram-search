@@ -157,8 +157,11 @@ def main():
         # Free Lance handles before temporary-directory cleanup (important on Windows).
         del vectors
         adapter_python = os.environ.get("BTS_ADAPTER_SMOKE_PYTHON")
+        adapter_checks = {}
         if adapter_python:
-            _custom_adapter_check(db.workspace, root, adapter_python, gpu_build=gpu_build)
+            adapter_checks = _custom_adapter_check(
+                db.workspace, root, adapter_python, gpu_build=gpu_build
+            )
         _update_check(db.workspace, root)
         _http_check(db.workspace, root)
     print(
@@ -180,6 +183,7 @@ def main():
                 "device_selection": True,
                 "telegram_runtime": True,
                 **({"custom_adapter_worker": True} if adapter_python else {}),
+                **adapter_checks,
                 **({"cuda_libraries": True} if gpu_build else {}),
             }
         )
@@ -249,8 +253,12 @@ class Adapter:
     }
     path = source / "manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
-    if validate_adapter(AdapterStore(workspace), path, python)["state"] != "passed":
+    report = validate_adapter(AdapterStore(workspace), path, python, register=True)
+    if report["state"] != "passed":
         raise RuntimeError("External custom adapter smoke failed")
+    from telegram_search.distribution.adapter_roles_smoke import check_bound_roles
+
+    return check_bound_roles(workspace, root, python, "custom:" + report["identity"])
 
 
 def _update_check(workspace, root):
