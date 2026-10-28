@@ -125,7 +125,7 @@ test('pause blocks concurrent discard and resumed preview preserves counts', asy
     const response = await route.fetch(); await waiting; await route.fulfill({ response });
   });
   await page.getByRole('button', { name: 'Проверить экспорт', exact: true }).click();
-  await page.getByRole('button', { name: 'Пауза', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Пауза', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Проверить другой экспорт' })).toBeDisabled();
   release();
   await page.getByRole('button', { name: 'Продолжить проверку' }).click();
