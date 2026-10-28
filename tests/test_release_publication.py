@@ -316,6 +316,8 @@ def test_main_reports_confirmed_publication_when_final_journal_is_unavailable(
     [
         ("README.md", True),
         ("tests/test_telegram_sync.py", True),
+        ("tests/test_lifecycle.py", True),
+        ("src/telegram_search/ingestion/importer.py", False),
         ("tests/telegram_fake.py", False),
         ("src/telegram_search/cli.py", False),
     ],

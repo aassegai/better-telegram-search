@@ -19,7 +19,9 @@ def preview(importer, path, **kwargs):
 
 def apply(importer, report):
     job_id = importer.previews.apply(report["id"])
-    result = importer.futures[job_id].result(timeout=5)
+    # This checks completion/merge semantics, not a five-second import SLA.
+    # Windows CI can spend several seconds flushing even tiny synthetic archives.
+    result = importer.futures[job_id].result(timeout=30)
     assert result["state"] == "completed", result["error"]
     return result
 
