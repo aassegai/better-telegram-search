@@ -34,7 +34,13 @@ def number(value):
 
 
 def string(value, maximum=MAX_TEXT, *, empty=True):
-    return isinstance(value, str) and (empty or bool(value)) and len(value) <= maximum
+    if not isinstance(value, str) or (not empty and not value) or len(value) > maximum:
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def identifier(value):

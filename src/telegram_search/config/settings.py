@@ -92,7 +92,10 @@ class Settings:
             type(settings.ocr_device) is not str
             or settings.ocr_device not in {"cpu", "auto", "gpu", "hybrid"}
             or type(settings.ocr_engine) is not str
-            or settings.ocr_engine not in {"tesseract", "paddle"}
+            or (
+                settings.ocr_engine not in {"tesseract", "paddle"}
+                and re.fullmatch(r"custom:[0-9a-f]{64}", settings.ocr_engine) is None
+            )
             or (settings.ocr_engine == "tesseract" and settings.ocr_device != "cpu")
         ):
             raise UserError("Tesseract работает на CPU. Для GPU выберите PaddleOCR.")

@@ -161,11 +161,22 @@ class WorkspaceService:
             key: visual_specs(key, self.db.workspace)
             for key in ("clip", "siglip2", *custom_specs(self.db.workspace, "image_embedding"))
         }
-        ocr_path = (
-            store.path(ocr_spec())
-            if settings.ocr_engine == "paddle"
-            else self.db.workspace / "models" / "ocr"
-        )
+        ocr_profiles = {
+            "tesseract": [str(self.db.workspace / "models" / "ocr")],
+            "paddle": [str(store.path(ocr_spec()))],
+        }
+        custom_ocr = custom_specs(self.db.workspace, "ocr")
+        for key, spec in custom_ocr.items():
+            ocr_profiles[key] = [str(text_path(spec))]
+        if settings.ocr_engine.startswith("custom:") and settings.ocr_engine not in ocr_profiles:
+            from telegram_search.model_adapters.store import AdapterStore
+
+            ocr_profiles[settings.ocr_engine] = [
+                str(
+                    AdapterStore(self.db.workspace).root
+                    / settings.ocr_engine.removeprefix("custom:")
+                )
+            ]
         return {
             "e5": {
                 "device": settings.model_device("e5"),
@@ -197,7 +208,19 @@ class WorkspaceService:
             "ocr": {
                 "device": settings.ocr_device,
                 "engine": settings.ocr_engine,
-                "paths": [str(ocr_path)],
+                "paths": ocr_profiles[settings.ocr_engine],
+                "profile_paths": ocr_profiles,
+                "profile_names": {
+                    key: spec.model_id + " · " + spec.revision for key, spec in custom_ocr.items()
+                },
+                "profile_devices": {
+                    "tesseract": ["cpu"],
+                    "paddle": ["cpu", "gpu"],
+                    **{
+                        key: spec.manifest["adapter_manifest"]["devices"]
+                        for key, spec in custom_ocr.items()
+                    },
+                },
             },
         }
 
@@ -392,16 +415,25 @@ class WorkspaceService:
         *,
         model=None,
         ocr_engine=None,
+        defer_preparation=False,
     ):
         """Validate the new device before saving; publish each new space explicitly."""
         from telegram_search.inference.providers import Execution
 
         with self.lock, self.settings_lock:
             previous = self.db.settings
+            if defer_preparation and model != "ocr":
+                raise UserError("Only OCR model selection can defer preparation.")
             if model not in {None, "e5", "clip", "ocr"}:
                 raise UserError("Неизвестная модель.")
             if model == "ocr":
-                engine = ocr_engine or ("paddle" if device != "cpu" else previous.ocr_engine)
+                engine = ocr_engine or (
+                    previous.ocr_engine
+                    if previous.ocr_engine.startswith("custom:")
+                    else "paddle"
+                    if device != "cpu"
+                    else previous.ocr_engine
+                )
                 candidate = replace(
                     previous,
                     ocr_device=device,
@@ -434,7 +466,7 @@ class WorkspaceService:
             change_ocr = model == "ocr" or (
                 model is None
                 and self.media.ocr is not None
-                and previous.ocr_engine == "paddle"
+                and (previous.ocr_engine == "paddle" or previous.ocr_engine.startswith("custom:"))
                 and (
                     previous.gpu_device_id != candidate.gpu_device_id
                     or previous.gpu_memory_limit_mib != candidate.gpu_memory_limit_mib
@@ -446,6 +478,9 @@ class WorkspaceService:
             ):
                 raise UserError("Дождитесь завершения подготовки моделей.")
             with self.db.connect() as conn:
+                previous_ocr_enabled = conn.execute(
+                    "SELECT ocr_enabled FROM media_state WHERE id=1"
+                ).fetchone()[0]
                 active = conn.execute(
                     "SELECT e.profile,e.manifest_json,s.active_space_id FROM semantic_state s "
                     "LEFT JOIN embedding_spaces e ON e.id=s.active_space_id WHERE s.enabled=1"
@@ -461,19 +496,48 @@ class WorkspaceService:
                         "Приостановите индексацию текста и медиа перед сменой устройства."
                     )
             try:
-                custom = None
-                if model == "e5" and active and active["profile"].startswith("custom:"):
-                    custom = self.semantic.encoder
+                supported = None
+                custom_ocr_only = (
+                    model is None
+                    and change_ocr
+                    and not active
+                    and self.media.clip is None
+                    and candidate.ocr_engine.startswith("custom:")
+                )
+                if (model == "ocr" or custom_ocr_only) and candidate.ocr_engine.startswith(
+                    "custom:"
+                ):
+                    from telegram_search.model_adapters.registry import custom_spec
+
+                    spec = custom_spec(self.db.workspace, candidate.ocr_engine, role="ocr")
+                    supported = spec.manifest["adapter_manifest"]["devices"]
+                elif (
+                    model == "e5"
+                    and active
+                    and active["profile"].startswith("custom:")
+                    and self.semantic.encoder
+                ):
+                    supported = self.semantic.encoder.manifest.data["devices"]
                 elif model == "clip" and str(getattr(self.media.clip, "profile", "")).startswith(
                     "custom:"
                 ):
-                    custom = self.media.clip
-                if custom is not None:
-                    from telegram_search.model_adapters.text_encoder import AdapterExecution
+                    supported = self.media.clip.manifest.data["devices"]
+                if supported is not None:
+                    from telegram_search.model_adapters.execution import AdapterExecution
 
-                    supported = custom.manifest.data["devices"]
-                    execution = AdapterExecution(device, candidate, supported)
-                    query_execution = AdapterExecution(search_device, candidate, supported)
+                    chosen_device = candidate.ocr_device if custom_ocr_only else device
+                    if chosen_device == "hybrid" and not {"cpu", "gpu"} <= set(supported):
+                        raise UserError(
+                            "Custom OCR CPU + GPU requires both devices in the manifest."
+                        )
+                    execution = AdapterExecution(
+                        "gpu" if chosen_device == "hybrid" else chosen_device, candidate, supported
+                    )
+                    query_execution = (
+                        execution
+                        if model == "ocr" or custom_ocr_only
+                        else AdapterExecution(search_device, candidate, supported)
+                    )
                 else:
                     execution = Execution(
                         "gpu" if device == "hybrid" else device,
@@ -495,6 +559,7 @@ class WorkspaceService:
             old_clip = self.media.clip if model in {None, "clip"} else None
             new_encoder = new_clip = new_ocr = None
             saved = False
+            deferred_disabled = False
             try:
                 if old_encoder:
                     old_encoder.suspend()
@@ -527,7 +592,7 @@ class WorkspaceService:
                             "Подтвердите перестроение семантических индексов при смене устройства."
                         )
                     new_clip.check_contract()
-                if change_ocr:
+                if change_ocr and not defer_preparation:
                     new_ocr = self.media._new_ocr(candidate)
                     if self.media.ocr and candidate.ocr_engine == previous.ocr_engine:
                         new_ocr.verify()
@@ -541,6 +606,14 @@ class WorkspaceService:
                     if self.media.ocr:
                         # Clean up before publishing durable settings or SQLite changes.
                         self.media.ocr.unload()
+                if change_ocr and defer_preparation:
+                    if self.media.ocr:
+                        self.media.ocr.unload()
+                    # Disable durably BEFORE publishing an unprepared profile.
+                    # A crash may require preparation again, but cannot run new code.
+                    with self.db.connect() as conn:
+                        conn.execute("UPDATE media_state SET ocr_enabled=0 WHERE id=1")
+                    deferred_disabled = True
                 candidate.save(self.db.workspace)
                 saved = True
 
@@ -576,6 +649,12 @@ class WorkspaceService:
                 if saved:
                     previous.save(self.db.workspace)
                     self.db.settings = previous
+                if deferred_disabled:
+                    with self.db.connect() as conn:
+                        conn.execute(
+                            "UPDATE media_state SET ocr_enabled=? WHERE id=1",
+                            (previous_ocr_enabled,),
+                        )
                 if new_encoder and new_encoder is not self.semantic.encoder:
                     new_encoder.unload()
                 if new_clip and new_clip is not self.media.clip:

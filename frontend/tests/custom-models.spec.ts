@@ -135,3 +135,141 @@ for (const english of [false, true]) {
     await expect.poll(() => request).toEqual({ kind: 'images', offline: false, profile, reindex: true });
   });
 }
+
+for (const english of [false, true]) {
+  test(`custom OCR selection stays separate from explicit preparation (${english ? 'EN' : 'RU'})`, async ({ page }) => {
+    if (english) await page.addInitScript(() => localStorage.setItem('bts.language', 'en'));
+    const profile = 'custom:' + 'e'.repeat(64);
+    let selected = false; let prepared = false; let prepareCalls = 0;
+    let selection: Record<string, unknown> | null = null;
+    let savedModel: Record<string, unknown> = {};
+    await page.route('**/api/models', async route => {
+      const response = await route.fetch(); const value = await response.json();
+      savedModel = { ...value.ocr, engine: selected ? profile : 'tesseract', profile_names: { [profile]: 'custom/public-ocr · v1' }, profile_paths: { [profile]: ['/synthetic/ocr-adapter'] }, profile_devices: { [profile]: ['cpu'] } };
+      await route.fulfill({ json: { ...value, ocr: savedModel } });
+    });
+    await page.route('**/api/media-index', async route => {
+      const response = await route.fetch(); const value = await response.json();
+      await route.fulfill({ json: { ...value, ocr_engine: selected ? profile : 'tesseract', ocr_runtime_installed: true, ocr_available: prepared } });
+    });
+    await page.route('**/api/models/ocr/device', async route => {
+      selection = route.request().postDataJSON(); selected = true;
+      await route.fulfill({ json: { model: { ...savedModel, engine: profile } } });
+    });
+    await page.route('**/api/media-index/prepare', async route => {
+      prepareCalls++; prepared = true;
+      expect(route.request().postDataJSON()).toMatchObject({ kind: 'ocr' });
+      await route.fulfill({ status: 202, json: { ocr_engine: profile, ocr_runtime_installed: true, ocr_available: true, preparation_state: 'ready' } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: english ? 'Settings' : 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: english ? 'Models' : 'Модели', exact: true }).click();
+    const chooser = page.getByRole('combobox', { name: english ? 'OCR model' : 'Модель OCR', exact: true });
+    await expect(chooser.locator(`option[value="${profile}"]`)).toHaveText('custom/public-ocr · v1');
+    await chooser.selectOption(profile);
+    const prepare = page.getByRole('button', { name: english ? 'Prepare OCR' : 'Подготовить OCR', exact: true });
+    await expect(prepare).toBeDisabled();
+    await page.getByRole('button', { name: english ? 'Save OCR selection' : 'Сохранить выбор OCR', exact: true }).click();
+    await expect.poll(() => selection).toEqual({ device: 'cpu', ocr_engine: profile, defer_preparation: true });
+    await expect(prepare).toBeEnabled(); expect(prepareCalls).toBe(0);
+    await prepare.click();
+    await expect.poll(() => prepareCalls).toBe(1);
+  });
+}
+
+test('registration refresh recovers model settings and ignores late initial failure', async ({ page }) => {
+  const identity = 'f'.repeat(64);
+  const summary = { id: 'public-ocr', role: 'ocr', identity, runtime: { name: 'python', version: '3' } };
+  let reads = 0;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/models', async route => {
+    if (++reads === 1) {
+      await delayed;
+      return route.fulfill({ status: 503, json: { detail: 'Old model settings failure' } });
+    }
+    const response = await route.fetch(); const value = await response.json();
+    return route.fulfill({ json: { ...value, ocr: { ...value.ocr, profile_names: { ['custom:' + identity]: 'custom/recovered-ocr' } } } });
+  });
+  await page.route('**/api/adapters', route => route.fulfill({ json: { models: [summary], errors: [], job: { id: 'g'.repeat(32), state: 'passed', action: 'validate', role: 'ocr', report: { ...summary, registered: true }, progress: null, error: null } } }));
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: 'Модели', exact: true }).click();
+    const chooser = page.getByRole('combobox', { name: 'Модель OCR', exact: true });
+    await expect(chooser.locator(`option[value="custom:${identity}"]`)).toHaveText('custom/recovered-ocr');
+    await expect(chooser).toBeEnabled();
+    release();
+    await expect(page.getByText('Old model settings failure', { exact: true })).toHaveCount(0);
+    await expect(chooser).toBeEnabled();
+  } finally { release(); }
+});
+
+for (const { devices, device } of [
+  { devices: ['cpu', 'gpu'], device: 'gpu' }, { devices: ['gpu'], device: 'gpu' },
+  { devices: ['cpu'], device: 'cpu' }, { devices: ['cpu'], device: 'auto' },
+]) {
+  test(`custom OCR performance choices follow declared devices (${devices.join('+')}/${device})`, async ({ page }) => {
+    const profile = 'custom:' + '1'.repeat(64);
+    const models = await (await page.request.get('/api/models')).json();
+    models.ocr = { ...models.ocr, engine: profile, device,
+      profile_devices: { [profile]: devices }, profile_names: { [profile]: 'custom/ocr-devices' } };
+    await page.route('**/api/models', route => route.fulfill({ json: models }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+    const chooser = page.getByRole('region', { name: 'Устройства OCR', exact: true })
+      .getByLabel('Устройство распознавания', { exact: true });
+    await expect(chooser).toHaveValue(models.ocr.device);
+    await expect.poll(() => chooser.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value))).toEqual([
+      ...(devices.includes('cpu') ? ['cpu'] : []),
+      'auto', ...(devices.includes('gpu') ? ['gpu'] : []),
+      ...(devices.length === 2 ? ['hybrid'] : []),
+    ]);
+    await expect(chooser.locator(`option[value="${device}"]`)).toBeEnabled();
+  });
+}
+
+test('late registration refresh cannot overwrite a newly saved OCR choice', async ({ page }) => {
+  const identity = '2'.repeat(64);
+  const profile = 'custom:' + identity;
+  const summary = { id: 'public-ocr-race', role: 'ocr', identity, runtime: { name: 'python', version: '3' } };
+  const models = await (await page.request.get('/api/models')).json();
+  models.ocr = { ...models.ocr, engine: 'tesseract', device: 'cpu',
+    profile_names: { [profile]: 'custom/ocr-race' }, profile_devices: { [profile]: ['cpu'] } };
+  let reads = 0; let selected = false;
+  let release!: () => void;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/models', async route => {
+    const snapshot = structuredClone(models);
+    if (++reads === 2) await delayed;
+    return route.fulfill({ json: snapshot });
+  });
+  await page.route('**/api/adapters', route => route.fulfill({ json: { models: [summary], errors: [], job: {
+    id: 'h'.repeat(32), state: 'passed', action: 'validate', role: 'ocr',
+    report: { ...summary, registered: true }, progress: null, error: null,
+  } } }));
+  await page.route('**/api/models/ocr/device', route => {
+    models.ocr = { ...models.ocr, engine: profile }; selected = true;
+    return route.fulfill({ json: { model: models.ocr } });
+  });
+  await page.route('**/api/media-index', async route => {
+    const base = await (await route.fetch()).json();
+    return route.fulfill({ json: { ...base, ocr_engine: selected ? profile : 'tesseract',
+      ocr_runtime_installed: true, ocr_available: false } });
+  });
+  try {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+    await page.getByRole('tab', { name: 'Модели', exact: true }).click();
+    await expect.poll(() => reads).toBe(2);
+    const chooser = page.getByRole('combobox', { name: 'Модель OCR', exact: true });
+    await chooser.selectOption(profile);
+    await page.getByRole('button', { name: 'Сохранить выбор OCR', exact: true }).click();
+    const prepare = page.getByRole('button', { name: 'Подготовить OCR', exact: true });
+    await expect(prepare).toBeEnabled();
+    release();
+    await expect.poll(() => reads).toBeGreaterThan(2);
+    await expect(chooser).toHaveValue(profile);
+    await expect(prepare).toBeEnabled();
+  } finally { release(); }
+});

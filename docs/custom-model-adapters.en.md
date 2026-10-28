@@ -12,11 +12,11 @@ sandbox**. Only run code and Python environments you trust.
 
 All five roles have manifest inspection, isolated execution, output validation,
 smoke tests and saved registrations: text embedding, image embedding, reranking,
-OCR and ASR. **Text and image adapters are connected to indexing and search; rerankers
-are connected to candidate scoring.** The other two custom roles currently
-support validation only; their registrations
+OCR and ASR. **Text and image adapters are connected to indexing and search; OCR adapters
+use the recognition queue and lexical/semantic OCR search; rerankers score
+candidates.** ASR adapters currently support validation only; their registrations
 do not replace a built-in model or start a background index. Speech recognition
-and those role bindings are still being implemented. A successful smoke test
+and its role binding are still being implemented. A successful smoke test
 checks the protocol, not model quality.
 
 In **Settings → Models → Add your own model**:
@@ -223,3 +223,14 @@ After explicit registration, select the adapter in **Settings → Models → Ima
 The parent decodes supported image files to EXIF-oriented RGB pixels without resizing. Model-specific resizing and normalization belong in the adapter and its versioned preprocessing contract. Encoded files are limited to 32 MiB; dimensions to 16,384 per side; decoded pixels to 16 megapixels and 24 MiB of RGB data. An oversized or corrupt image becomes a retryable indexing error. The current decoded batch and one lookahead batch each have a 24 MiB budget. The queue caps batches to the manifest `max_batch`, leaves overflow images pending and retains adaptive halving on inference errors. Binary RGB data crosses a bounded base64 JSON frame; this transport prioritizes compatibility over zero-copy throughput.
 
 Image indexing and query devices are independent. GPU activation compares public CPU/GPU vectors before using the shared space; Auto may fall back to CPU. This check requires CPU support. Actual custom GPU performance is not yet measured. Manifest, environment, RGB preprocessing and Pillow identities enter the vector space, query cache and persisted search history. Package metadata is read without executing code; only preparation/inference starts a worker.
+
+
+## OCR adapters
+
+Register the `ocr` role, choose it in **Settings → Models → OCR model**, and save the selection. Saving is metadata-only: it does not import adapter code, load a model or download weights. **Prepare OCR** explicitly starts validation in the selected interpreter. Prepare shared models in settings, then resume OCR only for the intended dialogs.
+
+Recognition uses the existing durable blob-hash/version queue, progress, retries and pause controls. A model/environment/preprocessing change creates a different cache version and preserves previous caches and source photos. Restart restores the selected version; cached text remains searchable without rerunning recognition. Semantic OCR uses the selected text encoder independently from recognition. Changing that encoder only rebuilds OCR vectors. The application currently persists recognized text and optional overall confidence; adapter regions are validated in input-image pixel coordinates and returned by the engine, but are not retained as a region overlay in the search UI.
+
+The parent applies EXIF orientation, converts to RGB and limits the longest edge to the configured OCR image size using Lanczos. This preprocessing, Pillow, adapter manifest and environment enter cache identity. Images are grouped within the manifest batch limit and 24 MiB decoded budget. The image batch setting controls queue claims; Paddle-specific region batches belong to the built-in Paddle engine. Overall adapter confidence `[0,1]` becomes an optional percentage in the existing OCR cache; missing confidence remains unknown.
+
+CPU workers share one device reservation and divide the configured thread budget. CPU + GPU uses independent workers with one cache version and disjoint queue leases; cancelling a lease leaves it pending. OCR adapters with both CPU and GPU compare public recognition output before GPU activation; Auto can fall back to CPU. An explicitly GPU-only OCR adapter is checked on its declared device, without claiming CPU equivalence. Hardware GPU throughput is not measured by the synthetic adapter fixtures. The separate interpreter owns custom dependencies; parent OCR does not import NumPy/ONNX.

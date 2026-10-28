@@ -112,7 +112,10 @@ class DeviceRequest(BaseModel):
 class ModelDeviceRequest(BaseModel):
     device: Literal["cpu", "auto", "gpu", "hybrid"]
     search_device: Literal["cpu", "auto", "gpu"] = "cpu"
-    ocr_engine: Literal["tesseract", "paddle"] | None = None
+    ocr_engine: (
+        Annotated[str, Field(pattern=r"^(tesseract|paddle|custom:[0-9a-f]{64})$")] | None
+    ) = None
+    defer_preparation: bool = Field(default=False, strict=True)
 
 
 class ClearVectorsRequest(BaseModel):

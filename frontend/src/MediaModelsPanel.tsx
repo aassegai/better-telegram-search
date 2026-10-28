@@ -14,7 +14,7 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
   const [profile, setProfile] = useState(media?.images_enabled ? media.visual_profile ?? 'clip' : 'siglip2');
   const chosen = useRef(false);
   useEffect(() => { if (media?.images_enabled && !chosen.current) setProfile(media.visual_profile ?? 'clip'); }, [media?.images_enabled, media?.visual_profile]);
-  const [engine, setEngine] = useState<'tesseract' | 'paddle'>('tesseract');
+  const [engine, setEngine] = useState('tesseract');
   const engineChosen = useRef(false);
   useEffect(() => { if (models?.ocr.engine && !engineChosen.current) setEngine(models.ocr.engine); }, [models?.ocr.engine]);
   const [reindex, setReindex] = useState(false);
@@ -31,6 +31,11 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
   const changing = Boolean(media?.images_enabled && (media.visual_profile ?? 'clip') !== profile);
   const ready = Boolean(media?.images_available && !changing);
   const needsReindex = changing || Boolean(custom && media?.images_enabled && !media.images_available);
+  const customOcr = engine.startsWith('custom:');
+  const ocrNames = models?.ocr.profile_names ?? {};
+  const selectedDevices = models?.ocr.profile_devices?.[engine];
+  const savedOcrDevice = models?.ocr.device ?? 'cpu';
+  const ocrDevice = engine === 'tesseract' ? 'cpu' : !selectedDevices || savedOcrDevice === 'auto' || (savedOcrDevice === 'hybrid' ? selectedDevices.includes('cpu') && selectedDevices.includes('gpu') : selectedDevices.includes(savedOcrDevice)) ? savedOcrDevice : selectedDevices.includes('cpu') ? 'cpu' : 'gpu';
   const engineDirty = Boolean(models?.ocr && models.ocr.engine !== engine);
   const bytes = media?.visual_profiles?.find(item => item.profile === profile)?.download_bytes;
   const prepare = (kind: 'ocr' | 'images') => { setOperationRole(kind); void op.run(async current => {
@@ -67,14 +72,14 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
     </ModelCard>
     <ModelCard title="Модель распознавания · OCR" purpose="Распознавание текста на фотографиях для словесного и смыслового поиска."
       ready={Boolean(media?.ocr_available && !engineDirty)} preparing={Boolean(preparing && media?.preparation_kind === 'ocr')} error={operationRole === 'ocr' ? op.error : null}
-      details={<><ModelPaths role="ocr" /><p>{t('PaddleOCR использует общий кэш на CPU и GPU. При смене OCR-модели распознавание выполняется заново; прежний кэш сохраняется.')}</p></>}
+      details={<><ModelPaths role="ocr" profile={engine} /><p>{t(customOcr ? 'Адаптер OCR работает в отдельном Python. При смене модели прежний кэш сохраняется.' : 'PaddleOCR использует общий кэш на CPU и GPU. При смене OCR-модели распознавание выполняется заново; прежний кэш сохраняется.')}</p></>}
       device={<ModelDeviceSummary role="ocr" onPerformance={onPerformance} />} download={preparing ? { completed: 0, total: 0 } : undefined}
-      options={<label className="check-label"><input type="checkbox" checked={ocrOffline} disabled={disabled} onChange={event => setOcrOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>}
+      options={!customOcr && <label className="check-label"><input type="checkbox" checked={ocrOffline} disabled={disabled} onChange={event => setOcrOffline(event.target.checked)} />{t('Только локальный кэш моделей')}</label>}
       actions={<>
         <button className="secondary" disabled={disabled || !engineDirty || !models?.ocr} onClick={() => { setOperationRole('ocr'); void op.run(async current => {
           if (!models?.ocr) return;
           const value = await api<{ model: ModelSettings }>('/api/models/ocr/device', { method: 'POST', body: JSON.stringify({
-            device: engine === 'tesseract' ? 'cpu' : models.ocr.device, ocr_engine: engine,
+            device: ocrDevice, ocr_engine: engine, defer_preparation: true,
           }) });
           if (!current()) return;
           update('ocr', value.model); setNotice('Модель OCR выбрана. Подготовка запускается отдельно.');
@@ -83,11 +88,14 @@ export default function MediaModelsPanel({ media, onMediaChange, onPerformance }
         <button className="primary" disabled={disabled || engineDirty || !media?.ocr_runtime_installed || Boolean(media.ocr_available)} onClick={() => prepare('ocr')}>{t('Подготовить OCR')}</button>
       </>}>
       <label>{t('Модель OCR')}<select aria-label={t('Модель OCR')} value={engine} disabled={disabled || !models?.ocr}
-        onChange={event => { engineChosen.current = true; setEngine(event.target.value as 'tesseract' | 'paddle'); setNotice(''); }}>
+        onChange={event => { engineChosen.current = true; setEngine(event.target.value); setNotice(''); }}>
         <option value="tesseract">Tesseract · CPU</option><option value="paddle">PaddleOCR · CPU / GPU</option>
+        {customOcr && !Object.hasOwn(ocrNames, engine) && <option value={engine} disabled>{t('Пользовательская модель недоступна')}</option>}
+        {Object.entries(ocrNames).map(([key, name]) => <option value={key} key={key}>{name}</option>)}
       </select></label>
-      <p>{t('Источник модели')}: {t('Встроенная загрузка')}</p>
-      {media && !media.ocr_runtime_installed && <p className="warning">{t('Установите OCR runtime: uv sync --locked --extra semantic --extra ocr.')}</p>}
+      <p>{t('Источник модели')}: {t(customOcr ? 'Проверенный локальный адаптер' : 'Встроенная загрузка')}</p>
+      {engineDirty && ocrDevice !== savedOcrDevice && <p>{t('Устройство выбранной модели: {p0}', { p0: ocrDevice.toUpperCase() })}</p>}
+      {media && !media.ocr_runtime_installed && <p className="warning">{t(customOcr ? 'Проверьте регистрацию адаптера. Текущий индекс сохранён.' : 'Установите OCR runtime: uv sync --locked --extra semantic --extra ocr.')}</p>}
       {notice && <p role="status">{t(notice)}</p>}
     </ModelCard>
   </>;

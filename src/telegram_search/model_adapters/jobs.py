@@ -39,7 +39,7 @@ class AdapterJobs:
                         **manifest.summary(),
                         "profile": "custom:" + identity,
                         "activation_supported": manifest.role
-                        in {"text_embedding", "reranker", "image_embedding"},
+                        in {"text_embedding", "reranker", "image_embedding", "ocr"},
                     }
                 )
             except (UserError, OSError, ValueError):

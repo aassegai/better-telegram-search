@@ -1,24 +1,34 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from './api';
 import { t } from './i18n';
 
 export type ModelRole = 'e5' | 'clip' | 'ocr';
 export type Device = 'cpu' | 'auto' | 'gpu' | 'hybrid';
-export type ModelSettings = { device: Device; search_device?: Device; engine?: 'tesseract' | 'paddle'; paths: string[]; profile_paths?: Record<string, string | string[]>; profile_names?: Record<string, string> };
-type Models = Record<ModelRole, ModelSettings>;
-const Context = createContext<{ models: Models | null; update: (role: ModelRole, model: ModelSettings) => void }>({ models: null, update: () => {} });
+export type ModelSettings = { device: Device; search_device?: Device; engine?: string; paths: string[]; profile_paths?: Record<string, string | string[]>; profile_names?: Record<string, string>; profile_devices?: Record<string, string[]> };
+export type Models = Record<ModelRole, ModelSettings>;
+const Context = createContext<{ models: Models | null; update: (role: ModelRole, model: ModelSettings) => void; replace: (models: Models, expected: number) => boolean; getRevision: () => number }>({ models: null, update: () => {}, replace: () => false, getRevision: () => 0 });
 
 export function ModelSettingsProvider({ children }: { children: ReactNode }) {
   const [models, setModels] = useState<Models | null>(null);
   const [error, setError] = useState('');
+  const revision = useRef(0);
   useEffect(() => {
     let alive = true;
-    api<Models>('/api/models').then(value => { if (alive) setModels(value); })
-      .catch(error => { if (alive) setError(error.message); });
+    const requested = revision.current;
+    api<Models>('/api/models').then(value => { if (alive && requested === revision.current) setModels(value); })
+      .catch(error => { if (alive && requested === revision.current) setError(error.message); });
     return () => { alive = false; };
   }, []);
-  return <Context.Provider value={{ models, update: (role, value) => setModels(previous => previous ? { ...previous, [role]: value } : previous) }}>
+  const update = (role: ModelRole, value: ModelSettings) => {
+    revision.current++;
+    setModels(previous => previous ? { ...previous, [role]: value } : previous);
+  };
+  const replaceModels = (value: Models, expected: number) => {
+    if (revision.current !== expected) return false;
+    revision.current++; setModels(value); setError(''); return true;
+  };
+  return <Context.Provider value={{ models, update, replace: replaceModels, getRevision: () => revision.current }}>
     {error && <p className="error" role="alert">{t(error)}</p>}{children}
   </Context.Provider>;
 }

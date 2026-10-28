@@ -12,16 +12,20 @@ def custom_spec(workspace, profile, *, role="text_embedding"):
     if manifest.role != role:
         raise UserError("The custom model has a different role.")
     data = manifest.data
-    if role == "image_embedding":
+    if role in {"image_embedding", "ocr"}:
         return ModelSpec(
             profile,
             {
                 "schema_version": 2,
                 "runtime": "python-adapter",
-                "role": "image",
+                "role": "image" if role == "image_embedding" else "ocr",
                 "model_id": "custom/" + data["id"],
                 "revision": data["revision"],
-                "dimension": data["output_contract"]["dimension"],
+                **(
+                    {"dimension": data["output_contract"]["dimension"]}
+                    if role == "image_embedding"
+                    else {}
+                ),
                 "adapter_identity": manifest.identity,
                 "adapter_manifest": data,
                 "adapter_environment": registration["environment"],

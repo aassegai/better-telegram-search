@@ -2,7 +2,7 @@ import hashlib
 import importlib.util
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 
 from telegram_search.indexing.estimates import record_rate
@@ -112,7 +112,12 @@ class MediaService(MediaImages):
 
     @ocr.setter
     def ocr(self, engine):
+        previous = getattr(self, "_ocr", None)
         self._ocr = engine
+        if previous is not None and previous is not engine and hasattr(previous, "retire"):
+            previous.retire()
+            if getattr(previous, "retirement_error", None):
+                self.resource_error = previous.retirement_error
         # Search snapshots follow the activated engine even before a memory-
         # constrained recognition worker reaches its next queue claim.
         self.db.active_ocr_version = getattr(engine, "version", None)
@@ -142,6 +147,27 @@ class MediaService(MediaImages):
             )
             pool.rate_settings = (settings.ocr_batch_size, settings.ocr_region_batch_size, count)
             return pool
+        if settings.ocr_engine.startswith("custom:"):
+            from telegram_search.model_adapters.ocr import AdapterOcrEngine
+            from telegram_search.model_adapters.registry import custom_spec
+
+            spec = custom_spec(self.db.workspace, settings.ocr_engine, role="ocr")
+            hybrid = settings.ocr_device == "hybrid"
+            primary = (
+                replace(settings, ocr_device="gpu", cpu_threads=max(1, settings.cpu_threads // 2))
+                if hybrid
+                else settings
+            )
+            engine = AdapterOcrEngine(spec, self.db.workspace, primary, cancelled=self.stop)
+            if hybrid:
+                engine.cpu_peer = self._new_ocr(
+                    replace(
+                        settings,
+                        ocr_device="cpu",
+                        cpu_threads=settings.cpu_threads - primary.cpu_threads,
+                    )
+                )
+            return engine
         if settings.ocr_engine == "paddle":
             from telegram_search.inference.ocr_onnx import OnnxOcrEngine
 
@@ -228,16 +254,25 @@ class MediaService(MediaImages):
     def _load_existing(self):
         with self.db.connect() as conn:
             state = dict(conn.execute("SELECT * FROM media_state WHERE id=1").fetchone())
-        try:
-            if state["ocr_enabled"]:
-                engine = self._new_ocr()
-                engine.verify()
-                self.ocr = engine
-            if state["images_enabled"]:
-                self.clip = self._new_clip()
-        except UserError as exc:
+        errors = []
+        for kind in ("ocr", "images"):
+            if not state["ocr_enabled" if kind == "ocr" else "images_enabled"]:
+                continue
+            engine = None
+            try:
+                engine = self._new_ocr() if kind == "ocr" else self._new_clip()
+                if kind == "ocr":
+                    engine.verify()
+                    self.ocr = engine
+                else:
+                    self.clip = engine
+            except UserError as exc:
+                if engine and hasattr(engine, "unload"):
+                    engine.unload()
+                errors.append(str(exc))
+        if errors:
             with self.db.connect() as conn:
-                conn.execute("UPDATE media_state SET error=? WHERE id=1", (str(exc),))
+                conn.execute("UPDATE media_state SET error=? WHERE id=1", (" ".join(errors),))
 
     def prepare(self, kind, *, offline=False, profile=None, reindex=False):
         if kind not in {"ocr", "images"}:
@@ -783,14 +818,7 @@ class MediaService(MediaImages):
             "missing_refs": missing,
             "ocr_available": ocr is not None,
             "images_available": clip is not None,
-            "ocr_runtime_installed": all(
-                importlib.util.find_spec(name)
-                for name in (
-                    ("onnxruntime", "cv2", "pyclipper")
-                    if self.db.settings.ocr_engine == "paddle"
-                    else ("tesserocr",)
-                )
-            ),
+            "ocr_runtime_installed": self._ocr_runtime_installed(),
             "ocr_engine": self.db.settings.ocr_engine,
             "ocr_backend": ocr.backend_info()
             if ocr and hasattr(ocr, "backend_info")
@@ -813,6 +841,24 @@ class MediaService(MediaImages):
             if clip and hasattr(clip, "query_execution")
             else None,
         }
+
+    def _ocr_runtime_installed(self):
+        if self.db.settings.ocr_engine.startswith("custom:"):
+            from telegram_search.model_adapters.registry import custom_spec
+
+            try:
+                custom_spec(self.db.workspace, self.db.settings.ocr_engine, role="ocr")
+                return True
+            except (UserError, OSError, ValueError, KeyError):
+                return False
+        return all(
+            importlib.util.find_spec(name)
+            for name in (
+                ("onnxruntime", "cv2", "pyclipper")
+                if self.db.settings.ocr_engine == "paddle"
+                else ("tesserocr",)
+            )
+        )
 
     def visual_profiles(self):
         from telegram_search.config.model_registry import visual_specs
@@ -940,6 +986,11 @@ class MediaService(MediaImages):
                 with_configuration=configured,
                 exclude=tuple(self.ocr_claims),
             )
+            generation = (
+                getattr(engine, "generation", None)
+                if getattr(engine, "accepts_generation", False)
+                else None
+            )
             assignments, region_batch, configured_batch = (
                 claimed if configured else (claimed, self.db.settings.ocr_region_batch_size, limit)
             )
@@ -969,7 +1020,12 @@ class MediaService(MediaImages):
             read_finished = time.monotonic()
             compute_started = compute_finished = read_finished
             if inputs:
-                with compute_gate(getattr(engine, "execution", None)):
+                reservation = (
+                    nullcontext()
+                    if getattr(engine, "manages_compute", False)
+                    else compute_gate(getattr(engine, "execution", None))
+                )
+                with reservation:
                     with self.db.connect() as conn:
                         if self.ocr is not owner or not all(
                             self._current(conn, sha, kind="ocr") for sha in good
@@ -979,12 +1035,17 @@ class MediaService(MediaImages):
                     try:
                         if configured and hasattr(engine, "recognize_many"):
                             for worker_lane in getattr(engine, "engines", [engine]):
-                                worker_lane.worker.region_batch = region_batch
-                            values = engine.recognize_many(inputs)
+                                worker = getattr(worker_lane, "worker", None)
+                                if worker is not None:
+                                    worker.region_batch = region_batch
+                            kwargs = {"_generation": generation} if generation is not None else {}
+                            values = engine.recognize_many(inputs, **kwargs)
                         elif len(inputs) == 1:
-                            values = [engine.recognize(inputs[0])]
+                            kwargs = {"_generation": generation} if generation is not None else {}
+                            values = [engine.recognize(inputs[0], **kwargs)]
                         else:
-                            values = engine.recognize_many(inputs)
+                            kwargs = {"_generation": generation} if generation is not None else {}
+                            values = engine.recognize_many(inputs, **kwargs)
                         for sha, value in zip(good, values, strict=True):
                             results[sha] = value
                     except UserError:

@@ -450,5 +450,13 @@
   "Модель изображений изменилась. Повторите поиск.": "The image model changed. Repeat the search.",
   "Не завершена очистка worker прежней модели изображений.": "Previous custom image worker cleanup is incomplete.",
   "Для векторного поиска установите: uv sync --locked --extra semantic.": "For vector search install: uv sync --locked --extra semantic.",
-  "Визуальная модель не смогла обработать фотографию.": "The visual model could not process the photo."
+  "Визуальная модель не смогла обработать фотографию.": "The visual model could not process the photo.",
+  "Модель OCR изменилась. Повторите распознавание.": "The OCR model changed. Repeat recognition.",
+  "Окружение OCR-адаптера изменилось. Проверьте и подготовьте его заново.": "The custom OCR environment changed. Validate and prepare it again.",
+  "Результаты OCR на CPU/GPU отличаются. Выберите CPU.": "Custom OCR CPU/GPU outputs differ; select CPU.",
+  "Некорректный батч OCR-адаптера.": "Invalid custom OCR batch.",
+  "Отложить подготовку можно только при выборе модели OCR.": "Only OCR model selection can defer preparation.",
+  "Для OCR на CPU + GPU адаптер должен поддерживать оба устройства.": "Custom OCR CPU + GPU requires both devices in the manifest.",
+  "Не завершена очистка worker прежней модели OCR.": "Previous OCR worker cleanup is incomplete.",
+  "Роль пользовательской модели отличается от выбранной.": "The custom model has a different role."
 }

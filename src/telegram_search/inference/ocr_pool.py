@@ -1,6 +1,7 @@
 """Optional CPU parallelism inside one scheduler reservation and one thread budget."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from threading import RLock
 
 from telegram_search.shared.errors import UserError
@@ -30,12 +31,16 @@ class CpuOcrPool:
         )
         return {**info, "cpu_workers": len(self.engines), "cpu_thread_budget": self.threads}
 
-    def recognize(self, data):
+    def recognize(self, data, *, _generation=None):
+        if getattr(self.engines[0], "accepts_generation", False):
+            return self.recognize_many([data], _generation=_generation)[0]
         return self.engines[0].recognize(data)
 
-    def recognize_many(self, images):
+    def recognize_many(self, images, *, _generation=None):
         with self.lock:
             generation = self.generation
+            if _generation is not None and generation != _generation:
+                return [{"cancelled": True} for _ in images]
 
         # Each lane receives a disjoint subset. Per-image timeout/kill is retained.
         def lane(index):
@@ -48,6 +53,8 @@ class CpuOcrPool:
                         continue
                     worker = getattr(engine, "worker", None)
                     kwargs = {"_generation": worker.generation} if worker else {}
+                    if getattr(engine, "accepts_generation", False):
+                        kwargs = {"_generation": engine.generation, "_reserved": True}
                 try:
                     value = engine.recognize(images[position], **kwargs)
                     timings = {
@@ -62,19 +69,51 @@ class CpuOcrPool:
             return values
 
         results = [None] * len(images)
-        with ThreadPoolExecutor(
-            max_workers=len(self.engines), thread_name_prefix="ocr-cpu"
-        ) as pool:
-            for values in pool.map(lane, range(len(self.engines))):
-                for position, value in values:
-                    results[position] = value
+        slot = getattr(self.engines[0], "compute_slot", None)
+        reservation = slot() if slot else nullcontext()
+        try:
+            with (
+                reservation,
+                ThreadPoolExecutor(
+                    max_workers=len(self.engines), thread_name_prefix="ocr-cpu"
+                ) as pool,
+            ):
+                for values in pool.map(lane, range(len(self.engines))):
+                    for position, value in values:
+                        results[position] = value
+        except InterruptedError:
+            stop = getattr(self.engines[0], "cancelled", None)
+            if generation != self.generation or stop and stop.is_set():
+                return [{"cancelled": True} for _ in images]
+            raise
         return results
 
     def unload_worker(self):
         with self.lock:
             self.generation += 1
+            errors = []
             for engine in self.engines:
-                engine.unload()
+                try:
+                    engine.unload()
+                except BaseException as exc:
+                    errors.append(exc)
+            if errors:
+                raise errors[0]
+
+    def retire(self):
+        with self.lock:
+            self.generation += 1
+            self.retirement_error = None
+            for engine in self.engines:
+                try:
+                    if hasattr(engine, "retire"):
+                        engine.retire()
+                        if getattr(engine, "retirement_error", None):
+                            self.retirement_error = "Previous OCR worker cleanup is incomplete."
+                    else:
+                        engine.unload()
+                except (UserError, InterruptedError):
+                    self.retirement_error = "Previous OCR worker cleanup is incomplete."
 
     def unload(self):
         self.unload_worker()

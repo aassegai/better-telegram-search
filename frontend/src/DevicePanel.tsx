@@ -10,6 +10,8 @@ export default function DevicePanel({ model, onChange }: {
 }) {
   const { models, update } = useModelSettings();
   const settings = models?.[model];
+  const supported = model === 'ocr' ? settings?.profile_devices?.[settings.engine ?? ''] ?? (settings?.engine === 'tesseract' ? ['cpu'] : ['cpu', 'gpu']) : ['cpu', 'gpu'];
+  const allowed = ['cpu', 'gpu', 'auto', ...(model === 'ocr' ? ['hybrid'] : [])].filter(device => device === 'auto' ? supported.includes('gpu') || (settings?.engine?.startsWith('custom:') && supported.includes('cpu')) : device === 'hybrid' ? supported.includes('cpu') && supported.includes('gpu') : supported.includes(device));
   const [draft, setDraft] = useState<{ device: Device; search_device: Device } | null>(null);
   const [dirty, setDirty] = useState(false);
   const previousEngine = useRef(settings?.engine);
@@ -43,9 +45,11 @@ export default function DevicePanel({ model, onChange }: {
         <label>{t(model === 'ocr' ? 'Устройство распознавания' : 'Устройство для индексации')}<select
           aria-label={t(model === 'ocr' ? 'Устройство распознавания' : 'Устройство для индексации')}
           disabled={op.busy} value={draft.device} onChange={event => change('device', event.target.value)}>
-          <option value="cpu">CPU</option>
-          {(model !== 'ocr' || settings.engine === 'paddle') && <><option value="auto">{t('Авто')}</option><option value="gpu">GPU</option></>}
-          {model === 'ocr' && settings.engine === 'paddle' && <option value="hybrid">CPU + GPU</option>}
+          {!allowed.includes(draft.device) && <option value={draft.device} disabled>{t('Недоступно: {p0}', { p0: draft.device.toUpperCase() })}</option>}
+          {allowed.includes('cpu') && <option value="cpu">CPU</option>}
+          {allowed.includes('auto') && <option value="auto">{t('Авто')}</option>}
+          {allowed.includes('gpu') && <option value="gpu">GPU</option>}
+          {allowed.includes('hybrid') && <option value="hybrid">CPU + GPU</option>}
         </select></label>
         {model !== 'ocr' && <label>{t('Устройство для поиска')}<select aria-label={t('Устройство для поиска')}
           disabled={op.busy} value={draft.search_device} onChange={event => change('search_device', event.target.value)}>
