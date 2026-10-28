@@ -43,7 +43,7 @@ def image_package(tmp_path, *, max_batch=2):
         "        return {'ids':[i['id'] for i in items],'dtype':'float32',"
         "'vectors':[[0,1,0,0] if 'blue' in i['text'] else [1,0,0,0] for i in items]}",
     )
-    (path.parent / "adapter.py").write_text(code, encoding="utf-8")
+    (path.parent / "adapter.py").write_bytes(code.encode("utf-8"))
     data["input_contract"]["max_batch"] = max_batch
     data["files"][0].update(
         bytes=len(code.encode()), sha256=hashlib.sha256(code.encode()).hexdigest()
@@ -275,7 +275,7 @@ def test_shutdown_cancels_unpublished_preparation_and_image_worker(
             "def encode_images(self, images, context):\n"
             "        if images[0]['width'] > 2: time.sleep(60)\n",
         )
-    (path.parent / "adapter.py").write_text(code, encoding="utf-8")
+    (path.parent / "adapter.py").write_bytes(code.encode("utf-8"))
     data["files"][0].update(
         bytes=len(code.encode()), sha256=hashlib.sha256(code.encode()).hexdigest()
     )
