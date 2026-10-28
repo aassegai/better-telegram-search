@@ -147,7 +147,7 @@ def test_report_tampering_and_old_reports_without_checksum_cannot_apply(
         conn.execute(
             "UPDATE noise_analyses SET summary_json=? WHERE id=?", (json.dumps(summary), job_id)
         )
-    with pytest.raises(UserError, match="полный актуальный"):
+    with pytest.raises(UserError, match="актуальный завершённый"):
         policy.apply(chat, job_id, 0)
 
 

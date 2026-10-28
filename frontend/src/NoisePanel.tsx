@@ -6,10 +6,10 @@ import NoiseReport from './NoiseReport';
 import NoiseComparison from './NoiseComparison';
 import { noiseActive, noiseApplicable, noiseLabel, type NoiseDecision, type NoiseDraft, type NoiseJob, type NoisePage, type NoisePreview } from './noiseTypes';
 
-const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Неполный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
+const states: Record<string, string> = { queued: 'В очереди', running: 'Анализируем', cancelling: 'Останавливаем…', cancelled: 'Отменён', ready: 'Отчёт готов', limited: 'Частичный отчёт', failed: 'Ошибка анализа', stale: 'Анализ устарел', interrupted: 'Прерван перезапуском' };
 const phases: Record<string, string> = { queued: 'Ожидаем очередь', scan: 'Считаем сообщения', lexicon: 'Готовим словарь гипотез', candidates: 'Сравниваем варианты', failed: 'Ошибка анализа' };
 const errors: Record<string, string> = { source_changed: 'Диалог или исключения изменились. Запустите анализ заново.', time_limit: 'Достигнут лимит времени анализа.', report_size_limit: 'Достигнут лимит размера отчёта.', analysis_failed: 'Не удалось выполнить анализ. Запустите его заново.', result_save_failed: 'Не удалось сохранить анализ. Перезапустите приложение.', interrupted: 'Анализ прерван перезапуском.' };
-const limits: Record<string, string> = { message_limit: 'Лимит сообщений', form_limit: 'Лимит однословных форм', phrase_form_limit: 'Лимит слов из фраз', text_limit: 'Ограничение размера сообщения', candidate_limit: 'Ограничение гипотез', payload_limit: 'Ограничение подробностей отчёта' };
+const limits: Record<string, string> = { message_limit: 'Лимит сообщений', form_limit: 'Лимит однословных форм', phrase_form_limit: 'Лимит слов из фраз', text_limit: 'Ограничение размера сообщения', candidate_limit: 'Ограничение гипотез', payload_limit: 'Ограничение подробностей отчёта', report_size_limit: 'Достигнут лимит размера отчёта.' };
 type View = 'forms' | 'families';
 type Action = (current: () => boolean, signal: AbortSignal) => Promise<void>;
 
@@ -183,7 +183,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
   const active = noiseActive(job);
   const canReview = !!job && !job.stale && ['ready', 'limited'].includes(job.state) && !active;
   const hasDigest = /^[a-f0-9]{64}$/u.test(job?.summary?.report_sha256 ?? '');
-  const canEdit = canReview && job?.state === 'ready' && noiseApplicable(job.summary) && hasDigest && !!draft?.overrides_available && !draft.stale;
+  const canEdit = canReview && noiseApplicable(job?.summary) && hasDigest && !!draft?.overrides_available && !draft.stale;
   const canApply = canEdit && !dirty;
   const validOptions = Number.isInteger(maxMessages) && maxMessages >= 1 && maxMessages <= 1000000 && Number.isInteger(timeLimit) && timeLimit >= 1 && timeLimit <= 3600;
   const applied = !!draft?.applied_policy_id && draft.applied_policy_id === currentPolicyId;
@@ -195,7 +195,7 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
       else { interaction.current++; request.current?.abort(); setReloadRequested(false); setPage(null); setPreview(null); }
     }}>
       <summary>{t('Фильтр смыслового шума')}</summary>
-      <p>{t('Локальный анализ однословных реакций и опечаток. Исходная переписка и поиск по словам сохраняются.')}</p>
+      <p>{t('Анализ сообщений с менее чем пятью уникальными словами. Длинные сообщения пропускаются; переписка и поиск по словам сохраняются.')}</p>
       <p className="baseline-note">{t('Автоматический отсев новых форм пока выключен. Спорные формы сохраняются; исключение можно задать вручную.')}</p>
       <details className="noise-limits"><summary>{t('Лимиты анализа')}</summary>
         <label>{t('Максимум сообщений')}<input type="number" min="1" max="1000000" value={Number.isNaN(maxMessages) ? '' : maxMessages} disabled={busy} onChange={event => setMaxMessages(event.target.value === '' ? NaN : Number(event.target.value))} /></label>
@@ -220,10 +220,13 @@ export default function NoisePanel({ chatId, currentPolicyId, initiallyOpen, onO
         </>}
         <p>{t('Просмотрено сообщений: {p0} · однословных: {p1} · форм: {p2}', { p0: job.summary?.scanned_messages ?? job.progress.scanned_messages ?? 0, p1: job.summary?.whole_messages ?? job.progress.whole_messages ?? 0, p2: job.summary?.forms ?? job.progress.forms ?? 0 })}</p>
         {job.stale && <p className="warning">{t('Диалог или исключения изменились. Запустите анализ заново.')}</p>}
-        {job.error && !job.stale && <p className="error" role="alert">{t(noiseLabel(errors, job.error, 'Не удалось выполнить анализ. Запустите его заново.'))}</p>}
+        {job.error && !job.stale && <p className={['time_limit', 'report_size_limit'].includes(job.error) && noiseApplicable(job.summary) ? 'warning' : 'error'} role="alert">{t(noiseLabel(errors, job.error, 'Не удалось выполнить анализ. Запустите его заново.'))}</p>}
         {job.summary?.limits?.map(limit => <p className="warning" key={limit}>{t(noiseLabel(limits, limit, 'Неполное покрытие анализа'))}</p>)}
         {job.state === 'ready' && noiseApplicable(job.summary) && job.summary?.evidence_complete === false && <p className="baseline-note">{t('Все сообщения области обработаны. Список гипотез ограничен; спорные формы сохраняются. Можно применить точные правила.')}</p>}
-        {job.state === 'limited' && <p className="baseline-note">{t('Неполный отчёт можно просматривать, но нельзя применить. Увеличьте лимиты и запустите новый анализ.')}</p>}
+        {job.summary?.skipped_long_messages != null && <p className="baseline-note">{t('Пропущено сообщений с пятью и более уникальными словами: {p0}', { p0: job.summary.skipped_long_messages })}</p>}
+        {!!job.summary?.limited_messages && <p className="baseline-note">{t('Не разобрано из-за ограничений размера: {p0}. Остальные результаты доступны.', { p0: job.summary.limited_messages })}</p>}
+        {job.state === 'limited' && noiseApplicable(job.summary) && <p className="baseline-note">{t('Анализ ограничен. Можно просмотреть отчёт, выбрать точные правила и применить их. Новые неизученные формы автоматически не исключаются.')}</p>}
+        {job.state === 'limited' && !noiseApplicable(job.summary) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
         {job.state === 'ready' && (!hasDigest || !noiseApplicable(job.summary)) && <p className="baseline-note">{t('Для применения этого отчёта нужен новый анализ.')}</p>}
         <div className="job-actions"><button type="button" disabled={busy || !canReview} onClick={() => loadReport(view, decision, 0)}>{t('Просмотреть отчёт')}</button><button type="button" disabled={busy || active || comparisonProtected || dirty} onClick={remove}>{t('Удалить отчёт')}</button></div>
         <p className="baseline-note">{t('Удаление отчёта не меняет уже выбранные правила и индексы.')}</p>

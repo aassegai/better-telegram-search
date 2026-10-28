@@ -20,6 +20,8 @@ from telegram_search.search.chunking.noise.scoring import SCORE_VERSION, evaluat
 from telegram_search.search.chunking.noise.statistics import (
     MAX_METADATA_CHARS,
     MAX_TEXT_CHARS,
+    MAX_UNIQUE_WORDS,
+    STATISTICS_SCOPE,
     collect_batch,
 )
 from telegram_search.shared.errors import UserError
@@ -217,70 +219,110 @@ class NoiseAnalysisService:
 
     def _analyze(self, job):
         report = NoiseReport(self.db, job.id, job.fence, create=True)
-        cursor, scanned, whole, limited_messages = (-(2**63), -(2**63)), 0, 0, 0
-        salt = secrets.token_hex(16)
-        self._progress(job, phase="scan", completed=0, total=None)
-        while scanned < job.options.max_messages:
-            self._checkpoint(job)
-            rows = self._page(job, cursor, min(128, job.options.max_messages - scanned))
-            if not rows:
-                break
-            # No archive connection or write transaction is held during text work.
-            batch = collect_batch(rows, salt, lambda: self._checkpoint(job))
-            self._checkpoint(job)
-            report.add_batch(batch, job.options.max_forms)
-            scanned += len(rows)
-            whole += len(batch.observations)
-            limited_messages += batch.limited_messages
-            cursor = rows[-1]["timestamp"], rows[-1]["message_id"]
-            self._progress(
-                job,
-                completed=scanned,
-                scanned_messages=scanned,
-                whole_messages=whole,
-                forms=report.forms_count,
+        scanned = whole = limited_messages = skipped_long = 0
+        comparisons = postings = limited_evidence_forms = 0
+        lexicon = None
+        try:
+            self._current(job)
+            cursor = (-(2**63), -(2**63))
+            salt = secrets.token_hex(16)
+            self._progress(job, phase="scan", completed=0, total=None)
+            while scanned < job.options.max_messages:
+                self._checkpoint(job)
+                rows = self._page(job, cursor, min(128, job.options.max_messages - scanned))
+                if not rows:
+                    break
+                # No archive connection or write transaction is held during text work.
+                batch = collect_batch(rows, salt, lambda: self._checkpoint(job))
+                self._checkpoint(job)
+                report.add_batch(batch, job.options.max_forms)
+                scanned += len(rows)
+                whole += len(batch.observations)
+                limited_messages += batch.limited_messages
+                skipped_long += batch.skipped_long_messages
+                cursor = rows[-1]["timestamp"], rows[-1]["message_id"]
+                self._progress(
+                    job,
+                    completed=scanned,
+                    scanned_messages=scanned,
+                    whole_messages=whole,
+                    forms=report.forms_count,
+                )
+            if scanned == job.options.max_messages and self._page(job, cursor, 1):
+                report.limits.add("message_limit")
+            self._current(job)
+            self._progress(job, phase="lexicon", completed=0, total=None)
+            lexicon = load_lexicon(lambda: self._checkpoint(job))
+            generator = CandidateGenerator(
+                useful_words=lexicon.forms, check=lambda: self._checkpoint(job)
             )
-        if scanned == job.options.max_messages and self._page(job, cursor, 1):
-            report.limits.add("message_limit")
-        self._current(job)
-        self._progress(job, phase="lexicon", completed=0, total=None)
-        lexicon = load_lexicon(lambda: self._checkpoint(job))
-        generator = CandidateGenerator(
-            useful_words=lexicon.forms, check=lambda: self._checkpoint(job)
-        )
-        self._current(job)
-        self._progress(job, phase="candidates", completed=0, total=report.forms_count)
-        after, completed, comparisons, postings = "", 0, 0, 0
-        decisions = {"keep": 0, "review": 0, "omit": 0}
-        limited_evidence_forms = 0
-        with report.connect() as frequency_reader:
+            self._current(job)
+            self._progress(job, phase="candidates", completed=0, total=report.forms_count)
+            after, completed = "", 0
+            with report.connect() as frequency_reader:
 
-            @lru_cache(maxsize=4096)
-            def frequency(form):
-                return report.frequency(frequency_reader, form)
+                @lru_cache(maxsize=4096)
+                def frequency(form):
+                    return report.frequency(frequency_reader, form)
 
-            while counts := report.forms(after):
-                self._current(job)
-                candidates = []
-                for count in counts:
-                    self._checkpoint(job)
-                    evidence = generator.analyze(count["form"], check=lambda: self._checkpoint(job))
-                    comparisons += evidence.comparisons
-                    postings += evidence.postings_read
-                    payload = evaluate(evidence, count, frequency)
-                    if not payload["complete"]:
-                        report.limits.add("candidate_limit")
-                    decisions[payload["decision"]] += 1
-                    candidates.append((count, payload))
-                limited_evidence_forms += report.add_candidates(candidates)
-                completed += len(counts)
-                after = counts[-1]["form"]
-                self._progress(job, completed=completed)
-        self._current(job)
+                while counts := report.forms(after):
+                    self._current(job)
+                    candidates = []
+                    for count in counts:
+                        self._checkpoint(job)
+                        evidence = generator.analyze(
+                            count["form"], check=lambda: self._checkpoint(job)
+                        )
+                        comparisons += evidence.comparisons
+                        postings += evidence.postings_read
+                        payload = evaluate(evidence, count, frequency)
+                        if not payload["complete"]:
+                            report.limits.add("candidate_limit")
+                        candidates.append((count, payload))
+                    limited_evidence_forms += report.add_candidates(candidates)
+                    completed += len(counts)
+                    after = counts[-1]["form"]
+                    self._progress(job, completed=completed)
+            self._current(job)
+        except AnalysisLimited:
+            report.limits.add("time_limit")
+            job.error = "time_limit"
+
+        except sqlite3.Error as exc:
+            if getattr(exc, "sqlite_errorcode", None) != sqlite3.SQLITE_FULL:
+                raise
+            report.limits.add("report_size_limit")
+            job.error = "report_size_limit"
+
+        # Finalize already committed results even after the analysis time budget.
+        # Report size is capped; cancellation and the terminal source fence remain active.
+        def final_check():
+            if job.cancelled.is_set() or self.stop.is_set():
+                raise AnalysisCancelled()
+
+        final_check()
+        with report.connect() as conn:
+            # SQLite may have rolled back a capped write after its in-memory
+            # counters advanced. Publish only the committed report inventory.
+            report.forms_count = conn.execute("SELECT COUNT(*) FROM forms").fetchone()[0]
+            report.phrases_count = conn.execute("SELECT COUNT(*) FROM phrases").fetchone()[0]
+            decisions = {"keep": 0, "review": 0, "omit": 0}
+            decisions.update(
+                dict(
+                    conn.execute(
+                        "SELECT decision,COUNT(*) FROM forms WHERE decision IS NOT NULL "
+                        "GROUP BY decision"
+                    )
+                )
+            )
         return {
             "version": ANALYSIS_VERSION,
             "score_version": SCORE_VERSION,
-            "lexicon": {"id": lexicon.id, "sha256": lexicon.sha256, "license": lexicon.license},
+            "lexicon": (
+                {"id": lexicon.id, "sha256": lexicon.sha256, "license": lexicon.license}
+                if lexicon is not None
+                else None
+            ),
             "complete": not report.limits,
             "limits": sorted(report.limits),
             **coverage(report.limits),
@@ -289,11 +331,14 @@ class NoiseAnalysisService:
             "whole_messages": whole,
             "forms": report.forms_count,
             "limited_messages": limited_messages,
+            "skipped_long_messages": skipped_long,
+            "statistics_scope": STATISTICS_SCOPE,
+            "max_unique_words": MAX_UNIQUE_WORDS,
             "decisions": decisions,
             "candidate_comparisons": comparisons,
             "index_postings_read": postings,
             "new_auto_omit_enabled": False,
-            "report_sha256": report.digest(lambda: self._checkpoint(job)),
+            "report_sha256": report.digest(final_check),
             "dry_run": {
                 "state": "not_available",
                 "reason": "policy_not_compiled",
@@ -311,9 +356,12 @@ class NoiseAnalysisService:
         job.deadline = job.started + job.options.time_limit_seconds
         job.state = "running"
         try:
-            self._current(job)
             job.summary = self._analyze(job)
-            job.state = "ready" if application_ready(job.summary) else "limited"
+            job.state = (
+                "ready"
+                if application_ready(job.summary) and job.summary["source_complete"]
+                else "limited"
+            )
         except AnalysisCancelled:
             job.state, job.error = "cancelled", None
         except (AnalysisStale, KeyError):

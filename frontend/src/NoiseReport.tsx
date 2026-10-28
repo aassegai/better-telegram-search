@@ -35,7 +35,7 @@ export default function NoiseReport({ page, overrides, disabled, onOverride }: {
     {page.forms?.map(row => {
       const effective = Object.hasOwn(overrides, row.form) ? overrides[row.form] : row.default_decision ?? (row.candidate?.decision === 'omit' ? 'omit' : 'keep');
       return <article className="noise-form" key={row.form}>
-      <div className="noise-form-heading"><strong><bdi>{row.form}</bdi></strong><span>{t('Решение анализа: {p0}', { p0: t(noiseLabel(decisions, row.candidate?.decision, 'Нет данных')) })}</span></div>
+      <div className="noise-form-heading"><strong><bdi>{row.form}</bdi></strong><span>{t('Решение анализа: {p0}', { p0: t(noiseLabel(decisions, row.candidate?.decision, 'Не рассмотрено')) })}</span></div>
       <p className="noise-effective">{t('Правило проекта: {p0}', { p0: t(effective === 'omit' ? 'Исключать с учётом защит' : 'Сохранять') })}</p>
       {row.inherited_decision && <p className="baseline-note">{t('Ранее выбранное правило: {p0}', { p0: t(row.inherited_decision === 'omit' ? 'Исключать с учётом защит' : 'Сохранять') })}</p>}
       <p>{t('Сообщений: {p0}', { p0: row.whole_count })} · {t('Допустимо к фильтрации: {p0}', { p0: row.eligible_count })}</p>

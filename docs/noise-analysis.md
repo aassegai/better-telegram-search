@@ -138,10 +138,10 @@ the owning segment and can make it useful again. A bounded extra lookup protects
 a borrowed answer to a question without recursive classification. Import and
 model rebuild retain an explicitly selected new policy, pauses and other indexes.
 
-A current report with full source coverage and a stored SHA-256 is required for
+A current finalized report with a stored SHA-256 is required for
 preview, override changes and apply. Older reports remain reviewable; re-run
-analysis when they lack the required metadata. Source-limited reports cannot be
-applied. No policy changes on application startup.
+analysis when they lack the required metadata. Known source-limited reports remain explicitly applicable under the 0.7.3
+contract below. No policy changes on application startup.
 
 The versioned `source-and-evidence-v1` summary separates `source_complete` from
 `evidence_complete`. `complete` retains its strict meaning: any limit makes it
@@ -154,7 +154,8 @@ limited display must not block exact rules for an otherwise fully scanned chat.
 Scores remain uncalibrated. A candidate search that stopped before finding a
 match is reviewable, not evidence that no noise hypothesis exists.
 
-Message/form/phrase/text/time limits still prevent application. Unknown limit or
+In 0.7.3, known message/form/phrase/text/time/report-size limits retain partial
+coverage while allowing approved and explicit exact rules. Unknown limit or
 coverage versions, contradictory flags and versionless hybrid summaries fail
 closed. Old full checksum-bearing reports remain compatible; old partial reports
 are never silently upgraded. The UI explains when the source is complete but
@@ -309,3 +310,30 @@ hide old evidence and require a new analysis. Closing settings or changing chat,
 policy or sender scope cannot publish a late response into a newer view. The UI
 is available in Russian/English and both themes. Forms are shown literally and
 never passed through application-label translation.
+
+
+### 0.7.3: short messages and usable partial reports
+
+Statistics now inspect messages with fewer than five unique normalized words
+(NFKC/casefold/ё→е, existing word boundaries). Five or more are counted as
+`skipped_long_messages` and do not create a failure or change the archive.
+Repeated words do not spend extra unique-word slots; the former 256-token phrase
+cap is removed because input length is already bounded. Oversized text/metadata
+and unsupported form sizes remain explicit limitations, without stopping the
+remaining analysis or keyword search.
+
+`bounded-exact-rules-v2` preserves strict `complete`, `source_complete` and
+`evidence_complete` flags but permits finalized partial reports with known limits
+to compile approved seeds and explicit exact overrides. New automatic omissions
+remain disabled. Checksums, current source/exclusion fences, draft revisions,
+unknown-version rejection and per-message protections remain mandatory.
+Validated `source-and-evidence-v1` partial reports from 0.7.2 are also applicable;
+they remain labeled partial and their stored historical flags are not rewritten.
+Unversioned partial, stale, cancelled, failed and damaged reports are not promoted.
+
+On a time limit, committed statistics and scored candidates are finalized and
+hashed. Unscored forms have no invented hypothesis and are included in the review
+page. New forms are kept by default; approved seeds and inherited exact rules
+retain their existing behavior. The report's final hash/write uses bounded report size
+and retains cancellation/source checks; it is outside the analysis time budget.
+These 0.7.3 rules supersede the earlier full-source-only applicability requirement.

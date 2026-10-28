@@ -1155,5 +1155,11 @@
   "изображений": "images",
   "Подготовка кандидатов для уточнения": "Preparing reranking candidates",
   "Загрузка модели уточнения": "Loading the reranking model",
-  "Проверка покрытия медиаиндекса": "Checking media index coverage"
+  "Проверка покрытия медиаиндекса": "Checking media index coverage",
+  "Частичный отчёт": "Partial report",
+  "Анализ сообщений с менее чем пятью уникальными словами. Длинные сообщения пропускаются; переписка и поиск по словам сохраняются.": "Analyze messages with fewer than five unique words. Longer messages are skipped; the archive and keyword search are preserved.",
+  "Пропущено сообщений с пятью и более уникальными словами: {p0}": "Messages skipped with five or more unique words: {p0}",
+  "Не разобрано из-за ограничений размера: {p0}. Остальные результаты доступны.": "Messages not analyzed due to size limits: {p0}. Other results are available.",
+  "Анализ ограничен. Можно просмотреть отчёт, выбрать точные правила и применить их. Новые неизученные формы автоматически не исключаются.": "The analysis is partial. You can review the report, choose exact rules and apply them. New unexamined forms are not excluded automatically.",
+  "Не рассмотрено": "Not evaluated"
 }

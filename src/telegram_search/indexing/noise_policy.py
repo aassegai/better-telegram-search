@@ -144,14 +144,14 @@ class NoisePolicyService:
             raise NoiseDraftConflict("Проект изменился. Обновите его перед сохранением.")
         summary = json.loads(row["summary_json"] or "null")
         if (
-            row["state"] != "ready"
+            row["state"] not in {"ready", "limited"}
             or not isinstance(summary, dict)
             or not application_ready(summary)
             or summary.get("new_auto_omit_enabled") is not False
             or not isinstance(summary.get("report_sha256"), str)
             or not re.fullmatch(r"[a-f0-9]{64}", summary["report_sha256"])
         ):
-            raise UserError("Нужен полный актуальный анализ. Запустите анализ заново.")
+            raise UserError("Нужен актуальный завершённый отчёт. Запустите анализ заново.")
         fence = json.loads(row["fence_json"])
         base = self._source_policy(fence)
         selected = self._overrides(row) if overrides is None else validate_overrides(overrides)
@@ -203,7 +203,10 @@ class NoisePolicyService:
         ).fetchone()
         if current is None:
             raise KeyError(job_id)
-        if current["draft_revision"] != row["draft_revision"] or current["state"] != "ready":
+        if current["draft_revision"] != row["draft_revision"] or current["state"] not in {
+            "ready",
+            "limited",
+        }:
             raise NoiseDraftConflict("Проект изменился. Обновите его перед сохранением.")
         if source_fence(conn, chat_id) != json.loads(row["fence_json"]):
             raise NoiseDraftConflict("Диалог или исключения изменились. Запустите анализ заново.")

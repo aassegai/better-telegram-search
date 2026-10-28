@@ -333,9 +333,10 @@ def test_deadline_is_explicit_and_does_not_enable_automatic_omission(
     job = analysis.create(chat_id)
     status = wait_terminal(analysis, chat_id, job["id"])
     assert status["state"] == "limited" and status["error"] == "time_limit"
-    assert status["summary"] is None and not status["new_auto_omit_enabled"]
-    with pytest.raises(UserError, match="повреждён"):
-        analysis.report(chat_id, job["id"])
+    assert status["summary"]["limits"] == ["time_limit"]
+    assert status["summary"]["policy_applicable"] and not status["new_auto_omit_enabled"]
+    assert len(status["summary"]["report_sha256"]) == 64
+    assert analysis.report(chat_id, job["id"])["forms"] == []
 
 
 def test_report_size_and_sidecar_links_are_rejected(db, importer, tmp_path, analysis):
